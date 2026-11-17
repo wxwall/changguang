@@ -1,0 +1,2675 @@
+{
+  "schemaVersion": "2.0.0-STADIACAD",
+  "id": "std-beijing-bird-nest",
+  "name": "北京国家体育场 (鸟巢体育中心)",
+  "code": "BJ-NST-2008-01",
+  "description": "2008年北京奥运会主体育场（国家体育场·鸟巢），拥有91,000标准座席。采用奥林匹克400米综合田径+足球椭圆形马鞍巨碗造型，首层看台与跑道完全无缝重合，北侧设马拉松拱门车行主进场门通道，二层设全景贵宾VIP包厢层，三层为高坡度全景马鞍形大看台（北侧顶部预留火炬台与记分牌景观通透开洞），支持国际田联/FIFA综合赛事与十万人级演艺音乐节多模态转场。",
+  "updatedAt": "2026-11-14T08:39:11.389Z",
+  "gridSystem": {
+    "enabled": true,
+    "snapToGrid": true,
+    "gridSize": 5,
+    "showPolarGrid": true,
+    "polarAngleStepDeg": 15,
+    "showDimensions": true,
+    "showVomitories": true,
+    "showGuardrails": true
+  },
+  "infield": {
+    "shape": "rounded-rect",
+    "coreMode": "sports",
+    "length": 188,
+    "width": 118,
+    "cornerRadius": 38,
+    "sportPreset": "track-field",
+    "pitchOrientationDeg": 0,
+    "pitchLength": 105,
+    "pitchWidth": 68,
+    "safetyMargin": 15,
+    "surfaceType": "synthetic-track",
+    "stageConfig": {
+      "type": "festival-stage",
+      "orientationDeg": 180,
+      "width": 52,
+      "depth": 28,
+      "height": 2.4,
+      "catwalkLength": 32,
+      "catwalkWidth": 4.5,
+      "fohEnabled": true,
+      "fohDistance": 55,
+      "fohWidth": 12,
+      "fohDepth": 7,
+      "backdropHeight": 18
+    }
+  },
+  "infieldModules": [],
+  "standTiers": [
+    {
+      "id": "bn-tier-1",
+      "level": 1,
+      "name": "一层首层大碗看台 (1F Lower Bowl)",
+      "innerOffset": 0,
+      "radialDepth": 24,
+      "baseElevation": 1,
+      "sectorCount": 20,
+      "defaultFillType": "standard",
+      "defaultRows": 28,
+      "defaultRowPitch": 0.85,
+      "defaultSlopeDeg": 18,
+      "defaultSeatSpacing": 0.5,
+      "defaultExitCount": 24,
+      "radialAisleWidth": 2,
+      "defaultGuardrail": {
+        "frontRailEnabled": true,
+        "frontRailHeight": 1.1,
+        "rearWallEnabled": true,
+        "rearWallHeight": 1.25,
+        "aisleHandrailEnabled": true,
+        "material": "concrete-parapet"
+      },
+      "morphMode": "infield-shape",
+      "concentricMorph": 0.85,
+      "sectors": [
+        {
+          "id": "bn-tier-1-sec-1",
+          "sectorIndex": 0,
+          "name": "北侧马拉松/车行主进场门 (Marathon Gate)",
+          "startAngleDeg": 0,
+          "endAngleDeg": 16.29,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 28,
+          "rowPitch": 0.85,
+          "riserHeight": 0.276,
+          "slopeDeg": 18,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-1-sec-1-vom",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 7
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.1,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.25,
+            "aisleHandrailEnabled": true,
+            "material": "concrete-parapet"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-1-sec-2",
+          "sectorIndex": 1,
+          "name": "1F-B",
+          "startAngleDeg": 16.29,
+          "endAngleDeg": 32.22,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 28,
+          "rowPitch": 0.85,
+          "riserHeight": 0.276,
+          "slopeDeg": 18,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-1-sec-2-vom",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 7
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.1,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.25,
+            "aisleHandrailEnabled": true,
+            "material": "concrete-parapet"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-1-sec-3",
+          "sectorIndex": 2,
+          "name": "1F-C",
+          "startAngleDeg": 32.22,
+          "endAngleDeg": 47.18,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 28,
+          "rowPitch": 0.85,
+          "riserHeight": 0.276,
+          "slopeDeg": 18,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-1-sec-3-vom",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 7
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.1,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.25,
+            "aisleHandrailEnabled": true,
+            "material": "concrete-parapet"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-1-sec-4",
+          "sectorIndex": 3,
+          "name": "1F-D",
+          "startAngleDeg": 47.18,
+          "endAngleDeg": 65.14,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 28,
+          "rowPitch": 0.85,
+          "riserHeight": 0.276,
+          "slopeDeg": 18,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-1-sec-4-vom",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 7
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.1,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.25,
+            "aisleHandrailEnabled": true,
+            "material": "concrete-parapet"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-1-sec-5",
+          "sectorIndex": 4,
+          "name": "1F-E",
+          "startAngleDeg": 65.14,
+          "endAngleDeg": 90,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 28,
+          "rowPitch": 0.85,
+          "riserHeight": 0.276,
+          "slopeDeg": 18,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-1-sec-5-vom",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 7
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.1,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.25,
+            "aisleHandrailEnabled": true,
+            "material": "concrete-parapet"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-1-sec-6",
+          "sectorIndex": 5,
+          "name": "1F-F",
+          "startAngleDeg": 90,
+          "endAngleDeg": 114.86,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 28,
+          "rowPitch": 0.85,
+          "riserHeight": 0.276,
+          "slopeDeg": 18,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-1-sec-6-vom",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 7
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.1,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.25,
+            "aisleHandrailEnabled": true,
+            "material": "concrete-parapet"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-1-sec-7",
+          "sectorIndex": 6,
+          "name": "1F-G",
+          "startAngleDeg": 114.86,
+          "endAngleDeg": 132.82,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 28,
+          "rowPitch": 0.85,
+          "riserHeight": 0.276,
+          "slopeDeg": 18,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-1-sec-7-vom",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 7
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.1,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.25,
+            "aisleHandrailEnabled": true,
+            "material": "concrete-parapet"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-1-sec-8",
+          "sectorIndex": 7,
+          "name": "1F-H",
+          "startAngleDeg": 132.82,
+          "endAngleDeg": 147.78,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 28,
+          "rowPitch": 0.85,
+          "riserHeight": 0.276,
+          "slopeDeg": 18,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-1-sec-8-vom",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 7
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.1,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.25,
+            "aisleHandrailEnabled": true,
+            "material": "concrete-parapet"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-1-sec-9",
+          "sectorIndex": 8,
+          "name": "1F-I",
+          "startAngleDeg": 147.78,
+          "endAngleDeg": 163.71,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 28,
+          "rowPitch": 0.85,
+          "riserHeight": 0.276,
+          "slopeDeg": 18,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-1-sec-9-vom",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 7
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.1,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.25,
+            "aisleHandrailEnabled": true,
+            "material": "concrete-parapet"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-1-sec-10",
+          "sectorIndex": 9,
+          "name": "1F-J",
+          "startAngleDeg": 163.71,
+          "endAngleDeg": 180,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 28,
+          "rowPitch": 0.85,
+          "riserHeight": 0.276,
+          "slopeDeg": 18,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-1-sec-10-vom",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 7
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.1,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.25,
+            "aisleHandrailEnabled": true,
+            "material": "concrete-parapet"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-1-sec-11",
+          "sectorIndex": 10,
+          "name": "1F-K",
+          "startAngleDeg": 180,
+          "endAngleDeg": 196.29,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 28,
+          "rowPitch": 0.85,
+          "riserHeight": 0.276,
+          "slopeDeg": 18,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-1-sec-11-vom",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 7
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.1,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.25,
+            "aisleHandrailEnabled": true,
+            "material": "concrete-parapet"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-1-sec-12",
+          "sectorIndex": 11,
+          "name": "1F-L",
+          "startAngleDeg": 196.29,
+          "endAngleDeg": 212.22,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 28,
+          "rowPitch": 0.85,
+          "riserHeight": 0.276,
+          "slopeDeg": 18,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-1-sec-12-vom",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 7
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.1,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.25,
+            "aisleHandrailEnabled": true,
+            "material": "concrete-parapet"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-1-sec-13",
+          "sectorIndex": 12,
+          "name": "1F-M",
+          "startAngleDeg": 212.22,
+          "endAngleDeg": 227.18,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 28,
+          "rowPitch": 0.85,
+          "riserHeight": 0.276,
+          "slopeDeg": 18,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-1-sec-13-vom",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 7
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.1,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.25,
+            "aisleHandrailEnabled": true,
+            "material": "concrete-parapet"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-1-sec-14",
+          "sectorIndex": 13,
+          "name": "1F-N",
+          "startAngleDeg": 227.18,
+          "endAngleDeg": 245.14,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 28,
+          "rowPitch": 0.85,
+          "riserHeight": 0.276,
+          "slopeDeg": 18,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-1-sec-14-vom",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 7
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.1,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.25,
+            "aisleHandrailEnabled": true,
+            "material": "concrete-parapet"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-1-sec-15",
+          "sectorIndex": 14,
+          "name": "1F-O",
+          "startAngleDeg": 245.14,
+          "endAngleDeg": 270,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 28,
+          "rowPitch": 0.85,
+          "riserHeight": 0.276,
+          "slopeDeg": 18,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-1-sec-15-vom",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 7
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.1,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.25,
+            "aisleHandrailEnabled": true,
+            "material": "concrete-parapet"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-1-sec-16",
+          "sectorIndex": 15,
+          "name": "1F-P",
+          "startAngleDeg": 270,
+          "endAngleDeg": 294.86,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 28,
+          "rowPitch": 0.85,
+          "riserHeight": 0.276,
+          "slopeDeg": 18,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-1-sec-16-vom",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 7
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.1,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.25,
+            "aisleHandrailEnabled": true,
+            "material": "concrete-parapet"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-1-sec-17",
+          "sectorIndex": 16,
+          "name": "1F-Q",
+          "startAngleDeg": 294.86,
+          "endAngleDeg": 312.82,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 28,
+          "rowPitch": 0.85,
+          "riserHeight": 0.276,
+          "slopeDeg": 18,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-1-sec-17-vom",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 7
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.1,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.25,
+            "aisleHandrailEnabled": true,
+            "material": "concrete-parapet"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-1-sec-18",
+          "sectorIndex": 17,
+          "name": "1F-R",
+          "startAngleDeg": 312.82,
+          "endAngleDeg": 327.78,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 28,
+          "rowPitch": 0.85,
+          "riserHeight": 0.276,
+          "slopeDeg": 18,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-1-sec-18-vom",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 7
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.1,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.25,
+            "aisleHandrailEnabled": true,
+            "material": "concrete-parapet"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-1-sec-19",
+          "sectorIndex": 18,
+          "name": "1F-S",
+          "startAngleDeg": 327.78,
+          "endAngleDeg": 343.71,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 28,
+          "rowPitch": 0.85,
+          "riserHeight": 0.276,
+          "slopeDeg": 18,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-1-sec-19-vom",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 7
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.1,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.25,
+            "aisleHandrailEnabled": true,
+            "material": "concrete-parapet"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-1-sec-20",
+          "sectorIndex": 19,
+          "name": "1F-T",
+          "startAngleDeg": 343.71,
+          "endAngleDeg": 360,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 28,
+          "rowPitch": 0.85,
+          "riserHeight": 0.276,
+          "slopeDeg": 18,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-1-sec-20-vom",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 7
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.1,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.25,
+            "aisleHandrailEnabled": true,
+            "material": "concrete-parapet"
+          },
+          "vipBoxRooms": 0
+        }
+      ]
+    },
+    {
+      "id": "bn-tier-2",
+      "level": 2,
+      "name": "二层贵宾包厢与俱乐部层 (2F VIP Skybox Ring)",
+      "innerOffset": 2.8,
+      "radialDepth": 10,
+      "baseElevation": 9,
+      "sectorCount": 32,
+      "defaultFillType": "standard",
+      "defaultRows": 5,
+      "defaultRowPitch": 1.35,
+      "defaultSlopeDeg": 24,
+      "defaultSeatSpacing": 0.72,
+      "defaultExitCount": 12,
+      "radialAisleWidth": 1.5,
+      "defaultGuardrail": {
+        "frontRailEnabled": true,
+        "frontRailHeight": 1.15,
+        "rearWallEnabled": true,
+        "rearWallHeight": 1.5,
+        "aisleHandrailEnabled": true,
+        "material": "tempered-glass"
+      },
+      "morphMode": "infield-shape",
+      "concentricMorph": 0.9,
+      "sectors": [
+        {
+          "id": "bn-tier-2-sec-1",
+          "sectorIndex": 0,
+          "name": "2F-鸟巢贵宾包厢-A",
+          "startAngleDeg": 0,
+          "endAngleDeg": 10.3,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 5,
+          "rowPitch": 1.35,
+          "riserHeight": 0.601,
+          "slopeDeg": 24,
+          "seatSpacing": 0.72,
+          "vomitory": {
+            "id": "bn-tier-2-sec-1-vom",
+            "position": "none",
+            "width": 3.2,
+            "rowSpan": 2,
+            "startRow": 1
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.15,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.5,
+            "aisleHandrailEnabled": true,
+            "material": "tempered-glass"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-2-sec-2",
+          "sectorIndex": 1,
+          "name": "2F-鸟巢贵宾包厢-B",
+          "startAngleDeg": 10.3,
+          "endAngleDeg": 20.29,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 5,
+          "rowPitch": 1.35,
+          "riserHeight": 0.601,
+          "slopeDeg": 24,
+          "seatSpacing": 0.72,
+          "vomitory": {
+            "id": "bn-tier-2-sec-2-vom",
+            "position": "none",
+            "width": 3.2,
+            "rowSpan": 2,
+            "startRow": 1
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.15,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.5,
+            "aisleHandrailEnabled": true,
+            "material": "tempered-glass"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-2-sec-3",
+          "sectorIndex": 2,
+          "name": "2F-鸟巢贵宾包厢-C",
+          "startAngleDeg": 20.29,
+          "endAngleDeg": 30.25,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 5,
+          "rowPitch": 1.35,
+          "riserHeight": 0.601,
+          "slopeDeg": 24,
+          "seatSpacing": 0.72,
+          "vomitory": {
+            "id": "bn-tier-2-sec-3-vom",
+            "position": "none",
+            "width": 3.2,
+            "rowSpan": 2,
+            "startRow": 1
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.15,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.5,
+            "aisleHandrailEnabled": true,
+            "material": "tempered-glass"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-2-sec-4",
+          "sectorIndex": 3,
+          "name": "2F-鸟巢贵宾包厢-D",
+          "startAngleDeg": 30.25,
+          "endAngleDeg": 39.92,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 5,
+          "rowPitch": 1.35,
+          "riserHeight": 0.601,
+          "slopeDeg": 24,
+          "seatSpacing": 0.72,
+          "vomitory": {
+            "id": "bn-tier-2-sec-4-vom",
+            "position": "none",
+            "width": 3.2,
+            "rowSpan": 2,
+            "startRow": 1
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.15,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.5,
+            "aisleHandrailEnabled": true,
+            "material": "tempered-glass"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-2-sec-5",
+          "sectorIndex": 4,
+          "name": "2F-鸟巢贵宾包厢-E",
+          "startAngleDeg": 39.92,
+          "endAngleDeg": 49.02,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 5,
+          "rowPitch": 1.35,
+          "riserHeight": 0.601,
+          "slopeDeg": 24,
+          "seatSpacing": 0.72,
+          "vomitory": {
+            "id": "bn-tier-2-sec-5-vom",
+            "position": "none",
+            "width": 3.2,
+            "rowSpan": 2,
+            "startRow": 1
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.15,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.5,
+            "aisleHandrailEnabled": true,
+            "material": "tempered-glass"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-2-sec-6",
+          "sectorIndex": 5,
+          "name": "2F-鸟巢贵宾包厢-F",
+          "startAngleDeg": 49.02,
+          "endAngleDeg": 59.92,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 5,
+          "rowPitch": 1.35,
+          "riserHeight": 0.601,
+          "slopeDeg": 24,
+          "seatSpacing": 0.72,
+          "vomitory": {
+            "id": "bn-tier-2-sec-6-vom",
+            "position": "none",
+            "width": 3.2,
+            "rowSpan": 2,
+            "startRow": 1
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.15,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.5,
+            "aisleHandrailEnabled": true,
+            "material": "tempered-glass"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-2-sec-7",
+          "sectorIndex": 6,
+          "name": "2F-鸟巢贵宾包厢-G",
+          "startAngleDeg": 59.92,
+          "endAngleDeg": 73.85,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 5,
+          "rowPitch": 1.35,
+          "riserHeight": 0.601,
+          "slopeDeg": 24,
+          "seatSpacing": 0.72,
+          "vomitory": {
+            "id": "bn-tier-2-sec-7-vom",
+            "position": "none",
+            "width": 3.2,
+            "rowSpan": 2,
+            "startRow": 1
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.15,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.5,
+            "aisleHandrailEnabled": true,
+            "material": "tempered-glass"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-2-sec-8",
+          "sectorIndex": 7,
+          "name": "2F-鸟巢贵宾包厢-H",
+          "startAngleDeg": 73.85,
+          "endAngleDeg": 90,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 5,
+          "rowPitch": 1.35,
+          "riserHeight": 0.601,
+          "slopeDeg": 24,
+          "seatSpacing": 0.72,
+          "vomitory": {
+            "id": "bn-tier-2-sec-8-vom",
+            "position": "none",
+            "width": 3.2,
+            "rowSpan": 2,
+            "startRow": 1
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.15,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.5,
+            "aisleHandrailEnabled": true,
+            "material": "tempered-glass"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-2-sec-9",
+          "sectorIndex": 8,
+          "name": "2F-鸟巢贵宾包厢-I",
+          "startAngleDeg": 90,
+          "endAngleDeg": 106.15,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 5,
+          "rowPitch": 1.35,
+          "riserHeight": 0.601,
+          "slopeDeg": 24,
+          "seatSpacing": 0.72,
+          "vomitory": {
+            "id": "bn-tier-2-sec-9-vom",
+            "position": "none",
+            "width": 3.2,
+            "rowSpan": 2,
+            "startRow": 1
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.15,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.5,
+            "aisleHandrailEnabled": true,
+            "material": "tempered-glass"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-2-sec-10",
+          "sectorIndex": 9,
+          "name": "2F-鸟巢贵宾包厢-J",
+          "startAngleDeg": 106.15,
+          "endAngleDeg": 120.08,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 5,
+          "rowPitch": 1.35,
+          "riserHeight": 0.601,
+          "slopeDeg": 24,
+          "seatSpacing": 0.72,
+          "vomitory": {
+            "id": "bn-tier-2-sec-10-vom",
+            "position": "none",
+            "width": 3.2,
+            "rowSpan": 2,
+            "startRow": 1
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.15,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.5,
+            "aisleHandrailEnabled": true,
+            "material": "tempered-glass"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-2-sec-11",
+          "sectorIndex": 10,
+          "name": "2F-鸟巢贵宾包厢-K",
+          "startAngleDeg": 120.08,
+          "endAngleDeg": 130.98,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 5,
+          "rowPitch": 1.35,
+          "riserHeight": 0.601,
+          "slopeDeg": 24,
+          "seatSpacing": 0.72,
+          "vomitory": {
+            "id": "bn-tier-2-sec-11-vom",
+            "position": "none",
+            "width": 3.2,
+            "rowSpan": 2,
+            "startRow": 1
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.15,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.5,
+            "aisleHandrailEnabled": true,
+            "material": "tempered-glass"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-2-sec-12",
+          "sectorIndex": 11,
+          "name": "2F-鸟巢贵宾包厢-L",
+          "startAngleDeg": 130.98,
+          "endAngleDeg": 140.08,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 5,
+          "rowPitch": 1.35,
+          "riserHeight": 0.601,
+          "slopeDeg": 24,
+          "seatSpacing": 0.72,
+          "vomitory": {
+            "id": "bn-tier-2-sec-12-vom",
+            "position": "none",
+            "width": 3.2,
+            "rowSpan": 2,
+            "startRow": 1
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.15,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.5,
+            "aisleHandrailEnabled": true,
+            "material": "tempered-glass"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-2-sec-13",
+          "sectorIndex": 12,
+          "name": "2F-M",
+          "startAngleDeg": 140.08,
+          "endAngleDeg": 149.75,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 5,
+          "rowPitch": 1.35,
+          "riserHeight": 0.601,
+          "slopeDeg": 24,
+          "seatSpacing": 0.72,
+          "vomitory": {
+            "id": "bn-tier-2-sec-13-vom",
+            "position": "none",
+            "width": 3.2,
+            "rowSpan": 2,
+            "startRow": 1
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.15,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.5,
+            "aisleHandrailEnabled": true,
+            "material": "tempered-glass"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-2-sec-14",
+          "sectorIndex": 13,
+          "name": "2F-N",
+          "startAngleDeg": 149.75,
+          "endAngleDeg": 159.71,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 5,
+          "rowPitch": 1.35,
+          "riserHeight": 0.601,
+          "slopeDeg": 24,
+          "seatSpacing": 0.72,
+          "vomitory": {
+            "id": "bn-tier-2-sec-14-vom",
+            "position": "none",
+            "width": 3.2,
+            "rowSpan": 2,
+            "startRow": 1
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.15,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.5,
+            "aisleHandrailEnabled": true,
+            "material": "tempered-glass"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-2-sec-15",
+          "sectorIndex": 14,
+          "name": "2F-O",
+          "startAngleDeg": 159.71,
+          "endAngleDeg": 169.7,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 5,
+          "rowPitch": 1.35,
+          "riserHeight": 0.601,
+          "slopeDeg": 24,
+          "seatSpacing": 0.72,
+          "vomitory": {
+            "id": "bn-tier-2-sec-15-vom",
+            "position": "none",
+            "width": 3.2,
+            "rowSpan": 2,
+            "startRow": 1
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.15,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.5,
+            "aisleHandrailEnabled": true,
+            "material": "tempered-glass"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-2-sec-16",
+          "sectorIndex": 15,
+          "name": "2F-P",
+          "startAngleDeg": 169.7,
+          "endAngleDeg": 180,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 5,
+          "rowPitch": 1.35,
+          "riserHeight": 0.601,
+          "slopeDeg": 24,
+          "seatSpacing": 0.72,
+          "vomitory": {
+            "id": "bn-tier-2-sec-16-vom",
+            "position": "none",
+            "width": 3.2,
+            "rowSpan": 2,
+            "startRow": 1
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.15,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.5,
+            "aisleHandrailEnabled": true,
+            "material": "tempered-glass"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-2-sec-17",
+          "sectorIndex": 16,
+          "name": "2F-Q",
+          "startAngleDeg": 180,
+          "endAngleDeg": 190.3,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 5,
+          "rowPitch": 1.35,
+          "riserHeight": 0.601,
+          "slopeDeg": 24,
+          "seatSpacing": 0.72,
+          "vomitory": {
+            "id": "bn-tier-2-sec-17-vom",
+            "position": "none",
+            "width": 3.2,
+            "rowSpan": 2,
+            "startRow": 1
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.15,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.5,
+            "aisleHandrailEnabled": true,
+            "material": "tempered-glass"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-2-sec-18",
+          "sectorIndex": 17,
+          "name": "2F-R",
+          "startAngleDeg": 190.3,
+          "endAngleDeg": 200.29,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 5,
+          "rowPitch": 1.35,
+          "riserHeight": 0.601,
+          "slopeDeg": 24,
+          "seatSpacing": 0.72,
+          "vomitory": {
+            "id": "bn-tier-2-sec-18-vom",
+            "position": "none",
+            "width": 3.2,
+            "rowSpan": 2,
+            "startRow": 1
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.15,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.5,
+            "aisleHandrailEnabled": true,
+            "material": "tempered-glass"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-2-sec-19",
+          "sectorIndex": 18,
+          "name": "2F-S",
+          "startAngleDeg": 200.29,
+          "endAngleDeg": 210.25,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 5,
+          "rowPitch": 1.35,
+          "riserHeight": 0.601,
+          "slopeDeg": 24,
+          "seatSpacing": 0.72,
+          "vomitory": {
+            "id": "bn-tier-2-sec-19-vom",
+            "position": "none",
+            "width": 3.2,
+            "rowSpan": 2,
+            "startRow": 1
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.15,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.5,
+            "aisleHandrailEnabled": true,
+            "material": "tempered-glass"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-2-sec-20",
+          "sectorIndex": 19,
+          "name": "2F-T",
+          "startAngleDeg": 210.25,
+          "endAngleDeg": 219.92,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 5,
+          "rowPitch": 1.35,
+          "riserHeight": 0.601,
+          "slopeDeg": 24,
+          "seatSpacing": 0.72,
+          "vomitory": {
+            "id": "bn-tier-2-sec-20-vom",
+            "position": "none",
+            "width": 3.2,
+            "rowSpan": 2,
+            "startRow": 1
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.15,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.5,
+            "aisleHandrailEnabled": true,
+            "material": "tempered-glass"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-2-sec-21",
+          "sectorIndex": 20,
+          "name": "2F-U",
+          "startAngleDeg": 219.92,
+          "endAngleDeg": 229.02,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 5,
+          "rowPitch": 1.35,
+          "riserHeight": 0.601,
+          "slopeDeg": 24,
+          "seatSpacing": 0.72,
+          "vomitory": {
+            "id": "bn-tier-2-sec-21-vom",
+            "position": "none",
+            "width": 3.2,
+            "rowSpan": 2,
+            "startRow": 1
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.15,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.5,
+            "aisleHandrailEnabled": true,
+            "material": "tempered-glass"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-2-sec-22",
+          "sectorIndex": 21,
+          "name": "2F-V",
+          "startAngleDeg": 229.02,
+          "endAngleDeg": 239.92,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 5,
+          "rowPitch": 1.35,
+          "riserHeight": 0.601,
+          "slopeDeg": 24,
+          "seatSpacing": 0.72,
+          "vomitory": {
+            "id": "bn-tier-2-sec-22-vom",
+            "position": "none",
+            "width": 3.2,
+            "rowSpan": 2,
+            "startRow": 1
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.15,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.5,
+            "aisleHandrailEnabled": true,
+            "material": "tempered-glass"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-2-sec-23",
+          "sectorIndex": 22,
+          "name": "2F-W",
+          "startAngleDeg": 239.92,
+          "endAngleDeg": 253.85,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 5,
+          "rowPitch": 1.35,
+          "riserHeight": 0.601,
+          "slopeDeg": 24,
+          "seatSpacing": 0.72,
+          "vomitory": {
+            "id": "bn-tier-2-sec-23-vom",
+            "position": "none",
+            "width": 3.2,
+            "rowSpan": 2,
+            "startRow": 1
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.15,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.5,
+            "aisleHandrailEnabled": true,
+            "material": "tempered-glass"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-2-sec-24",
+          "sectorIndex": 23,
+          "name": "2F-X",
+          "startAngleDeg": 253.85,
+          "endAngleDeg": 270,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 5,
+          "rowPitch": 1.35,
+          "riserHeight": 0.601,
+          "slopeDeg": 24,
+          "seatSpacing": 0.72,
+          "vomitory": {
+            "id": "bn-tier-2-sec-24-vom",
+            "position": "none",
+            "width": 3.2,
+            "rowSpan": 2,
+            "startRow": 1
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.15,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.5,
+            "aisleHandrailEnabled": true,
+            "material": "tempered-glass"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-2-sec-25",
+          "sectorIndex": 24,
+          "name": "2F-Y",
+          "startAngleDeg": 270,
+          "endAngleDeg": 286.15,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 5,
+          "rowPitch": 1.35,
+          "riserHeight": 0.601,
+          "slopeDeg": 24,
+          "seatSpacing": 0.72,
+          "vomitory": {
+            "id": "bn-tier-2-sec-25-vom",
+            "position": "none",
+            "width": 3.2,
+            "rowSpan": 2,
+            "startRow": 1
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.15,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.5,
+            "aisleHandrailEnabled": true,
+            "material": "tempered-glass"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-2-sec-26",
+          "sectorIndex": 25,
+          "name": "2F-Z",
+          "startAngleDeg": 286.15,
+          "endAngleDeg": 300.08,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 5,
+          "rowPitch": 1.35,
+          "riserHeight": 0.601,
+          "slopeDeg": 24,
+          "seatSpacing": 0.72,
+          "vomitory": {
+            "id": "bn-tier-2-sec-26-vom",
+            "position": "none",
+            "width": 3.2,
+            "rowSpan": 2,
+            "startRow": 1
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.15,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.5,
+            "aisleHandrailEnabled": true,
+            "material": "tempered-glass"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-2-sec-27",
+          "sectorIndex": 26,
+          "name": "2F-A1",
+          "startAngleDeg": 300.08,
+          "endAngleDeg": 310.98,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 5,
+          "rowPitch": 1.35,
+          "riserHeight": 0.601,
+          "slopeDeg": 24,
+          "seatSpacing": 0.72,
+          "vomitory": {
+            "id": "bn-tier-2-sec-27-vom",
+            "position": "none",
+            "width": 3.2,
+            "rowSpan": 2,
+            "startRow": 1
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.15,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.5,
+            "aisleHandrailEnabled": true,
+            "material": "tempered-glass"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-2-sec-28",
+          "sectorIndex": 27,
+          "name": "2F-B1",
+          "startAngleDeg": 310.98,
+          "endAngleDeg": 320.08,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 5,
+          "rowPitch": 1.35,
+          "riserHeight": 0.601,
+          "slopeDeg": 24,
+          "seatSpacing": 0.72,
+          "vomitory": {
+            "id": "bn-tier-2-sec-28-vom",
+            "position": "none",
+            "width": 3.2,
+            "rowSpan": 2,
+            "startRow": 1
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.15,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.5,
+            "aisleHandrailEnabled": true,
+            "material": "tempered-glass"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-2-sec-29",
+          "sectorIndex": 28,
+          "name": "2F-C1",
+          "startAngleDeg": 320.08,
+          "endAngleDeg": 329.75,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 5,
+          "rowPitch": 1.35,
+          "riserHeight": 0.601,
+          "slopeDeg": 24,
+          "seatSpacing": 0.72,
+          "vomitory": {
+            "id": "bn-tier-2-sec-29-vom",
+            "position": "none",
+            "width": 3.2,
+            "rowSpan": 2,
+            "startRow": 1
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.15,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.5,
+            "aisleHandrailEnabled": true,
+            "material": "tempered-glass"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-2-sec-30",
+          "sectorIndex": 29,
+          "name": "2F-D1",
+          "startAngleDeg": 329.75,
+          "endAngleDeg": 339.71,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 5,
+          "rowPitch": 1.35,
+          "riserHeight": 0.601,
+          "slopeDeg": 24,
+          "seatSpacing": 0.72,
+          "vomitory": {
+            "id": "bn-tier-2-sec-30-vom",
+            "position": "none",
+            "width": 3.2,
+            "rowSpan": 2,
+            "startRow": 1
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.15,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.5,
+            "aisleHandrailEnabled": true,
+            "material": "tempered-glass"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-2-sec-31",
+          "sectorIndex": 30,
+          "name": "2F-E1",
+          "startAngleDeg": 339.71,
+          "endAngleDeg": 349.7,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 5,
+          "rowPitch": 1.35,
+          "riserHeight": 0.601,
+          "slopeDeg": 24,
+          "seatSpacing": 0.72,
+          "vomitory": {
+            "id": "bn-tier-2-sec-31-vom",
+            "position": "none",
+            "width": 3.2,
+            "rowSpan": 2,
+            "startRow": 1
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.15,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.5,
+            "aisleHandrailEnabled": true,
+            "material": "tempered-glass"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-2-sec-32",
+          "sectorIndex": 31,
+          "name": "2F-F1",
+          "startAngleDeg": 349.7,
+          "endAngleDeg": 360,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 5,
+          "rowPitch": 1.35,
+          "riserHeight": 0.601,
+          "slopeDeg": 24,
+          "seatSpacing": 0.72,
+          "vomitory": {
+            "id": "bn-tier-2-sec-32-vom",
+            "position": "none",
+            "width": 3.2,
+            "rowSpan": 2,
+            "startRow": 1
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.15,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.5,
+            "aisleHandrailEnabled": true,
+            "material": "tempered-glass"
+          },
+          "vipBoxRooms": 0
+        }
+      ]
+    },
+    {
+      "id": "bn-tier-3",
+      "level": 3,
+      "name": "三层高区马鞍形看台 (3F Upper Saddle Bowl)",
+      "innerOffset": 3.2,
+      "radialDepth": 21,
+      "baseElevation": 13.6,
+      "sectorCount": 32,
+      "defaultFillType": "standard",
+      "defaultRows": 38,
+      "defaultRowPitch": 0.85,
+      "defaultSlopeDeg": 28,
+      "defaultSeatSpacing": 0.5,
+      "defaultExitCount": 32,
+      "radialAisleWidth": 2.2,
+      "defaultGuardrail": {
+        "frontRailEnabled": true,
+        "frontRailHeight": 1.2,
+        "rearWallEnabled": true,
+        "rearWallHeight": 1.8,
+        "aisleHandrailEnabled": true,
+        "material": "steel-balustrade"
+      },
+      "morphMode": "concentric-circle",
+      "concentricMorph": 0.75,
+      "sectors": [
+        {
+          "id": "bn-tier-3-sec-1",
+          "sectorIndex": 0,
+          "name": "北侧火炬台与天际线观景镂空区 (Torch Vista)",
+          "startAngleDeg": 0,
+          "endAngleDeg": 10.3,
+          "fillType": "standard",
+          "useCustomOverrides": true,
+          "rows": 38,
+          "rowPitch": 0.85,
+          "riserHeight": 0.452,
+          "slopeDeg": 28,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-3-vom-1",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 9
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.2,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.8,
+            "aisleHandrailEnabled": true,
+            "material": "steel-balustrade"
+          },
+          "vipBoxRooms": 0,
+          "isDeleted": false
+        },
+        {
+          "id": "bn-tier-3-sec-2",
+          "sectorIndex": 1,
+          "name": "3F-B",
+          "startAngleDeg": 10.3,
+          "endAngleDeg": 20.29,
+          "fillType": "standard",
+          "useCustomOverrides": false,
+          "rows": 38,
+          "rowPitch": 0.85,
+          "riserHeight": 0.452,
+          "slopeDeg": 28,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-3-vom-2",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 9
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.2,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.8,
+            "aisleHandrailEnabled": true,
+            "material": "steel-balustrade"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-3-sec-3",
+          "sectorIndex": 2,
+          "name": "3F-C",
+          "startAngleDeg": 20.29,
+          "endAngleDeg": 30.25,
+          "fillType": "standard",
+          "useCustomOverrides": false,
+          "rows": 38,
+          "rowPitch": 0.85,
+          "riserHeight": 0.452,
+          "slopeDeg": 28,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-3-vom-3",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 9
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.2,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.8,
+            "aisleHandrailEnabled": true,
+            "material": "steel-balustrade"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-3-sec-4",
+          "sectorIndex": 3,
+          "name": "3F-D",
+          "startAngleDeg": 30.25,
+          "endAngleDeg": 39.92,
+          "fillType": "standard",
+          "useCustomOverrides": false,
+          "rows": 38,
+          "rowPitch": 0.85,
+          "riserHeight": 0.452,
+          "slopeDeg": 28,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-3-vom-4",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 9
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.2,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.8,
+            "aisleHandrailEnabled": true,
+            "material": "steel-balustrade"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-3-sec-5",
+          "sectorIndex": 4,
+          "name": "3F-E",
+          "startAngleDeg": 39.92,
+          "endAngleDeg": 49.02,
+          "fillType": "standard",
+          "useCustomOverrides": false,
+          "rows": 38,
+          "rowPitch": 0.85,
+          "riserHeight": 0.452,
+          "slopeDeg": 28,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-3-vom-5",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 9
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.2,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.8,
+            "aisleHandrailEnabled": true,
+            "material": "steel-balustrade"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-3-sec-6",
+          "sectorIndex": 5,
+          "name": "3F-F",
+          "startAngleDeg": 49.02,
+          "endAngleDeg": 59.92,
+          "fillType": "standard",
+          "useCustomOverrides": false,
+          "rows": 38,
+          "rowPitch": 0.85,
+          "riserHeight": 0.452,
+          "slopeDeg": 28,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-3-vom-6",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 9
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.2,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.8,
+            "aisleHandrailEnabled": true,
+            "material": "steel-balustrade"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-3-sec-7",
+          "sectorIndex": 6,
+          "name": "3F-G",
+          "startAngleDeg": 59.92,
+          "endAngleDeg": 73.85,
+          "fillType": "standard",
+          "useCustomOverrides": false,
+          "rows": 38,
+          "rowPitch": 0.85,
+          "riserHeight": 0.452,
+          "slopeDeg": 28,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-3-vom-7",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 9
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.2,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.8,
+            "aisleHandrailEnabled": true,
+            "material": "steel-balustrade"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-3-sec-8",
+          "sectorIndex": 7,
+          "name": "3F-H",
+          "startAngleDeg": 73.85,
+          "endAngleDeg": 90,
+          "fillType": "standard",
+          "useCustomOverrides": false,
+          "rows": 38,
+          "rowPitch": 0.85,
+          "riserHeight": 0.452,
+          "slopeDeg": 28,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-3-vom-8",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 9
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.2,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.8,
+            "aisleHandrailEnabled": true,
+            "material": "steel-balustrade"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-3-sec-9",
+          "sectorIndex": 8,
+          "name": "3F-I",
+          "startAngleDeg": 90,
+          "endAngleDeg": 106.15,
+          "fillType": "standard",
+          "useCustomOverrides": false,
+          "rows": 38,
+          "rowPitch": 0.85,
+          "riserHeight": 0.452,
+          "slopeDeg": 28,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-3-vom-9",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 9
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.2,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.8,
+            "aisleHandrailEnabled": true,
+            "material": "steel-balustrade"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-3-sec-10",
+          "sectorIndex": 9,
+          "name": "3F-J",
+          "startAngleDeg": 106.15,
+          "endAngleDeg": 120.08,
+          "fillType": "standard",
+          "useCustomOverrides": false,
+          "rows": 38,
+          "rowPitch": 0.85,
+          "riserHeight": 0.452,
+          "slopeDeg": 28,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-3-vom-10",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 9
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.2,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.8,
+            "aisleHandrailEnabled": true,
+            "material": "steel-balustrade"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-3-sec-11",
+          "sectorIndex": 10,
+          "name": "3F-K",
+          "startAngleDeg": 120.08,
+          "endAngleDeg": 130.98,
+          "fillType": "standard",
+          "useCustomOverrides": false,
+          "rows": 38,
+          "rowPitch": 0.85,
+          "riserHeight": 0.452,
+          "slopeDeg": 28,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-3-vom-11",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 9
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.2,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.8,
+            "aisleHandrailEnabled": true,
+            "material": "steel-balustrade"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-3-sec-12",
+          "sectorIndex": 11,
+          "name": "3F-L",
+          "startAngleDeg": 130.98,
+          "endAngleDeg": 140.08,
+          "fillType": "standard",
+          "useCustomOverrides": false,
+          "rows": 38,
+          "rowPitch": 0.85,
+          "riserHeight": 0.452,
+          "slopeDeg": 28,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-3-vom-12",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 9
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.2,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.8,
+            "aisleHandrailEnabled": true,
+            "material": "steel-balustrade"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-3-sec-13",
+          "sectorIndex": 12,
+          "name": "3F-M",
+          "startAngleDeg": 140.08,
+          "endAngleDeg": 149.75,
+          "fillType": "standard",
+          "useCustomOverrides": false,
+          "rows": 38,
+          "rowPitch": 0.85,
+          "riserHeight": 0.452,
+          "slopeDeg": 28,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-3-vom-13",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 9
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.2,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.8,
+            "aisleHandrailEnabled": true,
+            "material": "steel-balustrade"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-3-sec-14",
+          "sectorIndex": 13,
+          "name": "3F-N",
+          "startAngleDeg": 149.75,
+          "endAngleDeg": 159.71,
+          "fillType": "standard",
+          "useCustomOverrides": false,
+          "rows": 38,
+          "rowPitch": 0.85,
+          "riserHeight": 0.452,
+          "slopeDeg": 28,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-3-vom-14",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 9
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.2,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.8,
+            "aisleHandrailEnabled": true,
+            "material": "steel-balustrade"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-3-sec-15",
+          "sectorIndex": 14,
+          "name": "3F-O",
+          "startAngleDeg": 159.71,
+          "endAngleDeg": 169.7,
+          "fillType": "standard",
+          "useCustomOverrides": false,
+          "rows": 38,
+          "rowPitch": 0.85,
+          "riserHeight": 0.452,
+          "slopeDeg": 28,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-3-vom-15",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 9
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.2,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.8,
+            "aisleHandrailEnabled": true,
+            "material": "steel-balustrade"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-3-sec-16",
+          "sectorIndex": 15,
+          "name": "3F-P",
+          "startAngleDeg": 169.7,
+          "endAngleDeg": 180,
+          "fillType": "standard",
+          "useCustomOverrides": false,
+          "rows": 38,
+          "rowPitch": 0.85,
+          "riserHeight": 0.452,
+          "slopeDeg": 28,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-3-vom-16",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 9
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.2,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.8,
+            "aisleHandrailEnabled": true,
+            "material": "steel-balustrade"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-3-sec-17",
+          "sectorIndex": 16,
+          "name": "3F-Q",
+          "startAngleDeg": 180,
+          "endAngleDeg": 190.3,
+          "fillType": "standard",
+          "useCustomOverrides": false,
+          "rows": 38,
+          "rowPitch": 0.85,
+          "riserHeight": 0.452,
+          "slopeDeg": 28,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-3-vom-17",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 9
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.2,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.8,
+            "aisleHandrailEnabled": true,
+            "material": "steel-balustrade"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-3-sec-18",
+          "sectorIndex": 17,
+          "name": "3F-R",
+          "startAngleDeg": 190.3,
+          "endAngleDeg": 200.29,
+          "fillType": "standard",
+          "useCustomOverrides": false,
+          "rows": 38,
+          "rowPitch": 0.85,
+          "riserHeight": 0.452,
+          "slopeDeg": 28,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-3-vom-18",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 9
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.2,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.8,
+            "aisleHandrailEnabled": true,
+            "material": "steel-balustrade"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-3-sec-19",
+          "sectorIndex": 18,
+          "name": "3F-S",
+          "startAngleDeg": 200.29,
+          "endAngleDeg": 210.25,
+          "fillType": "standard",
+          "useCustomOverrides": false,
+          "rows": 38,
+          "rowPitch": 0.85,
+          "riserHeight": 0.452,
+          "slopeDeg": 28,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-3-vom-19",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 9
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.2,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.8,
+            "aisleHandrailEnabled": true,
+            "material": "steel-balustrade"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-3-sec-20",
+          "sectorIndex": 19,
+          "name": "3F-T",
+          "startAngleDeg": 210.25,
+          "endAngleDeg": 219.92,
+          "fillType": "standard",
+          "useCustomOverrides": false,
+          "rows": 38,
+          "rowPitch": 0.85,
+          "riserHeight": 0.452,
+          "slopeDeg": 28,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-3-vom-20",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 9
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.2,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.8,
+            "aisleHandrailEnabled": true,
+            "material": "steel-balustrade"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-3-sec-21",
+          "sectorIndex": 20,
+          "name": "3F-U",
+          "startAngleDeg": 219.92,
+          "endAngleDeg": 229.02,
+          "fillType": "standard",
+          "useCustomOverrides": false,
+          "rows": 38,
+          "rowPitch": 0.85,
+          "riserHeight": 0.452,
+          "slopeDeg": 28,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-3-vom-21",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 9
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.2,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.8,
+            "aisleHandrailEnabled": true,
+            "material": "steel-balustrade"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-3-sec-22",
+          "sectorIndex": 21,
+          "name": "3F-V",
+          "startAngleDeg": 229.02,
+          "endAngleDeg": 239.92,
+          "fillType": "standard",
+          "useCustomOverrides": false,
+          "rows": 38,
+          "rowPitch": 0.85,
+          "riserHeight": 0.452,
+          "slopeDeg": 28,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-3-vom-22",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 9
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.2,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.8,
+            "aisleHandrailEnabled": true,
+            "material": "steel-balustrade"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-3-sec-23",
+          "sectorIndex": 22,
+          "name": "3F-W",
+          "startAngleDeg": 239.92,
+          "endAngleDeg": 253.85,
+          "fillType": "standard",
+          "useCustomOverrides": false,
+          "rows": 38,
+          "rowPitch": 0.85,
+          "riserHeight": 0.452,
+          "slopeDeg": 28,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-3-vom-23",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 9
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.2,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.8,
+            "aisleHandrailEnabled": true,
+            "material": "steel-balustrade"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-3-sec-24",
+          "sectorIndex": 23,
+          "name": "3F-X",
+          "startAngleDeg": 253.85,
+          "endAngleDeg": 270,
+          "fillType": "standard",
+          "useCustomOverrides": false,
+          "rows": 38,
+          "rowPitch": 0.85,
+          "riserHeight": 0.452,
+          "slopeDeg": 28,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-3-vom-24",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 9
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.2,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.8,
+            "aisleHandrailEnabled": true,
+            "material": "steel-balustrade"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-3-sec-25",
+          "sectorIndex": 24,
+          "name": "3F-Y",
+          "startAngleDeg": 270,
+          "endAngleDeg": 286.15,
+          "fillType": "standard",
+          "useCustomOverrides": false,
+          "rows": 38,
+          "rowPitch": 0.85,
+          "riserHeight": 0.452,
+          "slopeDeg": 28,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-3-vom-25",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 9
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.2,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.8,
+            "aisleHandrailEnabled": true,
+            "material": "steel-balustrade"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-3-sec-26",
+          "sectorIndex": 25,
+          "name": "3F-Z",
+          "startAngleDeg": 286.15,
+          "endAngleDeg": 300.08,
+          "fillType": "standard",
+          "useCustomOverrides": false,
+          "rows": 38,
+          "rowPitch": 0.85,
+          "riserHeight": 0.452,
+          "slopeDeg": 28,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-3-vom-26",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 9
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.2,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.8,
+            "aisleHandrailEnabled": true,
+            "material": "steel-balustrade"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-3-sec-27",
+          "sectorIndex": 26,
+          "name": "3F-A1",
+          "startAngleDeg": 300.08,
+          "endAngleDeg": 310.98,
+          "fillType": "standard",
+          "useCustomOverrides": false,
+          "rows": 38,
+          "rowPitch": 0.85,
+          "riserHeight": 0.452,
+          "slopeDeg": 28,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-3-vom-27",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 9
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.2,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.8,
+            "aisleHandrailEnabled": true,
+            "material": "steel-balustrade"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-3-sec-28",
+          "sectorIndex": 27,
+          "name": "3F-B1",
+          "startAngleDeg": 310.98,
+          "endAngleDeg": 320.08,
+          "fillType": "standard",
+          "useCustomOverrides": false,
+          "rows": 38,
+          "rowPitch": 0.85,
+          "riserHeight": 0.452,
+          "slopeDeg": 28,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-3-vom-28",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 9
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.2,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.8,
+            "aisleHandrailEnabled": true,
+            "material": "steel-balustrade"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-3-sec-29",
+          "sectorIndex": 28,
+          "name": "3F-C1",
+          "startAngleDeg": 320.08,
+          "endAngleDeg": 329.75,
+          "fillType": "standard",
+          "useCustomOverrides": false,
+          "rows": 38,
+          "rowPitch": 0.85,
+          "riserHeight": 0.452,
+          "slopeDeg": 28,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-3-vom-29",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 9
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.2,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.8,
+            "aisleHandrailEnabled": true,
+            "material": "steel-balustrade"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-3-sec-30",
+          "sectorIndex": 29,
+          "name": "3F-D1",
+          "startAngleDeg": 329.75,
+          "endAngleDeg": 339.71,
+          "fillType": "standard",
+          "useCustomOverrides": false,
+          "rows": 38,
+          "rowPitch": 0.85,
+          "riserHeight": 0.452,
+          "slopeDeg": 28,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-3-vom-30",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 9
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.2,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.8,
+            "aisleHandrailEnabled": true,
+            "material": "steel-balustrade"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-3-sec-31",
+          "sectorIndex": 30,
+          "name": "3F-E1",
+          "startAngleDeg": 339.71,
+          "endAngleDeg": 349.7,
+          "fillType": "standard",
+          "useCustomOverrides": false,
+          "rows": 38,
+          "rowPitch": 0.85,
+          "riserHeight": 0.452,
+          "slopeDeg": 28,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-3-vom-31",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 9
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.2,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.8,
+            "aisleHandrailEnabled": true,
+            "material": "steel-balustrade"
+          },
+          "vipBoxRooms": 0
+        },
+        {
+          "id": "bn-tier-3-sec-32",
+          "sectorIndex": 31,
+          "name": "3F-F1",
+          "startAngleDeg": 349.7,
+          "endAngleDeg": 360,
+          "fillType": "standard",
+          "useCustomOverrides": false,
+          "rows": 38,
+          "rowPitch": 0.85,
+          "riserHeight": 0.452,
+          "slopeDeg": 28,
+          "seatSpacing": 0.5,
+          "vomitory": {
+            "id": "bn-tier-3-vom-32",
+            "position": "center",
+            "width": 3.2,
+            "rowSpan": 6,
+            "startRow": 9
+          },
+          "guardrail": {
+            "frontRailEnabled": true,
+            "frontRailHeight": 1.2,
+            "rearWallEnabled": true,
+            "rearWallHeight": 1.8,
+            "aisleHandrailEnabled": true,
+            "material": "steel-balustrade"
+          },
+          "vipBoxRooms": 0
+        }
+      ]
+    }
+  ],
+  "sightlineConfig": {
+    "sectionAngleDeg": 90,
+    "focalPointOffsetFromPitchEdge": 4,
+    "spectatorEyeHeight": 1.15,
+    "targetCValueMm": 90,
+    "showIdealParabolicCurve": true
+  },
+  "engineeringSummary": {
+    "totalCapacity": 95352,
+    "infieldFlatCapacity": 0,
+    "infieldSlopedCapacity": 0,
+    "standardStandCapacity": 95352,
+    "vipBoxCapacity": 0,
+    "totalVipRooms": 0,
+    "totalSafetyExits": 52,
+    "outermostFootprintLengthM": 310,
+    "outermostFootprintWidthM": 292.5,
+    "maxBowlElevationM": 30.3,
+    "minCValueMm": 81.5,
+    "avgCValueMm": 169.7,
+    "cValueComplianceRate": 93
+  }
+}

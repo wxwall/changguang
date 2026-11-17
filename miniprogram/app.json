@@ -1,0 +1,14 @@
+{
+  "pages": [
+    "pages/index/index"
+  ],
+  "window": {
+    "backgroundTextStyle": "dark",
+    "navigationBarBackgroundColor": "#0B0F19",
+    "navigationBarTitleText": "STADIACAD 3D 场馆视野引擎",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#0B0F19"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}
