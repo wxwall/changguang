@@ -53,10 +53,10 @@ function getRayRoundedRectDistance(angleDeg, length, width, cornerRadius) {
 /**
  * Computes the exact inner and outer radial distance of a tier at angleDeg,
  * strictly matching STADIACAD 2.0.0 engineeringSummary footprint math:
- * - When morphMode === 'infield-shape': follows rounded-rectangle infield perimeter (morph = 0).
- * - When morphMode === 'concentric-circle': interpolates infield perimeter toward circle
- *   of radius (Math.max(length, width) / 2) using tier.concentricMorph.
- * - radialDepth and customRadialDepth are horizontal plan projections.
+ * - Tracks prevOuterMorph across tiers so a 'concentric-circle' tier (e.g. Bird's Nest 3F)
+ *   anchors its inner ring continuously to the previous tier's outer shape, while only
+ *   its outer ring transitions toward the concentric circle target.
+ * - 'radialDepth' and 'customRadialDepth' are horizontal plan projections.
  */
 function computeTierRadialBounds(venue, tierIndex, angleDeg, customRadialDepth) {
   const infield = venue.infield;
@@ -72,26 +72,65 @@ function computeTierRadialBounds(venue, tierIndex, angleDeg, customRadialDepth) 
   const majorHalfRadius = Math.max(infield.length, infield.width) / 2;
 
   let cumulativeOffset = 0;
-  for (let i = 0; i <= tierIndex; i++) {
+  let prevOuterMorph = 0;
+  for (let i = 0; i < tierIndex; i++) {
     const t = tiers[i];
-    cumulativeOffset += (t.innerOffset || 0);
-    if (i < tierIndex) {
-      cumulativeOffset += (t.radialDepth || 20);
+    cumulativeOffset += (t.innerOffset || 0) + (t.radialDepth || 20);
+    if (t.morphMode === 'concentric-circle') {
+      prevOuterMorph = t.concentricMorph || 0;
+    } else {
+      prevOuterMorph = 0;
     }
   }
 
   const tier = tiers[tierIndex];
-  const morph = tier.morphMode === 'concentric-circle' ? (tier.concentricMorph || 0) : 0;
+  const innerOffsetThisTier = tier.innerOffset || 0;
+  const cumulativeInnerOffset = cumulativeOffset + innerOffsetThisTier;
 
-  const baseInfield = infieldDist * (1 - morph) + majorHalfRadius * morph;
-  const innerRadius = baseInfield + cumulativeOffset;
+  const innerMorph = prevOuterMorph;
+  const outerMorph = tier.morphMode === 'concentric-circle'
+    ? (tier.concentricMorph || 0)
+    : 0;
+
+  const baseInner = infieldDist * (1 - innerMorph) + majorHalfRadius * innerMorph;
+  const baseOuter = infieldDist * (1 - outerMorph) + majorHalfRadius * outerMorph;
+
   const horizontalDepth = customRadialDepth || tier.radialDepth || 20;
+  const innerRadius = baseInner + cumulativeInnerOffset;
+  const outerRadius = baseOuter + cumulativeInnerOffset + horizontalDepth;
 
   return {
     innerRadius,
-    outerRadius: innerRadius + horizontalDepth,
-    horizontalDepth
+    outerRadius,
+    horizontalDepth: outerRadius - innerRadius
   };
+}
+
+/**
+ * Computes the true inward normal (fx, fz) perpendicular to the row curve
+ * at (angleDeg, rowFrac), ensuring seats never have a skew angle against
+ * straight or curved stand steps.
+ */
+function getRowInwardNormal(venue, tierIndex, angleDeg, rowFrac, customRadialDepth) {
+  const delta = 0.5;
+  const d1 = angleDeg - delta;
+  const d2 = angleDeg + delta;
+  const b1 = computeTierRadialBounds(venue, tierIndex, d1, customRadialDepth);
+  const b2 = computeTierRadialBounds(venue, tierIndex, d2, customRadialDepth);
+  const r1 = b1.innerRadius + (b1.outerRadius - b1.innerRadius) * rowFrac;
+  const r2 = b2.innerRadius + (b2.outerRadius - b2.innerRadius) * rowFrac;
+
+  const p1x = Math.sin(d1 * DEG2RAD) * r1;
+  const p1z = -Math.cos(d1 * DEG2RAD) * r1;
+  const p2x = Math.sin(d2 * DEG2RAD) * r2;
+  const p2z = -Math.cos(d2 * DEG2RAD) * r2;
+
+  const tx = p2x - p1x;
+  const tz = p2z - p1z;
+  const nx = -tz;
+  const nz = tx;
+  const len = Math.hypot(nx, nz) || 1;
+  return { x: nx / len, z: nz / len };
 }
 
 /**
@@ -367,16 +406,17 @@ function calculateSeatSightline(venue, selection, viewMode) {
   const tier = venue.standTiers[tierIndex] || venue.standTiers[0];
   const sector = (selection && selection.sector) || tier.sectors.find(s => !s.isDeleted && s.fillType !== 'empty-void') || tier.sectors[0];
 
+  const isVipBox = (sector.fillType || tier.defaultFillType) === 'vip-box';
   const totalRows = sector.rows || tier.defaultRows || 22;
   const row = Math.min(Math.max(1, (selection && selection.row) || 1), totalRows);
   const rowPitch = sector.rowPitch || tier.defaultRowPitch || 0.85;
-  const slopeDeg = sector.slopeDeg || tier.defaultSlopeDeg || 20;
-  const riserHeight = sector.riserHeight || Number((rowPitch * Math.tan(slopeDeg * DEG2RAD)).toFixed(3));
+  const slopeDeg = isVipBox ? 0 : (sector.slopeDeg || tier.defaultSlopeDeg || 20);
+  const riserHeight = isVipBox ? 0 : (sector.riserHeight || Number((rowPitch * Math.tan(slopeDeg * DEG2RAD)).toFixed(3)));
 
   const midAngleDeg = ((sector.startAngleDeg + sector.endAngleDeg) / 2) % 360;
   const bounds = computeTierRadialBounds(venue, tierIndex, midAngleDeg, sector.customRadialDepth);
 
-  // Map row 1..totalRows evenly across [innerRadius + 0.45, outerRadius - 0.45]
+  // Map row 1..totalRows evenly across [innerRadius + 0.5, outerRadius - 0.5]
   const rowFrac = totalRows > 1 ? (row - 1) / (totalRows - 1) : 0;
   const seatRadius = bounds.innerRadius + 0.5 + rowFrac * Math.max(0.5, bounds.horizontalDepth - 1.0);
   const seatElevation = (tier.baseElevation || 1.0) + (row - 1) * riserHeight;
@@ -387,7 +427,7 @@ function calculateSeatSightline(venue, selection, viewMode) {
   const focalRadius = getRayRoundedRectDistance(midAngleDeg, infield.pitchLength || 68, infield.pitchWidth || 45, 4) - (sightCfg.focalPointOffsetFromPitchEdge || 2);
   const D = Math.max(8, seatRadius - Math.max(0, focalRadius));
   const R = Math.max(0.5, eyeElevation);
-  const N = riserHeight;
+  const N = isVipBox ? 0.12 : riserHeight;
   const T = rowPitch;
   const cValueMeters = (D * (N + R)) / (D + T) - R;
   const cValueMm = Math.round(Math.max(15, Math.min(260, cValueMeters * 1000)));
@@ -434,7 +474,7 @@ function calculateSeatSightline(venue, selection, viewMode) {
     slopeDeg,
     rowPitch,
     riserHeight,
-    guardrailMaterial: guardrailMatMap[guardMat] || guardMat,
+    guardrailMaterial: tier.level === 1 ? '通透金属防坠栏杆' : (guardrailMatMap[guardMat] || guardMat),
     angleDeg: Number(midAngleDeg.toFixed(1))
   };
 }
@@ -444,6 +484,7 @@ module.exports = {
   RAD2DEG,
   getRayRoundedRectDistance,
   computeTierRadialBounds,
+  getRowInwardNormal,
   polarToWorld3D,
   generateConcertInfieldBlocks,
   findDefaultEastFirstRowSelection,

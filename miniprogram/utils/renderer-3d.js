@@ -18,6 +18,7 @@ const {
   DEG2RAD,
   getRayRoundedRectDistance,
   computeTierRadialBounds,
+  getRowInwardNormal,
   generateConcertInfieldBlocks
 } = require('./schema-geometry');
 
@@ -395,14 +396,15 @@ class Renderer3D {
 
   handleTouchDrag(dxPx, dyPx) {
     if (this.cameraMode === 'bird') {
-      this.orbitYaw -= dxPx * 0.007;
+      // Reversed 3D drag controls (both horizontal & vertical) per user preference
+      this.orbitYaw += dxPx * 0.007;
       // Clamp orbitPitch strictly between 17 deg and 79 deg so camera never dips under stadium
-      this.orbitPitch = Math.max(0.30, Math.min(1.38, this.orbitPitch + dyPx * 0.006));
+      this.orbitPitch = Math.max(0.30, Math.min(1.38, this.orbitPitch - dyPx * 0.006));
       this.updateBirdCameraTarget();
     } else {
       const sensitivity = 0.0035 / Math.sqrt(this.zoomLevel || 1);
-      this.seatYawOffset -= dxPx * sensitivity;
-      this.seatPitchOffset = Math.max(-0.55, Math.min(0.55, this.seatPitchOffset - dyPx * sensitivity));
+      this.seatYawOffset += dxPx * sensitivity;
+      this.seatPitchOffset = Math.max(-0.55, Math.min(0.55, this.seatPitchOffset + dyPx * sensitivity));
       this.updateSeatCameraTarget();
     }
   }
@@ -625,9 +627,10 @@ class Renderer3D {
     const modules = this.venue.infieldModules || [];
     modules.forEach((mod) => {
       const isSelected = mod.id === this.selectedModuleId;
-      const baseCol = isSelected ? [0.96, 0.25, 0.37, 1.0] : [0.06, 0.58, 0.42, 1.0];
-      const seatPanCol = isSelected ? [0.98, 0.42, 0.52, 1.0] : [0.10, 0.78, 0.56, 1.0];
-      const seatBackCol = isSelected ? [0.85, 0.14, 0.28, 1.0] : [0.04, 0.52, 0.36, 1.0];
+      // Keep seat colors consistent regardless of selection
+      const seatPanCol = [0.10, 0.78, 0.56, 1.0];
+      const seatBackCol = [0.04, 0.52, 0.36, 1.0];
+      const railCol = isSelected ? [0.98, 0.28, 0.45, 1.0] : [0.68, 0.74, 0.84, 1.0];
 
       const rotRad = (mod.rotationDeg || 0) * DEG2RAD;
       const cosR = Math.cos(rotRad);
@@ -639,7 +642,7 @@ class Renderer3D {
       const baseElev = mod.baseElevation || 0;
 
       // Platform deck
-      solid.addBox(cx, baseElev + 0.15, cz, w, 0.3, d, [0.16, 0.20, 0.28, 1.0], rotRad);
+      solid.addBox(cx, baseElev + 0.15, cz, w, 0.3, d, [0.20, 0.25, 0.34, 1.0], rotRad);
 
       // Populate rows of 3D seats inside the module
       const rows = mod.rows || 4;
@@ -664,8 +667,8 @@ class Renderer3D {
         }
       }
 
-      // Perimeter safety barrier
-      solid.addBox(cx, baseElev + 0.55, cz, w + 0.2, 0.8, 0.12, baseCol, rotRad);
+      // Open perimeter safety rail bar (and selection highlight border)
+      solid.addBox(cx, baseElev + 0.95, cz, w + 0.2, 0.08, 0.08, railCol, rotRad);
     });
   }
 
@@ -673,8 +676,9 @@ class Renderer3D {
     const blocks = generateConcertInfieldBlocks(this.venue);
     blocks.forEach((blk) => {
       const isSelected = blk.id === this.selectedFloorBlockId;
-      const panCol = isSelected ? [0.98, 0.38, 0.50, 1.0] : [0.22, 0.55, 0.96, 1.0];
-      const backCol = isSelected ? [0.85, 0.14, 0.28, 1.0] : [0.12, 0.36, 0.78, 1.0];
+      // Keep seat colors unchanged when selected
+      const panCol = [0.22, 0.55, 0.96, 1.0];
+      const backCol = [0.12, 0.36, 0.78, 1.0];
 
       // Subtle floor mat base
       solid.addQuad(
@@ -710,10 +714,16 @@ class Renderer3D {
         }
       }
 
-      // Perimeter crowd barricade
-      const railCol = [0.55, 0.62, 0.72, 1.0];
-      solid.addBox(blk.x, 0.65, blk.z - blk.depth / 2, blk.width, 0.9, 0.1, railCol, 0);
-      solid.addBox(blk.x, 0.65, blk.z + blk.depth / 2, blk.width, 0.9, 0.1, railCol, 0);
+      // Perimeter open rail / highlighted selection border
+      const railCol = isSelected ? [0.98, 0.28, 0.45, 1.0] : [0.62, 0.70, 0.80, 1.0];
+      const barH = isSelected ? 0.16 : 0.08;
+      const barY = isSelected ? 0.30 : 0.85;
+      solid.addBox(blk.x, barY, blk.z - blk.depth / 2, blk.width, barH, 0.12, railCol, 0);
+      solid.addBox(blk.x, barY, blk.z + blk.depth / 2, blk.width, barH, 0.12, railCol, 0);
+      if (isSelected) {
+        solid.addBox(blk.x - blk.width / 2, barY, blk.z, 0.12, barH, blk.depth, railCol, 0);
+        solid.addBox(blk.x + blk.width / 2, barY, blk.z, 0.12, barH, blk.depth, railCol, 0);
+      }
     });
   }
 
@@ -722,7 +732,6 @@ class Renderer3D {
     const showGuardrails = !(this.venue.gridSystem && this.venue.gridSystem.showGuardrails === false);
     const showVomitories = !(this.venue.gridSystem && this.venue.gridSystem.showVomitories === false);
 
-    // Estimate total seat density to tune far-sector seat stride cleanly while keeping EVERY row filled
     const totalEstCap = (this.venue.engineeringSummary && this.venue.engineeringSummary.totalCapacity) || 50000;
     const globalSeatStride = totalEstCap <= 35000 ? 1 : (totalEstCap <= 95000 ? 3 : 4);
 
@@ -732,10 +741,11 @@ class Renderer3D {
       { pan: [0.92, 0.62, 0.14, 1.0], back: [0.72, 0.42, 0.08, 1.0] }, // 3F Amber VIP
       { pan: [0.56, 0.34, 0.92, 1.0], back: [0.38, 0.20, 0.72, 1.0] }  // 4F Violet
     ];
-    const concreteStepCol = [0.22, 0.26, 0.34, 1.0];
-    const concreteRiserCol = [0.15, 0.18, 0.24, 1.0];
-    const stairStepCol = [0.32, 0.36, 0.44, 1.0];
-    const handrailCol = [0.68, 0.74, 0.84, 1.0];
+    const concreteStepCol = [0.24, 0.28, 0.36, 1.0];
+    const concreteRiserCol = [0.17, 0.21, 0.28, 1.0];
+    const vipFloorCol = [0.28, 0.24, 0.20, 1.0];
+    const stairStepCol = [0.34, 0.38, 0.46, 1.0];
+    const handrailCol = [0.76, 0.82, 0.90, 1.0];
 
     tiers.forEach((tier, tierIndex) => {
       const seatColPair = tierSeatColors[(tier.level - 1) % tierSeatColors.length];
@@ -751,12 +761,9 @@ class Renderer3D {
         const isNearSelected = isSelected || (selectedIdxInTier !== -1 && Math.abs(activeIdx - selectedIdxInTier) <= 1);
         const isVip = sec.fillType === 'vip-box';
 
-        const panCol = isSelected
-          ? [0.98, 0.32, 0.46, 1.0]
-          : (isVip ? [0.95, 0.70, 0.18, 1.0] : seatColPair.pan);
-        const backCol = isSelected
-          ? [0.84, 0.14, 0.28, 1.0]
-          : (isVip ? [0.74, 0.46, 0.08, 1.0] : seatColPair.back);
+        // Keep 3D seat & concrete colors unchanged when selected
+        const panCol = isVip ? [0.95, 0.70, 0.18, 1.0] : seatColPair.pan;
+        const backCol = isVip ? [0.74, 0.46, 0.08, 1.0] : seatColPair.back;
 
         const sDeg = sec.startAngleDeg;
         const eDeg = sec.endAngleDeg;
@@ -766,20 +773,53 @@ class Renderer3D {
 
         const totalRows = sec.rows || tier.defaultRows || 22;
         const rowPitch = sec.rowPitch || tier.defaultRowPitch || 0.85;
-        const slopeDeg = sec.slopeDeg || tier.defaultSlopeDeg || 20;
-        const riserH = sec.riserHeight || (rowPitch * Math.tan(slopeDeg * DEG2RAD));
+        const slopeDeg = isVip ? 0 : (sec.slopeDeg || tier.defaultSlopeDeg || 20);
+        const riserH = isVip ? 0 : (sec.riserHeight || (rowPitch * Math.tan(slopeDeg * DEG2RAD)));
         const seatSpacing = sec.seatSpacing || tier.defaultSeatSpacing || 0.5;
         const baseElev = tier.baseElevation || 1.0;
-        const topElev = baseElev + totalRows * riserH;
+        const topElev = isVip ? baseElev : (baseElev + Math.max(0, totalRows - 1) * riserH);
         const radialAisleWidth = tier.radialAisleWidth || 1.6;
 
-        // 1. Build Stepped Concrete Bowl Base + Radial Stair Aisles
-        const angSteps = Math.max(3, Math.ceil(angularSpan / 6.0));
-        const concreteBands = Math.min(totalRows, isNearSelected ? totalRows : 16);
+        // Compute Vomitory cutout parameters early so concrete steps leave an authentic recessed opening
+        const vom = sec.vomitory;
+        const hasVom = !isVip && showVomitories && vom && vom.position !== 'none' && vom.enabled !== false;
+        let vomStartRow = -1, vomEndRow = -1, vomCenterDeg = midDeg, vomHalfAngleDeg = 0;
+        let vomStartDeg = midDeg, vomEndDeg = midDeg;
 
-        for (let a = 0; a < angSteps; a++) {
-          const deg1 = sDeg + (a / angSteps) * angularSpan;
-          const deg2 = sDeg + ((a + 1) / angSteps) * angularSpan;
+        if (hasVom) {
+          vomStartRow = Math.max(1, vom.startRow || 5);
+          vomEndRow = Math.min(totalRows, vomStartRow + (vom.rowSpan || 5) - 1);
+          const bMid = computeTierRadialBounds(this.venue, tierIndex, midDeg, sec.customRadialDepth);
+          const midR = (bMid.innerRadius + bMid.outerRadius) / 2;
+          const vomWidth = vom.width || 3.2;
+          vomHalfAngleDeg = Math.min(angularSpan * 0.35, ((vomWidth / 2) / Math.max(15, midR)) * (180 / Math.PI));
+          vomStartDeg = vomCenterDeg - vomHalfAngleDeg;
+          vomEndDeg = vomCenterDeg + vomHalfAngleDeg;
+        }
+
+        // Build exact angular breakpoints (splitting cleanly at vomitory edges when present)
+        const rawAngles = [sDeg];
+        const baseSteps = Math.max(2, Math.ceil(angularSpan / 7.5));
+        for (let a = 1; a < baseSteps; a++) {
+          const deg = sDeg + (a / baseSteps) * angularSpan;
+          if (!hasVom || deg < vomStartDeg - 0.3 || deg > vomEndDeg + 0.3) {
+            rawAngles.push(deg);
+          }
+        }
+        if (hasVom && vomStartDeg > sDeg + 0.2 && vomEndDeg < eDeg - 0.2) {
+          rawAngles.push(vomStartDeg, vomEndDeg);
+        }
+        rawAngles.push(eDeg);
+        rawAngles.sort((a, b) => a - b);
+
+        const guard = sec.guardrail || tier.defaultGuardrail || {};
+
+        // 1. Build Concrete Structure (Flat Platform for VIP Boxes; Exact Row-by-Row Stepped Bowl for Standard)
+        for (let a = 0; a < rawAngles.length - 1; a++) {
+          const deg1 = rawAngles[a];
+          const deg2 = rawAngles[a + 1];
+          if (deg2 - deg1 < 0.05) continue;
+
           const rad1 = deg1 * DEG2RAD;
           const rad2 = deg2 * DEG2RAD;
           const sin1 = Math.sin(rad1), cos1 = -Math.cos(rad1);
@@ -787,66 +827,110 @@ class Renderer3D {
 
           const b1 = computeTierRadialBounds(this.venue, tierIndex, deg1, sec.customRadialDepth);
           const b2 = computeTierRadialBounds(this.venue, tierIndex, deg2, sec.customRadialDepth);
+          const midStripDeg = (deg1 + deg2) / 2;
+          const isVomStrip = hasVom && midStripDeg > vomStartDeg && midStripDeg < vomEndDeg;
 
-          for (let rb = 0; rb < concreteBands; rb++) {
-            const f0 = rb / concreteBands;
-            const f1 = (rb + 1) / concreteBands;
-            const r1_in = b1.innerRadius + (b1.outerRadius - b1.innerRadius) * f0;
-            const r1_out = b1.innerRadius + (b1.outerRadius - b1.innerRadius) * f1;
-            const r2_in = b2.innerRadius + (b2.outerRadius - b2.innerRadius) * f0;
-            const r2_out = b2.innerRadius + (b2.outerRadius - b2.innerRadius) * f1;
-
-            const y0 = baseElev + (topElev - baseElev) * f0;
-            const y1 = baseElev + (topElev - baseElev) * f1;
-
-            // Concrete Riser
+          if (isVip) {
+            // Flat VIP skybox platform deck at baseElev (NO stepped risers!)
+            const deckBot = Math.max(0, baseElev - 0.55);
             solid.addQuad(
-              { x: sin1 * r1_in, y: y0, z: cos1 * r1_in },
-              { x: sin1 * r1_in, y: y1, z: cos1 * r1_in },
-              { x: sin2 * r2_in, y: y1, z: cos2 * r2_in },
-              { x: sin2 * r2_in, y: y0, z: cos2 * r2_in },
-              concreteRiserCol
-            );
-            // Concrete Tread
-            solid.addQuad(
-              { x: sin1 * r1_in, y: y1, z: cos1 * r1_in },
-              { x: sin1 * r1_out, y: y1, z: cos1 * r1_out },
-              { x: sin2 * r2_out, y: y1, z: cos2 * r2_out },
-              { x: sin2 * r2_in, y: y1, z: cos2 * r2_in },
-              isSelected ? [0.28, 0.20, 0.25, 1.0] : concreteStepCol,
+              { x: sin1 * b1.innerRadius, y: baseElev, z: cos1 * b1.innerRadius },
+              { x: sin1 * b1.outerRadius, y: baseElev, z: cos1 * b1.outerRadius },
+              { x: sin2 * b2.outerRadius, y: baseElev, z: cos2 * b2.outerRadius },
+              { x: sin2 * b2.innerRadius, y: baseElev, z: cos2 * b2.innerRadius },
+              vipFloorCol,
               { x: 0, y: 1, z: 0 }
             );
-          }
+            // Underside soffit & front fascia lip
+            solid.addQuad(
+              { x: sin1 * b1.outerRadius, y: deckBot, z: cos1 * b1.outerRadius },
+              { x: sin1 * b1.innerRadius, y: deckBot, z: cos1 * b1.innerRadius },
+              { x: sin2 * b2.innerRadius, y: deckBot, z: cos2 * b2.innerRadius },
+              { x: sin2 * b2.outerRadius, y: deckBot, z: cos2 * b2.outerRadius },
+              concreteRiserCol,
+              { x: 0, y: -1, z: 0 }
+            );
+            solid.addQuad(
+              { x: sin1 * b1.innerRadius, y: deckBot, z: cos1 * b1.innerRadius },
+              { x: sin1 * b1.innerRadius, y: baseElev, z: cos1 * b1.innerRadius },
+              { x: sin2 * b2.innerRadius, y: baseElev, z: cos2 * b2.innerRadius },
+              { x: sin2 * b2.innerRadius, y: deckBot, z: cos2 * b2.innerRadius },
+              concreteStepCol
+            );
+          } else {
+            // Exact row-by-row concrete treads & risers matching seat elevations 1:1
+            for (let rb = 0; rb < totalRows; rb++) {
+              const rowNum = rb + 1;
+              if (isVomStrip && rowNum >= vomStartRow && rowNum <= vomEndRow) {
+                continue; // Leave recessed opening for Vomitory cutout!
+              }
+              const f0 = rb / totalRows;
+              const f1 = (rb + 1) / totalRows;
+              const r1_in = b1.innerRadius + (b1.outerRadius - b1.innerRadius) * f0;
+              const r1_out = b1.innerRadius + (b1.outerRadius - b1.innerRadius) * f1;
+              const r2_in = b2.innerRadius + (b2.outerRadius - b2.innerRadius) * f0;
+              const r2_out = b2.innerRadius + (b2.outerRadius - b2.innerRadius) * f1;
 
-          // Front Parapet Wall & Guardrail
-          const guard = sec.guardrail || tier.defaultGuardrail || {};
-          const f1_bot = { x: sin1 * b1.innerRadius, y: Math.max(0, baseElev - 1.3), z: cos1 * b1.innerRadius };
-          const f2_bot = { x: sin2 * b2.innerRadius, y: Math.max(0, baseElev - 1.3), z: cos2 * b2.innerRadius };
-          const f2_top = { x: sin2 * b2.innerRadius, y: baseElev, z: cos2 * b2.innerRadius };
-          const f1_top = { x: sin1 * b1.innerRadius, y: baseElev, z: cos1 * b1.innerRadius };
-          solid.addQuad(f1_bot, f1_top, f2_top, f2_bot, [0.16, 0.20, 0.28, 1.0]);
+              const treadY = baseElev + rb * riserH;
+              const riserBot = rb === 0
+                ? (tier.level === 1 ? 0 : Math.max(0, baseElev - 1.1))
+                : (baseElev + (rb - 1) * riserH);
+
+              // Concrete Riser rising up to this row's tread
+              solid.addQuad(
+                { x: sin1 * r1_in, y: riserBot, z: cos1 * r1_in },
+                { x: sin1 * r1_in, y: treadY, z: cos1 * r1_in },
+                { x: sin2 * r2_in, y: treadY, z: cos2 * r2_in },
+                { x: sin2 * r2_in, y: riserBot, z: cos2 * r2_in },
+                rb === 0 && tier.level === 1 ? [0.28, 0.33, 0.42, 1.0] : concreteRiserCol
+              );
+
+              // Concrete Tread flat at treadY (seat rowNum sits directly on treadY!)
+              solid.addQuad(
+                { x: sin1 * r1_in, y: treadY, z: cos1 * r1_in },
+                { x: sin1 * r1_out, y: treadY, z: cos1 * r1_out },
+                { x: sin2 * r2_out, y: treadY, z: cos2 * r2_out },
+                { x: sin2 * r2_in, y: treadY, z: cos2 * r2_in },
+                concreteStepCol,
+                { x: 0, y: 1, z: 0 }
+              );
+            }
+          }
 
           if (showGuardrails && guard.frontRailEnabled !== false) {
             const frontH = guard.frontRailHeight || 1.1;
+            const f1_top = { x: sin1 * b1.innerRadius, y: baseElev, z: cos1 * b1.innerRadius };
+            const f2_top = { x: sin2 * b2.innerRadius, y: baseElev, z: cos2 * b2.innerRadius };
             const g1_top = { x: sin1 * b1.innerRadius, y: baseElev + frontH, z: cos1 * b1.innerRadius };
             const g2_top = { x: sin2 * b2.innerRadius, y: baseElev + frontH, z: cos2 * b2.innerRadius };
 
-            // Top metallic handrail bar
             const barMidX = (g1_top.x + g2_top.x) / 2;
             const barMidZ = (g1_top.z + g2_top.z) / 2;
             const barLen = Math.hypot(g2_top.x - g1_top.x, g2_top.z - g1_top.z);
             const barRot = Math.atan2(g2_top.x - g1_top.x, g2_top.z - g1_top.z);
-            solid.addBox(barMidX, baseElev + frontH, barMidZ, 0.08, 0.08, barLen, handrailCol, barRot);
 
-            // Vertical stanchion post
+            // Top metallic handrail bar & stanchion post
+            solid.addBox(barMidX, baseElev + frontH, barMidZ, 0.08, 0.08, barLen, handrailCol, barRot);
             solid.addBox(g1_top.x, baseElev + frontH / 2, g1_top.z, 0.07, frontH, 0.07, handrailCol, 0);
 
-            if (guard.material === 'tempered-glass') {
-              alpha.addQuad(f1_top, g1_top, g2_top, f2_top, [0.55, 0.85, 0.98, 0.34]);
+            if (tier.level === 1) {
+              // 1F between infield and stand: open metallic rails ONLY (zero dark glass/slab)
+              solid.addBox(barMidX, baseElev + frontH * 0.55, barMidZ, 0.05, 0.05, barLen, handrailCol, barRot);
+              const pickets = 3;
+              for (let p = 1; p < pickets; p++) {
+                const pt = p / pickets;
+                solid.addBox(
+                  f1_top.x + (f2_top.x - f1_top.x) * pt,
+                  baseElev + frontH / 2,
+                  f1_top.z + (f2_top.z - f1_top.z) * pt,
+                  0.04, frontH, 0.04, handrailCol, 0
+                );
+              }
+            } else if (guard.material === 'tempered-glass') {
+              alpha.addQuad(f1_top, g1_top, g2_top, f2_top, [0.62, 0.86, 0.98, 0.24]);
             } else if (guard.material === 'concrete-parapet') {
-              solid.addQuad(f1_top, g1_top, g2_top, f2_top, [0.22, 0.26, 0.33, 1.0]);
+              solid.addQuad(f1_top, g1_top, g2_top, f2_top, [0.24, 0.28, 0.36, 1.0]);
             } else {
-              // Steel balustrade mid rail + vertical pickets
               solid.addBox(barMidX, baseElev + frontH * 0.55, barMidZ, 0.06, 0.05, barLen, handrailCol, barRot);
               const pickets = 3;
               for (let p = 1; p < pickets; p++) {
@@ -863,35 +947,32 @@ class Renderer3D {
 
           // Rear Concourse Wall
           if (guard.rearWallEnabled !== false) {
-            const rearH = guard.rearWallHeight || 1.5;
+            const rearH = isVip ? Math.max(2.6, guard.rearWallHeight || 2.8) : (guard.rearWallHeight || 1.5);
             const rw1_b = { x: sin1 * b1.outerRadius, y: topElev, z: cos1 * b1.outerRadius };
             const rw2_b = { x: sin2 * b2.outerRadius, y: topElev, z: cos2 * b2.outerRadius };
             const rw2_t = { x: sin2 * b2.outerRadius, y: topElev + rearH, z: cos2 * b2.outerRadius };
             const rw1_t = { x: sin1 * b1.outerRadius, y: topElev + rearH, z: cos1 * b1.outerRadius };
-            solid.addQuad(rw1_b, rw1_t, rw2_t, rw2_b, [0.14, 0.18, 0.26, 1.0]);
+            solid.addQuad(rw1_b, rw1_t, rw2_t, rw2_b, [0.16, 0.20, 0.28, 1.0]);
           }
         }
 
         // 2. Radial Stair Aisle & Central Aisle Handrail along startAngleDeg
-        const guard = sec.guardrail || tier.defaultGuardrail || {};
-        if (showGuardrails && guard.aisleHandrailEnabled !== false) {
+        if (!isVip && showGuardrails && guard.aisleHandrailEnabled !== false) {
           const bEdge = computeTierRadialBounds(this.venue, tierIndex, sDeg, sec.customRadialDepth);
           const radEdge = sDeg * DEG2RAD;
           const sinE = Math.sin(radEdge), cosE = -Math.cos(radEdge);
           const tanX = Math.cos(radEdge), tanZ = Math.sin(radEdge);
 
-          // Highlighted concrete stair strip
           const hwAisle = radialAisleWidth * 0.4;
           solid.addQuad(
-            { x: sinE * bEdge.innerRadius - tanX * hwAisle, y: baseElev + 0.06, z: cosE * bEdge.innerRadius - tanZ * hwAisle },
-            { x: sinE * bEdge.outerRadius - tanX * hwAisle, y: topElev + 0.06, z: cosE * bEdge.outerRadius - tanZ * hwAisle },
-            { x: sinE * bEdge.outerRadius + tanX * hwAisle, y: topElev + 0.06, z: cosE * bEdge.outerRadius + tanZ * hwAisle },
-            { x: sinE * bEdge.innerRadius + tanX * hwAisle, y: baseElev + 0.06, z: cosE * bEdge.innerRadius + tanZ * hwAisle },
+            { x: sinE * bEdge.innerRadius - tanX * hwAisle, y: baseElev + 0.04, z: cosE * bEdge.innerRadius - tanZ * hwAisle },
+            { x: sinE * bEdge.outerRadius - tanX * hwAisle, y: topElev + 0.04, z: cosE * bEdge.outerRadius - tanZ * hwAisle },
+            { x: sinE * bEdge.outerRadius + tanX * hwAisle, y: topElev + 0.04, z: cosE * bEdge.outerRadius + tanZ * hwAisle },
+            { x: sinE * bEdge.innerRadius + tanX * hwAisle, y: baseElev + 0.04, z: cosE * bEdge.innerRadius + tanZ * hwAisle },
             stairStepCol,
             { x: 0, y: 1, z: 0 }
           );
 
-          // Aisle handrail posts + sloped central rail
           const postCount = 4;
           for (let p = 0; p < postCount; p++) {
             const pf = p / (postCount - 1);
@@ -899,7 +980,6 @@ class Renderer3D {
             const py = baseElev + (topElev - baseElev) * pf;
             solid.addBox(sinE * pr, py + 0.48, cosE * pr, 0.08, 0.96, 0.08, handrailCol, 0);
           }
-          // Sloped rail bar
           const pStart = { x: sinE * bEdge.innerRadius, y: baseElev + 0.96, z: cosE * bEdge.innerRadius };
           const pEnd = { x: sinE * bEdge.outerRadius, y: topElev + 0.96, z: cosE * bEdge.outerRadius };
           const railSteps = 3;
@@ -921,41 +1001,26 @@ class Renderer3D {
           }
         }
 
-        // 3. Vomitory Tunnel Portal Cutout & 3D Portal Frame
-        const vom = sec.vomitory;
-        const hasVom = showVomitories && vom && vom.position !== 'none' && vom.enabled !== false;
-        let vomStartRow = -1, vomEndRow = -1, vomCenterDeg = midDeg, vomHalfAngleDeg = 0;
-
-        if (hasVom) {
-          vomStartRow = Math.max(1, vom.startRow || 5);
-          vomEndRow = Math.min(totalRows, vomStartRow + (vom.rowSpan || 5));
-          const bMid = computeTierRadialBounds(this.venue, tierIndex, midDeg, sec.customRadialDepth);
-          const midR = (bMid.innerRadius + bMid.outerRadius) / 2;
-          const vomWidth = vom.width || 3.2;
-          vomHalfAngleDeg = ((vomWidth / 2) / Math.max(15, midR)) * (180 / Math.PI);
-
-          const vRowF0 = (vomStartRow - 1) / Math.max(1, totalRows);
-          const vRowF1 = vomEndRow / Math.max(1, totalRows);
-          const vrIn = bMid.innerRadius + (bMid.outerRadius - bMid.innerRadius) * vRowF0;
-          const vrOut = bMid.innerRadius + (bMid.outerRadius - bMid.innerRadius) * vRowF1;
-          const vyIn = baseElev + (topElev - baseElev) * vRowF0;
-          const vyOut = baseElev + (topElev - baseElev) * vRowF1;
-
-          const vSin = Math.sin(midDeg * DEG2RAD), vCos = -Math.cos(midDeg * DEG2RAD);
-          const vx = vSin * ((vrIn + vrOut) / 2);
-          const vz = vCos * ((vrIn + vrOut) / 2);
-          const rotVom = -midDeg * DEG2RAD;
-
-          // Dark recessed tunnel interior box + concrete portal header + green EXIT glow strip
-          solid.addBox(vx, vyIn + 1.1, vz, vomWidth, 2.2, Math.max(2.5, vrOut - vrIn), [0.03, 0.04, 0.07, 1.0], rotVom);
-          solid.addBox(vSin * vrIn, vyIn + 2.35, vCos * vrIn, vomWidth + 0.6, 0.45, 0.6, [0.25, 0.30, 0.38, 1.0], rotVom);
-          solid.addBox(vSin * vrIn, vyIn + 2.0, vCos * vrIn, vomWidth * 0.45, 0.25, 0.7, [0.08, 0.88, 0.48, 1.0], rotVom);
+        // 3. Recessed 3D Vomitory Tunnel Cutout (carved DOWN into the concrete steps)
+        if (hasVom && vomStartDeg > sDeg + 0.2 && vomEndDeg < eDeg - 0.2) {
+          this.buildVomitoryRecess(
+            solid,
+            sec,
+            tierIndex,
+            vomStartDeg,
+            vomEndDeg,
+            vomStartRow,
+            vomEndRow,
+            totalRows,
+            baseElev,
+            riserH,
+            handrailCol
+          );
         }
 
-        // 4. VIP Skybox Suites Partitions & Overhead Lounge Canopy
+        // 4. VIP Skybox Suites Partitions & Overhead Lounge Canopy (Flat Platform)
         if (isVip && sec.vipBoxRooms > 0) {
           const rooms = sec.vipBoxRooms;
-          const bMidTop = computeTierRadialBounds(this.venue, tierIndex, midDeg, sec.customRadialDepth);
           for (let rm = 0; rm <= rooms; rm++) {
             const rDeg = sDeg + (rm / rooms) * angularSpan;
             const bR = computeTierRadialBounds(this.venue, tierIndex, rDeg, sec.customRadialDepth);
@@ -964,41 +1029,39 @@ class Renderer3D {
             const depthR = bR.outerRadius - bR.innerRadius;
             solid.addBox(
               rSin * midR,
-              (baseElev + topElev) / 2 + 1.4,
+              baseElev + 1.4,
               rCos * midR,
               0.22,
               2.8,
               depthR,
-              [0.32, 0.26, 0.18, 1.0],
+              [0.34, 0.28, 0.20, 1.0],
               -rDeg * DEG2RAD
             );
           }
-          // Warm glowing VIP suite ceiling canopy
           const b1 = computeTierRadialBounds(this.venue, tierIndex, sDeg, sec.customRadialDepth);
           const b2 = computeTierRadialBounds(this.venue, tierIndex, eDeg, sec.customRadialDepth);
           const sin1 = Math.sin(sDeg * DEG2RAD), cos1 = -Math.cos(sDeg * DEG2RAD);
           const sin2 = Math.sin(eDeg * DEG2RAD), cos2 = -Math.cos(eDeg * DEG2RAD);
-          const canopyY = topElev + 2.7;
+          const canopyY = baseElev + 2.8;
           solid.addQuad(
-            { x: sin1 * (b1.innerRadius + 0.5), y: canopyY, z: cos1 * (b1.innerRadius + 0.5) },
+            { x: sin1 * (b1.innerRadius + 0.4), y: canopyY, z: cos1 * (b1.innerRadius + 0.4) },
             { x: sin1 * b1.outerRadius, y: canopyY, z: cos1 * b1.outerRadius },
             { x: sin2 * b2.outerRadius, y: canopyY, z: cos2 * b2.outerRadius },
-            { x: sin2 * (b2.innerRadius + 0.5), y: canopyY, z: cos2 * (b2.innerRadius + 0.5) },
+            { x: sin2 * (b2.innerRadius + 0.4), y: canopyY, z: cos2 * (b2.innerRadius + 0.4) },
             [0.45, 0.34, 0.18, 1.0],
             { x: 0, y: -1, z: 0 }
           );
         }
 
-        // 5. Fill EVERY SINGLE ROW with 3D Seats!
+        // 5. Fill EVERY SINGLE ROW with 3D Seats aligned flush to stand edge (zero skew angle!)
         const stride = (isNearSelected || isVip) ? 1 : globalSeatStride;
         const bMid = computeTierRadialBounds(this.venue, tierIndex, midDeg, sec.customRadialDepth);
 
         for (let r = 1; r <= totalRows; r++) {
           const rowFrac = totalRows > 1 ? (r - 0.5) / totalRows : 0.5;
-          const rowElev = baseElev + (r - 1) * riserH;
+          const rowElev = isVip ? baseElev : (baseElev + (r - 1) * riserH);
           const approxR = bMid.innerRadius + (bMid.outerRadius - bMid.innerRadius) * rowFrac;
 
-          // Angular margin reserved for radial stair aisles
           const aisleMarginDeg = ((radialAisleWidth * 0.55) / Math.max(12, approxR)) * (180 / Math.PI);
           const usableStartDeg = sDeg + aisleMarginDeg;
           const usableEndDeg = eDeg - aisleMarginDeg;
@@ -1013,7 +1076,7 @@ class Renderer3D {
             const seatDeg = usableStartDeg + sFrac * (usableEndDeg - usableStartDeg);
 
             // Skip seats inside carved Vomitory opening
-            if (hasVom && r >= vomStartRow && r <= vomEndRow && Math.abs(seatDeg - vomCenterDeg) < vomHalfAngleDeg) {
+            if (hasVom && r >= vomStartRow && r <= vomEndRow && seatDeg >= vomStartDeg && seatDeg <= vomEndDeg) {
               continue;
             }
 
@@ -1023,9 +1086,8 @@ class Renderer3D {
             const sx = Math.sin(sRad) * seatR;
             const sz = -Math.cos(sRad) * seatR;
 
-            // Face inward toward stadium center (-sx, -sz)
-            const fx = -Math.sin(sRad);
-            const fz = Math.cos(sRad);
+            // Compute exact inward normal perpendicular to the local stand edge (zero skew!)
+            const nrm = getRowInwardNormal(this.venue, tierIndex, seatDeg, rowFrac, sec.customRadialDepth);
 
             solid.addSeat3D(
               sx,
@@ -1033,14 +1095,167 @@ class Renderer3D {
               sz,
               stepUnitW * 0.88,
               Math.min(0.48, rowPitch * 0.56),
-              fx,
-              fz,
+              nrm.x,
+              nrm.z,
               panCol,
               backCol
             );
           }
         }
+
+        // 6. Selected Sector Perimeter Outline (since seat colors stay unchanged)
+        if (isSelected) {
+          this.buildSelectedSectorOutline(solid, sec, tierIndex, baseElev, riserH, totalRows, isVip);
+        }
       });
+    });
+  }
+
+  buildVomitoryRecess(solid, sec, tierIndex, vomStartDeg, vomEndDeg, vomStartRow, vomEndRow, totalRows, baseElev, riserH, handrailCol) {
+    const f0 = (vomStartRow - 1) / totalRows;
+    const f1 = vomEndRow / totalRows;
+
+    const bL = computeTierRadialBounds(this.venue, tierIndex, vomStartDeg, sec.customRadialDepth);
+    const bR = computeTierRadialBounds(this.venue, tierIndex, vomEndDeg, sec.customRadialDepth);
+    const sinL = Math.sin(vomStartDeg * DEG2RAD), cosL = -Math.cos(vomStartDeg * DEG2RAD);
+    const sinR = Math.sin(vomEndDeg * DEG2RAD), cosR = -Math.cos(vomEndDeg * DEG2RAD);
+
+    const rL_in = bL.innerRadius + (bL.outerRadius - bL.innerRadius) * f0;
+    const rL_out = bL.innerRadius + (bL.outerRadius - bL.innerRadius) * f1;
+    const rR_in = bR.innerRadius + (bR.outerRadius - bR.innerRadius) * f0;
+    const rR_out = bR.innerRadius + (bR.outerRadius - bR.innerRadius) * f1;
+
+    const yFront = baseElev + (vomStartRow - 1) * riserH;
+    const yBack = baseElev + (vomEndRow - 1) * riserH;
+    // Sunken tunnel pit floor strictly below the surrounding concrete steps
+    const floorFrontY = Math.max(0.15, yFront - 0.65);
+    const floorBackY = Math.max(0.15, yFront - 1.35);
+
+    const pitFloorCol = [0.09, 0.11, 0.16, 1.0];
+    const pitWallCol = [0.14, 0.17, 0.24, 1.0];
+    const portalDarkCol = [0.02, 0.03, 0.05, 1.0];
+
+    // Sunken floor quad sloping down into the rear tunnel doorway
+    solid.addQuad(
+      { x: sinL * rL_in, y: floorFrontY, z: cosL * rL_in },
+      { x: sinL * rL_out, y: floorBackY, z: cosL * rL_out },
+      { x: sinR * rR_out, y: floorBackY, z: cosR * rR_out },
+      { x: sinR * rR_in, y: floorFrontY, z: cosR * rR_in },
+      pitFloorCol,
+      { x: 0, y: 1, z: 0 }
+    );
+
+    // Front step-down threshold riser connecting step (vomStartRow-1) down to sunken floor
+    solid.addQuad(
+      { x: sinL * rL_in, y: floorFrontY, z: cosL * rL_in },
+      { x: sinL * rL_in, y: yFront, z: cosL * rL_in },
+      { x: sinR * rR_in, y: yFront, z: cosR * rR_in },
+      { x: sinR * rR_in, y: floorFrontY, z: cosR * rR_in },
+      pitWallCol
+    );
+
+    // Left & Right side retaining walls closing the recessed cutout cleanly
+    solid.addQuad(
+      { x: sinL * rL_in, y: floorFrontY, z: cosL * rL_in },
+      { x: sinL * rL_out, y: floorBackY, z: cosL * rL_out },
+      { x: sinL * rL_out, y: yBack, z: cosL * rL_out },
+      { x: sinL * rL_in, y: yFront, z: cosL * rL_in },
+      pitWallCol
+    );
+    solid.addQuad(
+      { x: sinR * rR_in, y: floorFrontY, z: cosR * rR_in },
+      { x: sinR * rR_in, y: yFront, z: cosR * rR_in },
+      { x: sinR * rR_out, y: yBack, z: cosR * rR_out },
+      { x: sinR * rR_out, y: floorBackY, z: cosR * rR_out },
+      pitWallCol
+    );
+
+    // Back dark tunnel entrance recess + concrete portal wall above + green EXIT strip
+    const portalTopY = Math.min(yBack, floorBackY + 2.2);
+    solid.addQuad(
+      { x: sinL * rL_out, y: floorBackY, z: cosL * rL_out },
+      { x: sinL * rL_out, y: portalTopY, z: cosL * rL_out },
+      { x: sinR * rR_out, y: portalTopY, z: cosR * rR_out },
+      { x: sinR * rR_out, y: floorBackY, z: cosR * rR_out },
+      portalDarkCol
+    );
+    if (yBack > portalTopY + 0.05) {
+      solid.addQuad(
+        { x: sinL * rL_out, y: portalTopY, z: cosL * rL_out },
+        { x: sinL * rL_out, y: yBack, z: cosL * rL_out },
+        { x: sinR * rR_out, y: yBack, z: cosR * rR_out },
+        { x: sinR * rR_out, y: portalTopY, z: cosR * rR_out },
+        pitWallCol
+      );
+    }
+    const midDeg = (vomStartDeg + vomEndDeg) / 2;
+    const midSin = Math.sin(midDeg * DEG2RAD), midCos = -Math.cos(midDeg * DEG2RAD);
+    const rMidOut = (rL_out + rR_out) / 2;
+    const widthM = Math.hypot(sinR * rR_out - sinL * rL_out, cosR * rR_out - cosL * rL_out);
+    solid.addBox(midSin * rMidOut, portalTopY + 0.14, midCos * rMidOut, widthM * 0.65, 0.22, 0.24, [0.10, 0.88, 0.48, 1.0], -midDeg * DEG2RAD);
+
+    // Side safety handrails along left & right rim of the recessed pit
+    solid.addBox(sinL * rL_in, yFront + 0.48, cosL * rL_in, 0.06, 0.96, 0.06, handrailCol, 0);
+    solid.addBox(sinL * rL_out, yBack + 0.48, cosL * rL_out, 0.06, 0.96, 0.06, handrailCol, 0);
+    solid.addBox(sinR * rR_in, yFront + 0.48, cosR * rR_in, 0.06, 0.96, 0.06, handrailCol, 0);
+    solid.addBox(sinR * rR_out, yBack + 0.48, cosR * rR_out, 0.06, 0.96, 0.06, handrailCol, 0);
+  }
+
+  buildSelectedSectorOutline(solid, sec, tierIndex, baseElev, riserH, totalRows, isVip) {
+    const borderCol = [0.98, 0.28, 0.45, 1.0];
+    const sDeg = sec.startAngleDeg;
+    const eDeg = sec.endAngleDeg;
+    const topElev = isVip ? baseElev : (baseElev + Math.max(0, totalRows - 1) * riserH);
+    const steps = Math.max(4, Math.ceil((eDeg - sDeg) / 4));
+    const railLift = 0.22;
+
+    for (let i = 0; i < steps; i++) {
+      const d1 = sDeg + (i / steps) * (eDeg - sDeg);
+      const d2 = sDeg + ((i + 1) / steps) * (eDeg - sDeg);
+      const b1 = computeTierRadialBounds(this.venue, tierIndex, d1, sec.customRadialDepth);
+      const b2 = computeTierRadialBounds(this.venue, tierIndex, d2, sec.customRadialDepth);
+      const sin1 = Math.sin(d1 * DEG2RAD), cos1 = -Math.cos(d1 * DEG2RAD);
+      const sin2 = Math.sin(d2 * DEG2RAD), cos2 = -Math.cos(d2 * DEG2RAD);
+
+      // Inner arc highlight strip
+      solid.addBox(
+        (sin1 * b1.innerRadius + sin2 * b2.innerRadius) / 2,
+        baseElev + railLift,
+        (cos1 * b1.innerRadius + cos2 * b2.innerRadius) / 2,
+        0.26, 0.16,
+        Math.hypot(sin2 * b2.innerRadius - sin1 * b1.innerRadius, cos2 * b2.innerRadius - cos1 * b1.innerRadius) + 0.1,
+        borderCol,
+        Math.atan2(sin2 * b2.innerRadius - sin1 * b1.innerRadius, cos2 * b2.innerRadius - cos1 * b1.innerRadius)
+      );
+
+      // Outer arc highlight strip
+      solid.addBox(
+        (sin1 * b1.outerRadius + sin2 * b2.outerRadius) / 2,
+        topElev + railLift,
+        (cos1 * b1.outerRadius + cos2 * b2.outerRadius) / 2,
+        0.26, 0.16,
+        Math.hypot(sin2 * b2.outerRadius - sin1 * b1.outerRadius, cos2 * b2.outerRadius - cos1 * b1.outerRadius) + 0.1,
+        borderCol,
+        Math.atan2(sin2 * b2.outerRadius - sin1 * b1.outerRadius, cos2 * b2.outerRadius - cos1 * b1.outerRadius)
+      );
+    }
+
+    // Flush sloped side radial highlight ribbons
+    [sDeg, eDeg].forEach((edgeDeg) => {
+      const b = computeTierRadialBounds(this.venue, tierIndex, edgeDeg, sec.customRadialDepth);
+      const sRad = edgeDeg * DEG2RAD;
+      const sinE = Math.sin(sRad), cosE = -Math.cos(sRad);
+      const tanX = Math.cos(sRad) * 0.16, tanZ = Math.sin(sRad) * 0.16;
+      const yIn = baseElev + railLift;
+      const yOut = topElev + railLift;
+      solid.addQuad(
+        { x: sinE * b.innerRadius - tanX, y: yIn, z: cosE * b.innerRadius - tanZ },
+        { x: sinE * b.outerRadius - tanX, y: yOut, z: cosE * b.outerRadius - tanZ },
+        { x: sinE * b.outerRadius + tanX, y: yOut, z: cosE * b.outerRadius + tanZ },
+        { x: sinE * b.innerRadius + tanX, y: yIn, z: cosE * b.innerRadius + tanZ },
+        borderCol,
+        { x: 0, y: 1, z: 0 }
+      );
     });
   }
 
