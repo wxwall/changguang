@@ -7,14 +7,15 @@ const DEG2RAD = Math.PI / 180;
 const RAD2DEG = 180 / Math.PI;
 
 /**
- * Evaluates a point on a rounded-rectangle perimeter at angleDeg.
+ * Evaluates a point on a rounded-rectangle perimeter AND its true outward unit normal
+ * at angleDeg (polar ray from center).
  * Angle convention:
  *   0 deg = North (0, -1 in 3D/2D)
  *  90 deg = East  (+1, 0)
  * 180 deg = South (0, +1)
  * 270 deg = West  (-1, 0)
  */
-function getRayRoundedRectDistance(angleDeg, length, width, cornerRadius) {
+function evalInfieldPerimeterAndNormal(angleDeg, length, width, cornerRadius) {
   const rad = angleDeg * DEG2RAD;
   const dx = Math.sin(rad);
   const dz = -Math.cos(rad);
@@ -28,41 +29,123 @@ function getRayRoundedRectDistance(angleDeg, length, width, cornerRadius) {
   const adx = Math.abs(dx);
   const adz = Math.abs(dz);
 
+  // East / West straight edges: outward normal is strictly (+1, 0) or (-1, 0)
   if (adx > 1e-6) {
     const tWallX = halfW / adx;
     const zAtWall = tWallX * adz;
     if (zAtWall <= innerL + 1e-5) {
-      return tWallX;
+      const signX = dx >= 0 ? 1 : -1;
+      return {
+        x: signX * halfW,
+        z: dz * tWallX,
+        nx: signX,
+        nz: 0,
+        dist: tWallX
+      };
     }
   }
 
+  // North / South straight edges: outward normal is strictly (0, -1) or (0, +1)
   if (adz > 1e-6) {
     const tWallZ = halfL / adz;
     const xAtWall = tWallZ * adx;
     if (xAtWall <= innerW + 1e-5) {
-      return tWallZ;
+      const signZ = dz >= 0 ? 1 : -1;
+      return {
+        x: dx * tWallZ,
+        z: signZ * halfL,
+        nx: 0,
+        nz: signZ,
+        dist: tWallZ
+      };
     }
   }
 
+  // Rounded corner arc: outward normal is radial from corner arc center
   const b = -(adx * innerW + adz * innerL);
   const c = innerW * innerW + innerL * innerL - r * r;
   const disc = Math.max(0, b * b - c);
-  return -b + Math.sqrt(disc);
+  const t = -b + Math.sqrt(disc);
+  const px = dx * t;
+  const pz = dz * t;
+  const cx = (dx >= 0 ? 1 : -1) * innerW;
+  const cz = (dz >= 0 ? 1 : -1) * innerL;
+  let nx = px - cx;
+  let nz = pz - cz;
+  const nLen = Math.hypot(nx, nz);
+  if (nLen > 1e-6) {
+    nx /= nLen;
+    nz /= nLen;
+  } else {
+    const pLen = Math.hypot(px, pz) || 1;
+    nx = px / pLen;
+    nz = pz / pLen;
+  }
+
+  return { x: px, z: pz, nx, nz, dist: t };
 }
 
 /**
- * Computes the exact inner and outer radial distance of a tier at angleDeg,
- * strictly matching STADIACAD 2.0.0 engineeringSummary footprint math:
- * - Tracks prevOuterMorph across tiers so a 'concentric-circle' tier (e.g. Bird's Nest 3F)
- *   anchors its inner ring continuously to the previous tier's outer shape, while only
- *   its outer ring transitions toward the concentric circle target.
- * - 'radialDepth' and 'customRadialDepth' are horizontal plan projections.
+ * Evaluates the radial distance from (0,0) to a rounded-rectangle perimeter at angleDeg.
  */
-function computeTierRadialBounds(venue, tierIndex, angleDeg, customRadialDepth) {
+function getRayRoundedRectDistance(angleDeg, length, width, cornerRadius) {
+  return evalInfieldPerimeterAndNormal(angleDeg, length, width, cornerRadius).dist;
+}
+
+/**
+ * Returns the 8 exact polar angles (sorted 0..360) where the infield rounded-rectangle
+ * perimeter transitions between straight edges and corner arcs.
+ * Injecting these angles into polygon/row polylines keeps straight walls completely flat
+ * and seamless at corners.
+ */
+function getInfieldCornerTransitionAngles(venue) {
+  const infield = venue && venue.infield;
+  if (!infield) return [];
+  const halfW = (infield.width || 60) / 2;
+  const halfL = (infield.length || 100) / 2;
+  const r = Math.min(infield.cornerRadius || 0, halfW, halfL);
+  const innerW = Math.max(0, halfW - r);
+  const innerL = Math.max(0, halfL - r);
+
+  const raw = [];
+  if (innerW > 1e-4 && halfL > 1e-4) {
+    const aNE = Math.atan2(innerW, halfL) * RAD2DEG;
+    raw.push(aNE, 180 - aNE, 180 + aNE, 360 - aNE);
+  }
+  if (halfW > 1e-4 && innerL > 1e-4) {
+    const aEN = Math.atan2(halfW, innerL) * RAD2DEG;
+    raw.push(aEN, 180 - aEN, 180 + aEN, 360 - aEN);
+  }
+  if (r <= 1e-4 && halfW > 1e-4 && halfL > 1e-4) {
+    const aDiag = Math.atan2(halfW, halfL) * RAD2DEG;
+    raw.push(aDiag, 180 - aDiag, 180 + aDiag, 360 - aDiag);
+  }
+
+  // Deduplicate and sort
+  const unique = [];
+  raw.sort((a, b) => a - b).forEach((ang) => {
+    const norm = ((ang % 360) + 360) % 360;
+    if (unique.length === 0 || Math.abs(norm - unique[unique.length - 1]) > 0.05) {
+      unique.push(norm);
+    }
+  });
+  return unique;
+}
+
+/**
+ * Computes the exact 2D/3D plan coordinate (x, z) and perpendicular cut normal (nx, nz)
+ * on a tier at (angleDeg, rowFrac in [0, 1]).
+ *
+ * Uses true parallel offsets from the infield perimeter along the infield's outward normal N:
+ * - Sector cut lines (fixed angleDeg, rowFrac 0 -> 1) project 90° perpendicular to the infield edge.
+ * - Tier inner/outer edges and row steps are strictly equidistant parallel offsets everywhere.
+ * - Concentric-circle morph tiers (e.g. Bird's Nest 3F) anchor innerMorph to prevOuterMorph
+ *   while transitioning outerMorph cleanly toward the concentric circle footprint.
+ */
+function evalTierPoint(venue, tierIndex, angleDeg, rowFrac, customRadialDepth) {
   const infield = venue.infield;
   const tiers = venue.standTiers;
-
-  const infieldDist = getRayRoundedRectDistance(
+  const p0 = evalInfieldPerimeterAndNormal(
     angleDeg,
     infield.length,
     infield.width,
@@ -84,25 +167,69 @@ function computeTierRadialBounds(venue, tierIndex, angleDeg, customRadialDepth) 
   }
 
   const tier = tiers[tierIndex];
-  const innerOffsetThisTier = tier.innerOffset || 0;
-  const cumulativeInnerOffset = cumulativeOffset + innerOffsetThisTier;
+  const dIn = cumulativeOffset + (tier.innerOffset || 0);
+  const horizontalDepth = customRadialDepth || tier.radialDepth || 20;
+  const dOut = dIn + horizontalDepth;
 
   const innerMorph = prevOuterMorph;
   const outerMorph = tier.morphMode === 'concentric-circle'
     ? (tier.concentricMorph || 0)
     : 0;
 
-  const baseInner = infieldDist * (1 - innerMorph) + majorHalfRadius * innerMorph;
-  const baseOuter = infieldDist * (1 - outerMorph) + majorHalfRadius * outerMorph;
+  // Parallel offset along infield outward normal (90° perpendicular to infield edge)
+  const rectInX = p0.x + dIn * p0.nx;
+  const rectInZ = p0.z + dIn * p0.nz;
+  const rectOutX = p0.x + dOut * p0.nx;
+  const rectOutZ = p0.z + dOut * p0.nz;
 
-  const horizontalDepth = customRadialDepth || tier.radialDepth || 20;
-  const innerRadius = baseInner + cumulativeInnerOffset;
-  const outerRadius = baseOuter + cumulativeInnerOffset + horizontalDepth;
+  let inX = rectInX;
+  let inZ = rectInZ;
+  if (innerMorph > 1e-6) {
+    const rLenIn = Math.hypot(rectInX, rectInZ) || 1;
+    const circInR = majorHalfRadius + dIn;
+    const circInX = (rectInX / rLenIn) * circInR;
+    const circInZ = (rectInZ / rLenIn) * circInR;
+    inX = rectInX * (1 - innerMorph) + circInX * innerMorph;
+    inZ = rectInZ * (1 - innerMorph) + circInZ * innerMorph;
+  }
 
+  let outX = rectOutX;
+  let outZ = rectOutZ;
+  if (outerMorph > 1e-6) {
+    const rLenOut = Math.hypot(rectOutX, rectOutZ) || 1;
+    const circOutR = majorHalfRadius + dOut;
+    const circOutX = (rectOutX / rLenOut) * circOutR;
+    const circOutZ = (rectOutZ / rLenOut) * circOutR;
+    outX = rectOutX * (1 - outerMorph) + circOutX * outerMorph;
+    outZ = rectOutZ * (1 - outerMorph) + circOutZ * outerMorph;
+  }
+
+  const f = rowFrac === undefined ? 0 : rowFrac;
+  return {
+    x: inX + (outX - inX) * f,
+    z: inZ + (outZ - inZ) * f,
+    inX,
+    inZ,
+    outX,
+    outZ,
+    nx: p0.nx,
+    nz: p0.nz,
+    dIn,
+    dOut
+  };
+}
+
+/**
+ * Computes radial distance bounds from (0,0) consistent with evalTierPoint.
+ */
+function computeTierRadialBounds(venue, tierIndex, angleDeg, customRadialDepth) {
+  const pt = evalTierPoint(venue, tierIndex, angleDeg, 0, customRadialDepth);
+  const innerRadius = Math.hypot(pt.inX, pt.inZ);
+  const outerRadius = Math.hypot(pt.outX, pt.outZ);
   return {
     innerRadius,
     outerRadius,
-    horizontalDepth: outerRadius - innerRadius
+    horizontalDepth: Math.hypot(pt.outX - pt.inX, pt.outZ - pt.inZ)
   };
 }
 
@@ -113,20 +240,11 @@ function computeTierRadialBounds(venue, tierIndex, angleDeg, customRadialDepth) 
  */
 function getRowInwardNormal(venue, tierIndex, angleDeg, rowFrac, customRadialDepth) {
   const delta = 0.5;
-  const d1 = angleDeg - delta;
-  const d2 = angleDeg + delta;
-  const b1 = computeTierRadialBounds(venue, tierIndex, d1, customRadialDepth);
-  const b2 = computeTierRadialBounds(venue, tierIndex, d2, customRadialDepth);
-  const r1 = b1.innerRadius + (b1.outerRadius - b1.innerRadius) * rowFrac;
-  const r2 = b2.innerRadius + (b2.outerRadius - b2.innerRadius) * rowFrac;
+  const p1 = evalTierPoint(venue, tierIndex, angleDeg - delta, rowFrac, customRadialDepth);
+  const p2 = evalTierPoint(venue, tierIndex, angleDeg + delta, rowFrac, customRadialDepth);
 
-  const p1x = Math.sin(d1 * DEG2RAD) * r1;
-  const p1z = -Math.cos(d1 * DEG2RAD) * r1;
-  const p2x = Math.sin(d2 * DEG2RAD) * r2;
-  const p2z = -Math.cos(d2 * DEG2RAD) * r2;
-
-  const tx = p2x - p1x;
-  const tz = p2z - p1z;
+  const tx = p2.x - p1.x;
+  const tz = p2.z - p1.z;
   const nx = -tz;
   const nz = tx;
   const len = Math.hypot(nx, nz) || 1;
@@ -414,17 +532,16 @@ function calculateSeatSightline(venue, selection, viewMode) {
   const riserHeight = isVipBox ? 0 : (sector.riserHeight || Number((rowPitch * Math.tan(slopeDeg * DEG2RAD)).toFixed(3)));
 
   const midAngleDeg = ((sector.startAngleDeg + sector.endAngleDeg) / 2) % 360;
-  const bounds = computeTierRadialBounds(venue, tierIndex, midAngleDeg, sector.customRadialDepth);
-
-  // Map row 1..totalRows evenly across [innerRadius + 0.5, outerRadius - 0.5]
-  const rowFrac = totalRows > 1 ? (row - 1) / (totalRows - 1) : 0;
-  const seatRadius = bounds.innerRadius + 0.5 + rowFrac * Math.max(0.5, bounds.horizontalDepth - 1.0);
+  const rowFrac = totalRows > 1 ? (row - 0.5) / totalRows : 0.5;
+  const seatPt = evalTierPoint(venue, tierIndex, midAngleDeg, rowFrac, sector.customRadialDepth);
   const seatElevation = (tier.baseElevation || 1.0) + (row - 1) * riserHeight;
   const eyeElevation = seatElevation + (sightCfg.spectatorEyeHeight || 1.15);
 
-  const eyePos = polarToWorld3D(midAngleDeg, seatRadius, eyeElevation);
+  const eyePos = { x: seatPt.x, y: eyeElevation, z: seatPt.z };
+  const seatRadius = Math.hypot(seatPt.x, seatPt.z);
+  const seatRayDeg = ((Math.atan2(seatPt.x, -seatPt.z) * RAD2DEG) + 360) % 360;
 
-  const focalRadius = getRayRoundedRectDistance(midAngleDeg, infield.pitchLength || 68, infield.pitchWidth || 45, 4) - (sightCfg.focalPointOffsetFromPitchEdge || 2);
+  const focalRadius = getRayRoundedRectDistance(seatRayDeg, infield.pitchLength || 68, infield.pitchWidth || 45, 4) - (sightCfg.focalPointOffsetFromPitchEdge || 2);
   const D = Math.max(8, seatRadius - Math.max(0, focalRadius));
   const R = Math.max(0.5, eyeElevation);
   const N = isVipBox ? 0.12 : riserHeight;
@@ -482,6 +599,9 @@ function calculateSeatSightline(venue, selection, viewMode) {
 module.exports = {
   DEG2RAD,
   RAD2DEG,
+  evalInfieldPerimeterAndNormal,
+  getInfieldCornerTransitionAngles,
+  evalTierPoint,
   getRayRoundedRectDistance,
   computeTierRadialBounds,
   getRowInwardNormal,

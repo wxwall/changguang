@@ -6,7 +6,9 @@
 
 const {
   DEG2RAD,
-  computeTierRadialBounds,
+  evalTierPoint,
+  getInfieldCornerTransitionAngles,
+  getRowInwardNormal,
   generateConcertInfieldBlocks
 } = require('./schema-geometry');
 
@@ -102,6 +104,7 @@ class Renderer2D {
     this.floorPolygons = [];
     if (!this.venue) return;
 
+    const cornerAngles = getInfieldCornerTransitionAngles(this.venue);
     const tiers = this.venue.standTiers || [];
     tiers.forEach((tier, tierIndex) => {
       const sectors = tier.sectors || [];
@@ -110,44 +113,69 @@ class Renderer2D {
 
         const startDeg = sec.startAngleDeg;
         const endDeg = sec.endAngleDeg;
-        const steps = Math.max(4, Math.ceil((endDeg - startDeg) / 4));
-        const aisleGapDeg = 0.4;
+        const aisleGapDeg = 0.35;
         const sDeg = startDeg + aisleGapDeg;
         const eDeg = endDeg - aisleGapDeg;
         if (eDeg <= sDeg) return;
 
+        // Build angle samples including exact infield corner-transition angles
+        const steps = Math.max(4, Math.ceil((eDeg - sDeg) / 4));
+        const rawSampleDegs = [];
+        for (let i = 0; i <= steps; i++) {
+          rawSampleDegs.push(sDeg + (eDeg - sDeg) * (i / steps));
+        }
+        cornerAngles.forEach((ca) => {
+          if (ca > sDeg + 0.08 && ca < eDeg - 0.08) {
+            rawSampleDegs.push(ca);
+          }
+          if (ca + 360 > sDeg + 0.08 && ca + 360 < eDeg - 0.08) {
+            rawSampleDegs.push(ca + 360);
+          }
+        });
+        rawSampleDegs.sort((a, b) => a - b);
+
+        const sampleDegs = [];
+        rawSampleDegs.forEach((d) => {
+          if (sampleDegs.length === 0 || d - sampleDegs[sampleDegs.length - 1] > 0.05) {
+            sampleDegs.push(d);
+          }
+        });
+
         const innerPts = [];
         const outerPts = [];
-
-        for (let i = 0; i <= steps; i++) {
-          const t = i / steps;
-          const deg = sDeg + (eDeg - sDeg) * t;
-          const rad = deg * DEG2RAD;
-          const sinA = Math.sin(rad);
-          const cosA = -Math.cos(rad);
-
-          const bounds = computeTierRadialBounds(this.venue, tierIndex, deg, sec.customRadialDepth);
-          innerPts.push({ x: sinA * bounds.innerRadius, y: cosA * bounds.innerRadius });
-          outerPts.push({ x: sinA * bounds.outerRadius, y: cosA * bounds.outerRadius });
-        }
+        sampleDegs.forEach((deg) => {
+          const pt = evalTierPoint(this.venue, tierIndex, deg, 0, sec.customRadialDepth);
+          innerPts.push({ x: pt.inX, y: pt.inZ });
+          outerPts.push({ x: pt.outX, y: pt.outZ });
+        });
 
         const polygon = [...innerPts, ...outerPts.reverse()];
         const midDeg = (sDeg + eDeg) / 2;
-        const midRad = midDeg * DEG2RAD;
-        const midBounds = computeTierRadialBounds(this.venue, tierIndex, midDeg, sec.customRadialDepth);
-        const midR = (midBounds.innerRadius + midBounds.outerRadius) / 2;
+        const midPt = evalTierPoint(this.venue, tierIndex, midDeg, 0.5, sec.customRadialDepth);
+        const midDepth = Math.hypot(midPt.outX - midPt.inX, midPt.outZ - midPt.inZ);
 
         let vomitoryRect = null;
         if (sec.vomitory && sec.vomitory.position !== 'none' && sec.vomitory.enabled !== false) {
           const totalRows = sec.rows || tier.defaultRows || 22;
-          const startRowFrac = ((sec.vomitory.startRow || 5) + (sec.vomitory.rowSpan || 4) * 0.5) / totalRows;
-          const vomR = midBounds.innerRadius + (midBounds.outerRadius - midBounds.innerRadius) * Math.min(0.85, Math.max(0.15, startRowFrac));
+          const rawStartRow = (sec.vomitory.startRow !== undefined && sec.vomitory.startRow !== null)
+            ? Number(sec.vomitory.startRow)
+            : 5;
+          const rawSpan = (sec.vomitory.rowSpan !== undefined && sec.vomitory.rowSpan !== null)
+            ? Number(sec.vomitory.rowSpan)
+            : 4;
+          const isFrontConnected = rawStartRow <= 1;
+          const startRowFrac = isFrontConnected
+            ? Math.min(0.22, Math.max(0.06, (Math.max(1, rawSpan) * 0.45) / totalRows))
+            : Math.min(0.85, Math.max(0.15, (rawStartRow + rawSpan * 0.5) / totalRows));
+          const vomPt = evalTierPoint(this.venue, tierIndex, midDeg, startRowFrac, sec.customRadialDepth);
+          const nrm = getRowInwardNormal(this.venue, tierIndex, midDeg, startRowFrac, sec.customRadialDepth);
           vomitoryRect = {
-            x: Math.sin(midRad) * vomR,
-            y: -Math.cos(midRad) * vomR,
-            angleRad: midRad,
+            x: vomPt.x,
+            y: vomPt.z,
+            angleRad: Math.atan2(nrm.x, -nrm.z),
             w: sec.vomitory.width || 3.2,
-            h: Math.max(2.5, Math.min(6, (midBounds.outerRadius - midBounds.innerRadius) * 0.28))
+            h: Math.max(2.2, Math.min(6, midDepth * 0.28)),
+            isFrontConnected
           };
         }
 
@@ -160,8 +188,8 @@ class Renderer2D {
           tierName: tier.name,
           polygon,
           center: {
-            x: Math.sin(midRad) * midR,
-            y: -Math.cos(midRad) * midR
+            x: midPt.x,
+            y: midPt.z
           },
           vomitory: vomitoryRect
         });
@@ -251,10 +279,13 @@ class Renderer2D {
       if (this.pointInPolygon(mx, my, item.polygon)) {
         let rowRatio = 0.5;
         if (item.type === 'sector') {
-          const dist = Math.sqrt(mx * mx + my * my);
           const angleDeg = (Math.atan2(mx, -my) * 180 / Math.PI + 360) % 360;
-          const bounds = computeTierRadialBounds(this.venue, item.tierIndex, angleDeg, item.sector.customRadialDepth);
-          rowRatio = Math.max(0.05, Math.min(0.95, (dist - bounds.innerRadius) / Math.max(1, bounds.outerRadius - bounds.innerRadius)));
+          const pt = evalTierPoint(this.venue, item.tierIndex, angleDeg, 0, item.sector.customRadialDepth);
+          const vx = pt.outX - pt.inX;
+          const vz = pt.outZ - pt.inZ;
+          const vLenSq = Math.max(1, vx * vx + vz * vz);
+          const proj = ((mx - pt.inX) * vx + (my - pt.inZ) * vz) / vLenSq;
+          rowRatio = Math.max(0.05, Math.min(0.95, proj));
         }
         const totalRows = item.type === 'sector' ? (item.sector.rows || 22) : (item.module.rows || 4);
         const estimatedRow = Math.max(1, Math.min(totalRows, Math.round(rowRatio * totalRows)));
@@ -538,12 +569,12 @@ class Renderer2D {
         ctx.lineWidth = (isSelected ? 2.2 : 0.85) / s;
         ctx.stroke();
 
-        // Vomitory portal indicator
+        // Vomitory portal indicator (highlight open front-connected exits in emerald/teal)
         if (showVomitories && item.vomitory && !isDimmed) {
           ctx.save();
           ctx.translate(item.vomitory.x, item.vomitory.y);
           ctx.rotate(item.vomitory.angleRad);
-          ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+          ctx.fillStyle = item.vomitory.isFrontConnected ? 'rgba(16, 185, 129, 0.85)' : 'rgba(15, 23, 42, 0.88)';
           ctx.fillRect(-item.vomitory.w / 2, -item.vomitory.h / 2, item.vomitory.w, item.vomitory.h);
           ctx.restore();
         }
