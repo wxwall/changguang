@@ -1,5 +1,5 @@
 /**
- * STADIACAD 2.0.0 Geometry & Sightline Parametric Engine
+ * STADIACAD 2.0.0 Geometry, Infield Floor & Sightline Parametric Engine
  * Pure WeChat Mini Program JS module (Zero DOM/Web dependencies)
  */
 
@@ -7,18 +7,17 @@ const DEG2RAD = Math.PI / 180;
 const RAD2DEG = 180 / Math.PI;
 
 /**
- * Evaluates a point on a rounded-rectangle perimeter or concentric circle at angle thetaRad.
- * Angle convention: 0 deg = North (0, +Z in 2D top-down where Y_2D is North), clockwise.
- * Wait: Let's unify 2D and 3D coordinates:
- * In our 3D world:
- *   X = East (+) / West (-) [Width axis]
- *   Y = Elevation (+) [Height axis]
- *   Z = South (+) / North (-) [Length axis: North is -Z, South is +Z, so angle 0 deg = North (0, -1), 90 deg = East (+1, 0), 180 deg = South (0, +1), 270 deg = West (-1, 0)]
+ * Evaluates a point on a rounded-rectangle perimeter at angleDeg.
+ * Angle convention:
+ *   0 deg = North (0, -1 in 3D/2D)
+ *  90 deg = East  (+1, 0)
+ * 180 deg = South (0, +1)
+ * 270 deg = West  (-1, 0)
  */
 function getRayRoundedRectDistance(angleDeg, length, width, cornerRadius) {
   const rad = angleDeg * DEG2RAD;
   const dx = Math.sin(rad);
-  const dz = -Math.cos(rad); // 0 deg -> North (dz = -1)
+  const dz = -Math.cos(rad);
 
   const halfW = width / 2;
   const halfL = length / 2;
@@ -29,8 +28,6 @@ function getRayRoundedRectDistance(angleDeg, length, width, cornerRadius) {
   const adx = Math.abs(dx);
   const adz = Math.abs(dz);
 
-  // Ray from origin (0,0) in direction (adx, adz) intersecting rounded rectangle in first quadrant
-  // Check straight vertical wall x = halfW (for z in [0, innerL])
   if (adx > 1e-6) {
     const tWallX = halfW / adx;
     const zAtWall = tWallX * adz;
@@ -39,7 +36,6 @@ function getRayRoundedRectDistance(angleDeg, length, width, cornerRadius) {
     }
   }
 
-  // Check straight horizontal wall z = halfL (for x in [0, innerW])
   if (adz > 1e-6) {
     const tWallZ = halfL / adz;
     const xAtWall = tWallZ * adx;
@@ -48,8 +44,6 @@ function getRayRoundedRectDistance(angleDeg, length, width, cornerRadius) {
     }
   }
 
-  // Otherwise intersects the corner circle centered at (innerW, innerL) with radius r
-  // |(t * adx - innerW)^2 + (t * adz - innerL)^2| = r^2
   const b = -(adx * innerW + adz * innerL);
   const c = innerW * innerW + innerL * innerL - r * r;
   const disc = Math.max(0, b * b - c);
@@ -57,15 +51,17 @@ function getRayRoundedRectDistance(angleDeg, length, width, cornerRadius) {
 }
 
 /**
- * Computes the inner and outer radial distance of a tier at a given angleDeg,
- * respecting cumulative tier offsets, morphMode ('infield-shape' vs 'concentric-circle'),
- * and concentricMorph factor.
+ * Computes the exact inner and outer radial distance of a tier at angleDeg,
+ * strictly matching STADIACAD 2.0.0 engineeringSummary footprint math:
+ * - When morphMode === 'infield-shape': follows rounded-rectangle infield perimeter (morph = 0).
+ * - When morphMode === 'concentric-circle': interpolates infield perimeter toward circle
+ *   of radius (Math.max(length, width) / 2) using tier.concentricMorph.
+ * - radialDepth and customRadialDepth are horizontal plan projections.
  */
 function computeTierRadialBounds(venue, tierIndex, angleDeg, customRadialDepth) {
   const infield = venue.infield;
   const tiers = venue.standTiers;
 
-  // Base infield boundary distance at this angle
   const infieldDist = getRayRoundedRectDistance(
     angleDeg,
     infield.length,
@@ -73,40 +69,28 @@ function computeTierRadialBounds(venue, tierIndex, angleDeg, customRadialDepth) 
     infield.cornerRadius
   );
 
-  // Average radius of infield for concentric morphing
-  const avgInfieldRadius = (infield.length + infield.width) / 4;
+  const majorHalfRadius = Math.max(infield.length, infield.width) / 2;
 
-  // Accumulate radial offset up to tierIndex
-  let cumulativeInfieldOffset = 0;
+  let cumulativeOffset = 0;
   for (let i = 0; i <= tierIndex; i++) {
     const t = tiers[i];
-    cumulativeInfieldOffset += (t.innerOffset || 0);
+    cumulativeOffset += (t.innerOffset || 0);
     if (i < tierIndex) {
-      // Previous tier's depth contribution (use default radialDepth * cos(slope))
-      const prevSlopeRad = (t.defaultSlopeDeg || 20) * DEG2RAD;
-      // Overlap factor: upper tiers in stadiums often cantilever slightly over lower tiers,
-      // or step outward. Using 0.55 of radialDepth gives realistic multi-tier stadium footprint matching outermostFootprintLengthM!
-      cumulativeInfieldOffset += (t.radialDepth || 20) * Math.cos(prevSlopeRad) * 0.55;
+      cumulativeOffset += (t.radialDepth || 20);
     }
   }
 
   const tier = tiers[tierIndex];
-  const morph = tier.morphMode === 'concentric-circle' ? 1.0 : (tier.concentricMorph || 0);
+  const morph = tier.morphMode === 'concentric-circle' ? (tier.concentricMorph || 0) : 0;
 
-  const shapeBaseInner = infieldDist + cumulativeInfieldOffset;
-  const circleBaseInner = avgInfieldRadius + cumulativeInfieldOffset;
-  const innerRadius = shapeBaseInner * (1 - morph) + circleBaseInner * morph;
-
-  const slopeRad = (tier.defaultSlopeDeg || 20) * DEG2RAD;
-  const rawDepth = customRadialDepth || tier.radialDepth || 20;
-  // Horizontal plan projection of radialDepth
-  const horizontalDepth = rawDepth * Math.cos(slopeRad);
+  const baseInfield = infieldDist * (1 - morph) + majorHalfRadius * morph;
+  const innerRadius = baseInfield + cumulativeOffset;
+  const horizontalDepth = customRadialDepth || tier.radialDepth || 20;
 
   return {
     innerRadius,
     outerRadius: innerRadius + horizontalDepth,
-    horizontalDepth,
-    rawDepth
+    horizontalDepth
   };
 }
 
@@ -124,8 +108,157 @@ function polarToWorld3D(angleDeg, radius, elevation) {
 }
 
 /**
- * Computes exact 3D camera eye position, lookAt target, distance, and architectural C-Value
- * for any selected sector, row (1..rows), and seat ratio (0..1) or infield module.
+ * Generates Concert Infield Floor Seating Blocks derived strictly from
+ * venue.infield and venue.infield.stageConfig (stage size, catwalk, FOH tower).
+ */
+function generateConcertInfieldBlocks(venue) {
+  const infield = venue.infield;
+  const stage = infield && infield.stageConfig;
+  if (!infield || !stage) return [];
+
+  const blocks = [];
+  const halfW = (infield.width || 60) / 2 - 4;
+  const halfL = (infield.length || 100) / 2 - 4;
+  const sw = stage.width || 30;
+  const sd = stage.depth || 20;
+
+  // Keep clear of infieldModules if present
+  const mods = venue.infieldModules || [];
+  let maxModHalfX = halfW;
+  mods.forEach(m => {
+    if (Math.abs(m.x) > 10) {
+      maxModHalfX = Math.min(maxModHalfX, Math.abs(m.x) - (m.depth || 5) / 2 - 2.5);
+    }
+  });
+  const usableHalfW = Math.max(10, Math.min(halfW, maxModHalfX));
+
+  if (stage.type === 'center-stage') {
+    // 4-sided center stage: place North & South floor VIP blocks (and small E/W if room)
+    const cw = stage.catwalkWidth || 3.2;
+    const clZ = Math.min(stage.catwalkLength || 10, Math.max(4, halfL - sd / 2 - 4));
+    const zStart = sd / 2 + 2.5;
+    const zEnd = halfL - 1.5;
+    const depthZ = zEnd - zStart;
+
+    if (depthZ > 3) {
+      const rows = Math.max(3, Math.floor(depthZ / 0.9));
+      const bw = Math.max(6, usableHalfW - cw / 2 - 2.5);
+      const bxOffset = cw / 2 + 2.0 + bw / 2;
+      const bzCenter = zStart + depthZ / 2;
+
+      blocks.push(
+        { id: 'floor-nw', name: '内场北西VIP区', x: -bxOffset, z: -bzCenter, width: bw, depth: depthZ, rows, rowPitch: 0.9, seatSpacing: 0.52, facingZ: 1, color: '#0EA5E9' },
+        { id: 'floor-ne', name: '内场北东VIP区', x: bxOffset, z: -bzCenter, width: bw, depth: depthZ, rows, rowPitch: 0.9, seatSpacing: 0.52, facingZ: 1, color: '#0EA5E9' },
+        { id: 'floor-sw', name: '内场南西VIP区', x: -bxOffset, z: bzCenter, width: bw, depth: depthZ, rows, rowPitch: 0.9, seatSpacing: 0.52, facingZ: -1, color: '#0EA5E9' },
+        { id: 'floor-se', name: '内场南东VIP区', x: bxOffset, z: bzCenter, width: bw, depth: depthZ, rows, rowPitch: 0.9, seatSpacing: 0.52, facingZ: -1, color: '#0EA5E9' }
+      );
+    }
+    return blocks;
+  }
+
+  // End-stage or Festival-stage positioned at North end facing South (+Z)
+  const stageZ = -Math.min((infield.pitchLength || 100) * 0.36, halfL - sd / 2 - 2);
+  const stageFrontZ = stageZ + sd / 2;
+  const cl = stage.catwalkLength || 18;
+  const cw = stage.catwalkWidth || 3.2;
+  const catEndZ = stageFrontZ + cl;
+  const fohZ = stage.fohEnabled ? (stageFrontZ + (stage.fohDistance || 38)) : (halfL + 100);
+  const fohW = stage.fohWidth || 8;
+  const fohD = stage.fohDepth || 5;
+
+  const sideSpanW = Math.min(usableHalfW - 2, Math.max(18, (infield.pitchWidth || 60) * 0.46));
+
+  // Front VIP Pit flanking catwalk (A1, A2)
+  const frontDepth = Math.max(0, Math.min(catEndZ, halfL - 4) - (stageFrontZ + 2.5));
+  if (frontDepth > 3.5) {
+    const bw = sideSpanW - cw / 2 - 2.0;
+    const bx = cw / 2 + 2.0 + bw / 2;
+    const bz = stageFrontZ + 2.5 + frontDepth / 2;
+    const rows = Math.max(4, Math.floor(frontDepth / 0.88));
+    blocks.push(
+      { id: 'floor-a1', name: '内场前区 A1 (近T台)', x: -bx, z: bz, width: bw, depth: frontDepth, rows, rowPitch: 0.88, seatSpacing: 0.5, facingZ: -1, color: '#EC4899' },
+      { id: 'floor-a2', name: '内场前区 A2 (近T台)', x: bx, z: bz, width: bw, depth: frontDepth, rows, rowPitch: 0.88, seatSpacing: 0.5, facingZ: -1, color: '#EC4899' }
+    );
+  }
+
+  // Mid Floor flanking or ahead of FOH (B1, B2)
+  const midStartZ = Math.max(stageFrontZ + 3, catEndZ + 5.5);
+  const midEndZ = stage.fohEnabled ? Math.min(fohZ - fohD / 2 - 2.5, halfL - 4) : (halfL - 4);
+  const midDepth = midEndZ - midStartZ;
+  if (midDepth > 3.5) {
+    const bw = sideSpanW - 1.5;
+    const bx = 1.5 + bw / 2;
+    const bz = midStartZ + midDepth / 2;
+    const rows = Math.max(4, Math.floor(midDepth / 0.88));
+    blocks.push(
+      { id: 'floor-b1', name: '内场中区 B1', x: -bx, z: bz, width: bw, depth: midDepth, rows, rowPitch: 0.88, seatSpacing: 0.5, facingZ: -1, color: '#3B82F6' },
+      { id: 'floor-b2', name: '内场中区 B2', x: bx, z: bz, width: bw, depth: midDepth, rows, rowPitch: 0.88, seatSpacing: 0.5, facingZ: -1, color: '#3B82F6' }
+    );
+  }
+
+  // Rear Floor behind FOH (C1, C2)
+  if (stage.fohEnabled) {
+    const rearStartZ = fohZ + fohD / 2 + 2.5;
+    const rearEndZ = halfL - 3;
+    const rearDepth = rearEndZ - rearStartZ;
+    if (rearDepth > 3.5) {
+      const bw = sideSpanW - 1.5;
+      const bx = 1.5 + bw / 2;
+      const bz = rearStartZ + rearDepth / 2;
+      const rows = Math.max(4, Math.floor(rearDepth / 0.88));
+      blocks.push(
+        { id: 'floor-c1', name: '内场后区 C1', x: -bx, z: bz, width: bw, depth: rearDepth, rows, rowPitch: 0.88, seatSpacing: 0.5, facingZ: -1, color: '#6366F1' },
+        { id: 'floor-c2', name: '内场后区 C2', x: bx, z: bz, width: bw, depth: rearDepth, rows, rowPitch: 0.88, seatSpacing: 0.5, facingZ: -1, color: '#6366F1' }
+      );
+    }
+  }
+
+  return blocks;
+}
+
+/**
+ * Finds the default East (90 deg) Tier 1 (1F) sector and selects Row 1.
+ */
+function findDefaultEastFirstRowSelection(venue) {
+  const tierIndex = 0;
+  const tier = (venue.standTiers && venue.standTiers[tierIndex]) || { sectors: [] };
+  const activeSectors = (tier.sectors || []).filter(s => !s.isDeleted && s.fillType !== 'empty-void');
+
+  let bestSector = activeSectors[0];
+  let bestDist = 999;
+
+  activeSectors.forEach((sec) => {
+    // Check if 90 deg is inside [startAngleDeg, endAngleDeg]
+    if (sec.startAngleDeg <= 90 && sec.endAngleDeg >= 90) {
+      const mid = (sec.startAngleDeg + sec.endAngleDeg) / 2;
+      const dist = Math.abs(mid - 90);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestSector = sec;
+      }
+    } else {
+      const mid = (sec.startAngleDeg + sec.endAngleDeg) / 2;
+      const dist = Math.abs(mid - 90);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestSector = sec;
+      }
+    }
+  });
+
+  return {
+    tierIndex,
+    sector: bestSector,
+    row: 1,
+    seatNo: 1,
+    isModule: false,
+    isFloorBlock: false
+  };
+}
+
+/**
+ * Computes exact 3D camera eye position, lookAt target, distance, and C-Value
+ * for any selected stand sector, infield module, or concert floor block.
  */
 function calculateSeatSightline(venue, selection, viewMode) {
   const infield = venue.infield;
@@ -136,38 +269,70 @@ function calculateSeatSightline(venue, selection, viewMode) {
     targetCValueMm: 90
   };
 
-  // Determine stage / pitch focal point in 3D
   let targetX = 0;
   let targetY = 1.5;
   let targetZ = 0;
 
   if (viewMode === 'concert' && stage) {
-    const orientRad = (stage.orientationDeg || 0) * DEG2RAD;
     if (stage.type === 'center-stage') {
       targetX = 0;
-      targetY = (stage.height || 1.8) + 1.6; // Singer eye level on center stage
+      targetY = (stage.height || 1.8) + 1.6;
       targetZ = 0;
     } else {
-      // End stage or festival stage placed near one end of the pitch
-      // orientationDeg: 90 -> facing East or West; 180 -> placed at North facing South
-      const offsetDist = (infield.pitchLength || 100) * 0.36;
-      targetX = -Math.sin(orientRad) * offsetDist;
-      targetZ = Math.cos(orientRad) * offsetDist;
+      const halfL = (infield.length || 100) / 2 - 4;
+      const sd = stage.depth || 20;
+      targetX = 0;
+      targetZ = -Math.min((infield.pitchLength || 100) * 0.36, halfL - sd / 2 - 2);
       targetY = (stage.height || 2.0) + 2.2;
     }
   } else {
-    // Sports mode: look at center of pitch or nearest action point
     targetX = 0;
     targetY = 0.8;
     targetZ = 0;
   }
 
-  // If selection is an infield module
+  // Concert Infield Floor Block selection
+  if (selection && selection.isFloorBlock && selection.floorBlock) {
+    const blk = selection.floorBlock;
+    const totalRows = blk.rows || 10;
+    const rowIdx = Math.min(Math.max(1, selection.row || 1), totalRows);
+    const localZ = -blk.depth / 2 + (rowIdx - 0.5) * (blk.depth / totalRows);
+    const eyeZ = blk.facingZ === 1 ? (blk.z - localZ) : (blk.z + localZ);
+    const eyeX = blk.x;
+    const eyeY = sightCfg.spectatorEyeHeight || 1.15;
+
+    const dx = targetX - eyeX;
+    const dy = targetY - eyeY;
+    const dz = targetZ - eyeZ;
+    const dist3D = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+    return {
+      eye: { x: eyeX, y: eyeY, z: eyeZ },
+      target: { x: targetX, y: targetY, z: targetZ },
+      distanceM: Number(dist3D.toFixed(1)),
+      elevationM: Number(eyeY.toFixed(1)),
+      verticalAngleDeg: Number((Math.atan2(dy, Math.hypot(dx, dz)) * RAD2DEG).toFixed(1)),
+      cValueMm: 95,
+      cValueStatus: '内场近距离直视视野',
+      row: rowIdx,
+      maxRows: totalRows,
+      seatNo: selection.seatNo || 8,
+      sectorId: blk.id,
+      sectorName: blk.name,
+      tierLevel: 0,
+      tierName: '内场平地坐席区',
+      fillType: 'infield-floor',
+      slopeDeg: 0,
+      rowPitch: blk.rowPitch || 0.88,
+      guardrailMaterial: '内场防爆铁马围栏'
+    };
+  }
+
+  // Infield Module selection (e.g. Gongti sideline bench/seats)
   if (selection && selection.isModule && selection.module) {
     const mod = selection.module;
-    const rowIdx = Math.min(Math.max(1, selection.row || 2), mod.rows || 4);
-    const eyeY = (mod.baseElevation || 0) + (rowIdx - 1) * Math.sin((mod.slopeDeg || 0) * DEG2RAD) * (mod.rowPitch || 0.9) + sightCfg.spectatorEyeHeight;
-    // Module x, y in schema map to X, Z in 3D
+    const rowIdx = Math.min(Math.max(1, selection.row || 1), mod.rows || 4);
+    const eyeY = (mod.baseElevation || 0) + (rowIdx - 1) * Math.sin((mod.slopeDeg || 0) * DEG2RAD) * (mod.rowPitch || 0.9) + (sightCfg.spectatorEyeHeight || 1.15);
     const eyeX = mod.x || 0;
     const eyeZ = mod.y || 0;
     const dx = targetX - eyeX;
@@ -180,16 +345,20 @@ function calculateSeatSightline(venue, selection, viewMode) {
       target: { x: targetX, y: targetY, z: targetZ },
       distanceM: Number(dist3D.toFixed(1)),
       elevationM: Number(eyeY.toFixed(1)),
-      verticalAngleDeg: Number((Math.atan2(dy, Math.sqrt(dx * dx + dz * dz)) * RAD2DEG).toFixed(1)),
+      verticalAngleDeg: Number((Math.atan2(dy, Math.hypot(dx, dz)) * RAD2DEG).toFixed(1)),
       cValueMm: 125,
-      cValueStatus: '优 (全景无遮挡)',
+      cValueStatus: '优 (场边零距离视野)',
       row: rowIdx,
       maxRows: mod.rows || 4,
       seatNo: selection.seatNo || 12,
+      sectorId: mod.id,
       sectorName: mod.name,
+      tierLevel: 0,
       tierName: '内场专属坐席模块',
       fillType: 'infield-module',
-      guardrailMaterial: 'none'
+      slopeDeg: mod.slopeDeg || 0,
+      rowPitch: mod.rowPitch || 0.95,
+      guardrailMaterial: '场边防撞护板'
     };
   }
 
@@ -198,8 +367,8 @@ function calculateSeatSightline(venue, selection, viewMode) {
   const tier = venue.standTiers[tierIndex] || venue.standTiers[0];
   const sector = (selection && selection.sector) || tier.sectors.find(s => !s.isDeleted && s.fillType !== 'empty-void') || tier.sectors[0];
 
-  const totalRows = sector.rows || tier.defaultRows || 25;
-  const row = Math.min(Math.max(1, (selection && selection.row) || Math.ceil(totalRows * 0.45)), totalRows);
+  const totalRows = sector.rows || tier.defaultRows || 22;
+  const row = Math.min(Math.max(1, (selection && selection.row) || 1), totalRows);
   const rowPitch = sector.rowPitch || tier.defaultRowPitch || 0.85;
   const slopeDeg = sector.slopeDeg || tier.defaultSlopeDeg || 20;
   const riserHeight = sector.riserHeight || Number((rowPitch * Math.tan(slopeDeg * DEG2RAD)).toFixed(3));
@@ -207,20 +376,14 @@ function calculateSeatSightline(venue, selection, viewMode) {
   const midAngleDeg = ((sector.startAngleDeg + sector.endAngleDeg) / 2) % 360;
   const bounds = computeTierRadialBounds(venue, tierIndex, midAngleDeg, sector.customRadialDepth);
 
-  // Horizontal radial distance for this row
-  const rowHorizontalOffset = (row - 1) * rowPitch;
-  const seatRadius = bounds.innerRadius + Math.min(rowHorizontalOffset, bounds.horizontalDepth);
+  // Map row 1..totalRows evenly across [innerRadius + 0.45, outerRadius - 0.45]
+  const rowFrac = totalRows > 1 ? (row - 1) / (totalRows - 1) : 0;
+  const seatRadius = bounds.innerRadius + 0.5 + rowFrac * Math.max(0.5, bounds.horizontalDepth - 1.0);
   const seatElevation = (tier.baseElevation || 1.0) + (row - 1) * riserHeight;
   const eyeElevation = seatElevation + (sightCfg.spectatorEyeHeight || 1.15);
 
   const eyePos = polarToWorld3D(midAngleDeg, seatRadius, eyeElevation);
 
-  // Calculate architectural C-Value (sightline clearance over spectator in row-1)
-  // Formula: C = D * (N + R) / (D + T) - R, where:
-  //   D = horizontal distance from eye to focal point
-  //   N = riserHeight
-  //   T = rowPitch (tread depth)
-  //   R = height of eye above focal point
   const focalRadius = getRayRoundedRectDistance(midAngleDeg, infield.pitchLength || 68, infield.pitchWidth || 45, 4) - (sightCfg.focalPointOffsetFromPitchEdge || 2);
   const D = Math.max(8, seatRadius - Math.max(0, focalRadius));
   const R = Math.max(0.5, eyeElevation);
@@ -240,7 +403,7 @@ function calculateSeatSightline(venue, selection, viewMode) {
   const dy = targetY - eyePos.y;
   const dz = targetZ - eyePos.z;
   const dist3D = Math.sqrt(dx * dx + dy * dy + dz * dz);
-  const horizDist = Math.sqrt(dx * dx + dz * dz);
+  const horizDist = Math.hypot(dx, dz);
   const vertAngleDeg = Math.atan2(dy, horizDist) * RAD2DEG;
 
   const guardrailMatMap = {
@@ -260,7 +423,7 @@ function calculateSeatSightline(venue, selection, viewMode) {
     cValueStatus,
     row,
     maxRows: totalRows,
-    seatNo: (selection && selection.seatNo) || 16,
+    seatNo: (selection && selection.seatNo) || 1,
     sectorId: sector.id,
     sectorName: sector.name,
     tierIndex,
@@ -282,5 +445,7 @@ module.exports = {
   getRayRoundedRectDistance,
   computeTierRadialBounds,
   polarToWorld3D,
+  generateConcertInfieldBlocks,
+  findDefaultEastFirstRowSelection,
   calculateSeatSightline
 };

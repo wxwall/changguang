@@ -1,5 +1,5 @@
 <view class="app-shell">
-  <!-- 顶部栏：场馆切换 + 演艺/体育模式切换 + 核心模块切换 -->
+  <!-- 顶部栏：场馆切换 -->
   <view class="top-header">
     <scroll-view class="venue-tabs" scroll-x="true" enable-flex="true">
       <view
@@ -13,27 +13,55 @@
         <text class="venue-chip-cap">{{item.capLabel}}</text>
       </view>
     </scroll-view>
-
-    <view class="toolbar-row">
-      <!-- 2D / 分屏联动 / 3D全屏 视图切换 -->
-      <view class="seg-group">
-        <view class="seg-btn {{layoutMode === '2d' ? 'active' : ''}}" data-mode="2d" bindtap="onSwitchLayout">2D 平面选座</view>
-        <view class="seg-btn {{layoutMode === 'split' ? 'active' : ''}}" data-mode="split" bindtap="onSwitchLayout">2D+3D 同屏联动</view>
-        <view class="seg-btn {{layoutMode === '3d' ? 'active' : ''}}" data-mode="3d" bindtap="onSwitchLayout">3D 沉浸视野</view>
-      </view>
-
-      <!-- 演唱会舞美 / 体育赛场 模式切换 -->
-      <view class="mode-pill" bindtap="onToggleViewMode">
-        <view class="mode-dot {{viewMode === 'concert' ? 'concert' : 'sports'}}"></view>
-        <text>{{viewMode === 'concert' ? '演唱会舞美' : '标准赛场'}}</text>
-      </view>
-    </view>
   </view>
 
-  <!-- 核心视口容器 -->
-  <view class="viewport-body">
-    <!-- 版块 1：2D 平面交互选座视图 -->
-    <view class="pane-2d {{layoutMode === '3d' ? 'hidden' : ''}} {{layoutMode === '2d' ? 'full' : 'half'}}">
+  <!-- 核心视口容器：弹出 Schema 输入框时整体移出屏幕以防原生 Canvas 遮挡模拟器 textarea，同时保留 WebGL 上下文 -->
+  <view class="viewport-body {{showSchemaModal ? 'offscreen' : ''}}">
+    <!-- 上方版块：3D WebGL 全景沉浸式视野渲染视图 -->
+    <view class="pane-3d {{is3DFullscreen ? 'full' : 'split-top'}}">
+      <canvas
+        type="webgl"
+        id="stadium3d"
+        class="canvas-el"
+        bindtouchstart="onTouchStart3D"
+        bindtouchmove="onTouchMove3D"
+        bindtouchend="onTouchEnd3D"
+      ></canvas>
+
+      <!-- 3D 顶部控制栏：视角提示 + 飞入/鸟瞰按钮 + 全屏切换 -->
+      <view class="hud-top-3d">
+        <view class="hud-left-3d">
+          <view class="camera-badge {{cameraMode === 'seat' ? 'seat-mode' : 'bird-mode'}}">
+            <text class="badge-dot"></text>
+            <text class="badge-text">{{cameraMode === 'bird' ? '3D 全景鸟瞰 · 点击下方2D选座' : '座席实景 · ' + sightline.sectorName + ' ' + sightline.row + '排'}}</text>
+          </view>
+          <view wx:if="{{cameraMode === 'seat'}}" class="hud-action-btn primary" bindtap="onReturnBirdEye">
+            返回鸟瞰
+          </view>
+          <view wx:else class="hud-action-btn accent" bindtap="onFlyToSelectedSeat">
+            进入所选视角
+          </view>
+        </view>
+
+        <view class="fullscreen-btn-3d" bindtap="onToggle3DFullscreen">
+          {{is3DFullscreen ? '退出全屏' : '全屏'}}
+        </view>
+      </view>
+
+      <!-- 3D 舞台实景动态光学变焦 (0.5x ~ 5x) -->
+      <view class="zoom-bar-3d">
+        <view
+          wx:for="{{zoomOptions}}"
+          wx:key="value"
+          class="zoom-chip {{zoomLevel === item.value ? 'active' : ''}}"
+          data-zoom="{{item.value}}"
+          bindtap="onSelectZoom"
+        >{{item.label}}</view>
+      </view>
+    </view>
+
+    <!-- 下方版块：2D 平面交互选座视图 (全屏时隐藏但保持挂载) -->
+    <view class="pane-2d {{is3DFullscreen ? 'hidden' : 'split-bottom'}}">
       <canvas
         type="2d"
         id="seatmap2d"
@@ -49,64 +77,38 @@
           class="tier-pill {{activeTierFilter === 'all' ? 'active' : ''}}"
           data-level="all"
           bindtap="onFilterTier"
-        >全部看台</view>
+        >全部</view>
         <view
           wx:for="{{currentVenue.standTiers}}"
           wx:key="id"
           class="tier-pill {{activeTierFilter === item.level ? 'active' : ''}}"
           data-level="{{item.level}}"
           bindtap="onFilterTier"
-        >{{item.level}}F 看台</view>
+        >{{item.level}}F</view>
       </view>
 
       <!-- 2D 重置缩放按钮 -->
       <view class="floating-reset-2d" bindtap="onReset2D">重置平面</view>
     </view>
-
-    <!-- 版块 2：基于 WebGL 的 3D 全景沉浸式视野渲染视图 -->
-    <view class="pane-3d {{layoutMode === '2d' ? 'hidden' : ''}} {{layoutMode === '3d' ? 'full' : 'half'}}">
-      <canvas
-        type="webgl"
-        id="stadium3d"
-        class="canvas-el"
-        bindtouchstart="onTouchStart3D"
-        bindtouchmove="onTouchMove3D"
-        bindtouchend="onTouchEnd3D"
-      ></canvas>
-
-      <!-- 3D 视角状态指示器与一键鸟瞰复原 -->
-      <view class="hud-top-3d">
-        <view class="camera-badge {{cameraMode === 'seat' ? 'seat-mode' : 'bird-mode'}}">
-          <text class="badge-dot"></text>
-          <text>{{cameraMode === 'bird' ? '3D 全景鸟瞰视角 (点击看台飞入座位)' : '第一人称座席实景视野 · ' + sightline.sectorName}}</text>
-        </view>
-        <view wx:if="{{cameraMode === 'seat'}}" class="bird-return-btn" bindtap="onReturnBirdEye">
-          返回鸟瞰全景
-        </view>
-      </view>
-
-      <!-- 3D 舞台实景动态光学变焦 (0.5x ~ 5x) -->
-      <view class="zoom-bar-3d">
-        <view
-          wx:for="{{zoomOptions}}"
-          wx:key="value"
-          class="zoom-chip {{zoomLevel === item.value ? 'active' : ''}}"
-          data-zoom="{{item.value}}"
-          bindtap="onSelectZoom"
-        >{{item.label}}</view>
-      </view>
-    </view>
   </view>
 
-  <!-- 底部精密工程参数与座位调节抽屉 -->
+  <!-- 底部控制面板：选区信息 + 演唱会舞美切换 + 自定义Schema + 排数滑块 + 视野指标 -->
   <view class="bottom-inspector">
     <view class="inspector-header">
       <view class="sector-title-group">
         <text class="sector-badge">{{sightline.tierLevel ? sightline.tierLevel + 'F' : '内场'}}</text>
         <text class="sector-name">{{sightline.sectorName}}</text>
-        <text class="sector-sub">{{sightline.row}}排 {{sightline.seatNo}}座 · {{sightline.fillType === 'vip-box' ? '豪华VIP包厢' : '标准看台坐席'}}</text>
+        <text class="sector-sub">{{sightline.row}}排 {{sightline.seatNo}}座</text>
       </view>
-      <view class="schema-import-btn" bindtap="onOpenSchemaModal">自定义Schema</view>
+
+      <view class="inspector-tools">
+        <!-- 演唱会舞美 / 标准赛场 切换（已移至底部控制面板） -->
+        <view class="mode-pill" bindtap="onToggleViewMode">
+          <view class="mode-dot {{viewMode === 'concert' ? 'concert' : 'sports'}}"></view>
+          <text>{{viewMode === 'concert' ? '演唱会舞美' : '标准赛场'}}</text>
+        </view>
+        <view class="schema-import-btn" bindtap="onOpenSchemaModal">自定义Schema</view>
+      </view>
     </view>
 
     <!-- 实时排数拖动预览 (精确联动 3D 仰角、视距与 C-Value) -->
@@ -119,7 +121,7 @@
         value="{{sightline.row}}"
         activeColor="#F43F5E"
         backgroundColor="#1E293B"
-        block-size="18"
+        block-size="16"
         bindchanging="onRowChanging"
         bindchange="onRowChange"
       />
@@ -151,18 +153,25 @@
     </view>
   </view>
 
-  <!-- 动态粘贴/导入新场馆 Schema 弹窗 -->
-  <view wx:if="{{showSchemaModal}}" class="modal-mask">
+  <!-- 动态粘贴/导入新场馆 Schema 弹窗（原生 Canvas 已移出屏幕，彻底解决模拟器无法弹出输入框的问题） -->
+  <view wx:if="{{showSchemaModal}}" class="modal-mask" catchtouchmove="noop">
     <view class="modal-card">
       <view class="modal-header">
-        <text class="modal-title">导入 STADIACAD 2.0.0 场馆 Schema</text>
-        <text class="modal-close" bindtap="onCloseSchemaModal">✕</text>
+        <text class="modal-title">导入 STADIACAD 2.0.0 Schema</text>
+        <view class="modal-header-right">
+          <view class="paste-chip" bindtap="onPasteClipboard">粘贴剪贴板</view>
+          <text class="modal-close" bindtap="onCloseSchemaModal">✕</text>
+        </view>
       </view>
-      <text class="modal-desc">粘贴任意符合 STADIACAD 2.0.0 规范的 JSON 数据，引擎将实时生成 2D 平面选座图与 3D WebGL 沉浸式场馆模型：</text>
+      <text class="modal-desc">粘贴符合 STADIACAD 2.0.0 规范的场馆 JSON 数据，引擎将实时映射并重建 2D 平面选座图与 3D 场馆：</text>
       <textarea
         class="schema-textarea"
-        placeholder="在此粘贴场馆 Schema JSON..."
+        placeholder="在此输入或粘贴场馆 Schema JSON..."
         maxlength="-1"
+        fixed="true"
+        cursor-spacing="24"
+        show-confirm-bar="{{false}}"
+        focus="{{schemaTextareaFocus}}"
         value="{{customSchemaText}}"
         bindinput="onSchemaInput"
       ></textarea>

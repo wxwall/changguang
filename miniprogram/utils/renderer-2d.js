@@ -1,19 +1,20 @@
 /**
  * STADIACAD 2D Interactive Seat Map Renderer
  * Uses WeChat Mini Program <canvas type="2d"> API
+ * Clean, enlarged, finger-friendly layout without cluttered labels
  */
 
 const {
   DEG2RAD,
-  getRayRoundedRectDistance,
-  computeTierRadialBounds
+  computeTierRadialBounds,
+  generateConcertInfieldBlocks
 } = require('./schema-geometry');
 
 const TIER_COLORS = [
-  { base: '#1E3A8A', stroke: '#3B82F6', hover: '#2563EB', label: '#93C5FD' }, // 1F Lower Bowl
-  { base: '#065F46', stroke: '#10B981', hover: '#059669', label: '#6EE7B7' }, // 2F Club / Tier 2
-  { base: '#78350F', stroke: '#F59E0B', hover: '#D97706', label: '#FDE68A' }, // 3F VIP / Tier 3
-  { base: '#4C1D95', stroke: '#8B5CF6', hover: '#7C3AED', label: '#DDD6FE' }  // 4F Upper Bowl
+  { base: '#1E3A8A', stroke: '#60A5FA', label: '#DBEAFE' }, // 1F Lower Bowl
+  { base: '#065F46', stroke: '#34D399', label: '#D1FAE5' }, // 2F Club / Tier 2
+  { base: '#78350F', stroke: '#FBBF24', label: '#FEF3C7' }, // 3F VIP / Tier 3
+  { base: '#4C1D95', stroke: '#A78BFA', label: '#EDE9FE' }  // 4F Upper Bowl
 ];
 
 class Renderer2D {
@@ -29,7 +30,7 @@ class Renderer2D {
     this.activeTierFilter = 'all'; // 'all' | 1 | 2 | 3 | 4
     this.selectedSectorId = null;
     this.selectedModuleId = null;
-    this.selectedPoint = null;
+    this.selectedFloorBlockId = null;
 
     // Pan & Zoom state
     this.scale = 1.0;
@@ -39,6 +40,7 @@ class Renderer2D {
 
     // Cached hit-test polygons
     this.hitPolygons = [];
+    this.floorPolygons = [];
   }
 
   resize(width, height) {
@@ -69,9 +71,10 @@ class Renderer2D {
     this.render();
   }
 
-  setSelection(sectorId, moduleId) {
-    this.selectedSectorId = sectorId;
-    this.selectedModuleId = moduleId;
+  setSelection(sectorId, moduleId, floorBlockId) {
+    this.selectedSectorId = sectorId || null;
+    this.selectedModuleId = moduleId || null;
+    this.selectedFloorBlockId = floorBlockId || null;
     this.render();
   }
 
@@ -85,24 +88,21 @@ class Renderer2D {
   computeBaseScale() {
     if (!this.venue) return;
     const summary = this.venue.engineeringSummary || {};
-    const maxDim = Math.max(
-      summary.outermostFootprintLengthM || 280,
-      summary.outermostFootprintWidthM || 240
-    );
-    const minCanvasSide = Math.min(this.width, this.height);
-    this.baseMeterToPx = (minCanvasSide * 0.84) / maxDim;
+    const footW = summary.outermostFootprintWidthM || 220;
+    const footL = summary.outermostFootprintLengthM || 260;
+
+    // Maximize fill inside 2D viewport with comfortable margin
+    const sx = (this.width * 0.94) / footW;
+    const sy = (this.height * 0.94) / footL;
+    this.baseMeterToPx = Math.max(0.4, Math.min(sx, sy));
   }
 
-  /**
-   * Precomputes 2D meter-space polygons for all sectors and infield modules
-   * so rendering and touch hit-testing are super fast (60fps).
-   */
   buildGeometryCache() {
     this.hitPolygons = [];
+    this.floorPolygons = [];
     if (!this.venue) return;
 
     const tiers = this.venue.standTiers || [];
-    // Build from outer tier to inner tier or inner to outer
     tiers.forEach((tier, tierIndex) => {
       const sectors = tier.sectors || [];
       sectors.forEach((sec) => {
@@ -111,7 +111,7 @@ class Renderer2D {
         const startDeg = sec.startAngleDeg;
         const endDeg = sec.endAngleDeg;
         const steps = Math.max(4, Math.ceil((endDeg - startDeg) / 4));
-        const aisleGapDeg = 0.35; // visual gap between sectors
+        const aisleGapDeg = 0.4;
         const sDeg = startDeg + aisleGapDeg;
         const eDeg = endDeg - aisleGapDeg;
         if (eDeg <= sDeg) return;
@@ -124,7 +124,7 @@ class Renderer2D {
           const deg = sDeg + (eDeg - sDeg) * t;
           const rad = deg * DEG2RAD;
           const sinA = Math.sin(rad);
-          const cosA = -Math.cos(rad); // North is up (-Y in screen space)
+          const cosA = -Math.cos(rad);
 
           const bounds = computeTierRadialBounds(this.venue, tierIndex, deg, sec.customRadialDepth);
           innerPts.push({ x: sinA * bounds.innerRadius, y: cosA * bounds.innerRadius });
@@ -137,16 +137,17 @@ class Renderer2D {
         const midBounds = computeTierRadialBounds(this.venue, tierIndex, midDeg, sec.customRadialDepth);
         const midR = (midBounds.innerRadius + midBounds.outerRadius) / 2;
 
-        // Vomitory position in meter space
         let vomitoryRect = null;
         if (sec.vomitory && sec.vomitory.position !== 'none' && sec.vomitory.enabled !== false) {
-          const vomR = midBounds.innerRadius + (midBounds.outerRadius - midBounds.innerRadius) * 0.42;
+          const totalRows = sec.rows || tier.defaultRows || 22;
+          const startRowFrac = ((sec.vomitory.startRow || 5) + (sec.vomitory.rowSpan || 4) * 0.5) / totalRows;
+          const vomR = midBounds.innerRadius + (midBounds.outerRadius - midBounds.innerRadius) * Math.min(0.85, Math.max(0.15, startRowFrac));
           vomitoryRect = {
             x: Math.sin(midRad) * vomR,
             y: -Math.cos(midRad) * vomR,
             angleRad: midRad,
             w: sec.vomitory.width || 3.2,
-            h: Math.min(6, (midBounds.outerRadius - midBounds.innerRadius) * 0.35)
+            h: Math.max(2.5, Math.min(6, (midBounds.outerRadius - midBounds.innerRadius) * 0.28))
           };
         }
 
@@ -167,7 +168,7 @@ class Renderer2D {
       });
     });
 
-    // Infield modules
+    // Infield modules (schema-defined field seats)
     const modules = this.venue.infieldModules || [];
     modules.forEach((mod) => {
       const rotRad = (mod.rotationDeg || 0) * DEG2RAD;
@@ -190,16 +191,34 @@ class Renderer2D {
         type: 'module',
         id: mod.id,
         module: mod,
-        tierLevel: 1,
+        tierLevel: 0,
         polygon,
         center: { x: mod.x || 0, y: mod.y || 0 }
       });
     });
+
+    // Concert Infield Floor Seating Blocks
+    const floorBlocks = generateConcertInfieldBlocks(this.venue);
+    floorBlocks.forEach((blk) => {
+      const hw = blk.width / 2;
+      const hd = blk.depth / 2;
+      const polygon = [
+        { x: blk.x - hw, y: blk.z - hd },
+        { x: blk.x + hw, y: blk.z - hd },
+        { x: blk.x + hw, y: blk.z + hd },
+        { x: blk.x - hw, y: blk.z + hd }
+      ];
+      this.floorPolygons.push({
+        type: 'floor',
+        id: blk.id,
+        floorBlock: blk,
+        tierLevel: 0,
+        polygon,
+        center: { x: blk.x, y: blk.z }
+      });
+    });
   }
 
-  /**
-   * Converts screen touch (px, py) to meter space and finds hit sector/module
-   */
   hitTest(screenX, screenY) {
     const cx = this.width / 2 + this.offsetX;
     const cy = this.height / 2 + this.offsetY;
@@ -208,14 +227,28 @@ class Renderer2D {
     const mx = (screenX - cx) / s;
     const my = (screenY - cy) / s;
 
-    // Search from top-most / specific to outer
+    // 1. Check Concert Infield Floor Blocks first when in concert mode
+    if (this.viewMode === 'concert') {
+      for (let i = this.floorPolygons.length - 1; i >= 0; i--) {
+        const blkItem = this.floorPolygons[i];
+        if (this.pointInPolygon(mx, my, blkItem.polygon)) {
+          const blk = blkItem.floorBlock;
+          const totalRows = blk.rows || 10;
+          const relY = (my - (blk.z - blk.depth / 2)) / Math.max(1, blk.depth);
+          const ratio = blk.facingZ === 1 ? (1 - relY) : relY;
+          const estimatedRow = Math.max(1, Math.min(totalRows, Math.round(ratio * totalRows)));
+          return { ...blkItem, estimatedRow };
+        }
+      }
+    }
+
+    // 2. Check Stand Sectors & Infield Modules
     for (let i = this.hitPolygons.length - 1; i >= 0; i--) {
       const item = this.hitPolygons[i];
-      if (this.activeTierFilter !== 'all' && item.tierLevel !== this.activeTierFilter) {
+      if (this.activeTierFilter !== 'all' && item.tierLevel !== this.activeTierFilter && item.tierLevel !== 0) {
         continue;
       }
       if (this.pointInPolygon(mx, my, item.polygon)) {
-        // Estimate relative row position based on radial distance
         let rowRatio = 0.5;
         if (item.type === 'sector') {
           const dist = Math.sqrt(mx * mx + my * my);
@@ -254,7 +287,6 @@ class Renderer2D {
     const h = this.height;
 
     ctx.save();
-    // Background
     ctx.fillStyle = '#070A12';
     ctx.fillRect(0, 0, w, h);
 
@@ -265,14 +297,15 @@ class Renderer2D {
     ctx.translate(cx, cy);
     ctx.scale(s, s);
 
-    // 1. Polar & Cartesian Engineering Grid
+    // 1. Subtle Polar Reference Ring
     this.drawGrid(ctx, s);
 
     // 2. Infield & Pitch / Track / Court
     this.drawInfield(ctx, s);
 
-    // 3. Stage & FOH (if concert mode or overlay)
+    // 3. Concert Floor Seating & Stage (or Sports only)
     if (this.viewMode === 'concert') {
+      this.drawFloorBlocks2D(ctx, s);
       this.drawStage2D(ctx, s);
     }
 
@@ -284,7 +317,7 @@ class Renderer2D {
 
     ctx.restore();
 
-    // 6. Compass & Scale Bar HUD on 2D Canvas
+    // 6. Minimal North Compass
     this.drawOverlayHUD(ctx);
   }
 
@@ -292,24 +325,14 @@ class Renderer2D {
     const grid = this.venue.gridSystem || {};
     if (!grid.enabled) return;
 
-    const maxR = 200;
     ctx.save();
-    ctx.strokeStyle = 'rgba(148, 163, 184, 0.08)';
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.06)';
     ctx.lineWidth = 1 / s;
-
-    // Polar rings
+    const maxR = 190;
     if (grid.showPolarGrid) {
-      for (let r = 40; r <= maxR; r += 40) {
+      for (let r = 50; r <= maxR; r += 50) {
         ctx.beginPath();
         ctx.arc(0, 0, r, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-      const stepDeg = grid.polarAngleStepDeg || 18;
-      for (let deg = 0; deg < 360; deg += stepDeg) {
-        const rad = deg * DEG2RAD;
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.lineTo(Math.sin(rad) * maxR, -Math.cos(rad) * maxR);
         ctx.stroke();
       }
     }
@@ -321,10 +344,9 @@ class Renderer2D {
     if (!infield) return;
 
     ctx.save();
-    // Draw rounded-rect infield perimeter
     this.traceRoundedRect(ctx, 0, 0, infield.width, infield.length, infield.cornerRadius);
     if (infield.surfaceType === 'synthetic-track') {
-      ctx.fillStyle = '#7C2D12'; // Brick red Olympic running track
+      ctx.fillStyle = '#7C2D12';
     } else if (infield.surfaceType === 'hardwood-court') {
       ctx.fillStyle = '#1E293B';
     } else {
@@ -335,16 +357,13 @@ class Renderer2D {
     ctx.lineWidth = 1.2 / s;
     ctx.stroke();
 
-    // If track-field, draw 400m oval lanes
     if (infield.sportPreset === 'track-field') {
-      ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-      ctx.lineWidth = 0.8 / s;
+      ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+      ctx.lineWidth = 0.7 / s;
       for (let lane = 1; lane <= 4; lane++) {
-        const shrink = lane * 2.2;
+        const shrink = lane * 2.4;
         this.traceRoundedRect(
-          ctx,
-          0,
-          0,
+          ctx, 0, 0,
           infield.width - shrink * 2,
           infield.length - shrink * 2,
           Math.max(4, infield.cornerRadius - shrink)
@@ -353,38 +372,27 @@ class Renderer2D {
       }
     }
 
-    // Draw central pitch / court
     const pw = infield.pitchWidth || 68;
     const pl = infield.pitchLength || 105;
 
     if (infield.surfaceType === 'hardwood-court') {
       ctx.fillStyle = '#B45309';
       ctx.fillRect(-pw / 2, -pl / 2, pw, pl);
-      ctx.strokeStyle = '#FDE68A';
-      ctx.lineWidth = 1 / s;
+      ctx.strokeStyle = 'rgba(253, 230, 138, 0.75)';
+      ctx.lineWidth = 0.9 / s;
       ctx.strokeRect(-pw / 2, -pl / 2, pw, pl);
-      // Center circle
       ctx.beginPath();
-      ctx.arc(0, 0, 3.6, 0, Math.PI * 2);
+      ctx.arc(0, 0, 3.2, 0, Math.PI * 2);
       ctx.stroke();
       ctx.beginPath();
       ctx.moveTo(-pw / 2, 0);
       ctx.lineTo(pw / 2, 0);
       ctx.stroke();
     } else {
-      // Turf pitch with stripes
       ctx.fillStyle = '#047857';
       ctx.fillRect(-pw / 2, -pl / 2, pw, pl);
-      const stripes = 10;
-      const stripeH = pl / stripes;
-      ctx.fillStyle = 'rgba(16, 185, 129, 0.14)';
-      for (let i = 0; i < stripes; i += 2) {
-        ctx.fillRect(-pw / 2, -pl / 2 + i * stripeH, pw, stripeH);
-      }
-
-      // Pitch lines
-      ctx.strokeStyle = 'rgba(255,255,255,0.45)';
-      ctx.lineWidth = 1 / s;
+      ctx.strokeStyle = 'rgba(255,255,255,0.38)';
+      ctx.lineWidth = 0.9 / s;
       ctx.strokeRect(-pw / 2, -pl / 2, pw, pl);
       ctx.beginPath();
       ctx.moveTo(-pw / 2, 0);
@@ -393,15 +401,43 @@ class Renderer2D {
       ctx.beginPath();
       ctx.arc(0, 0, 9.15, 0, Math.PI * 2);
       ctx.stroke();
-      // Penalty boxes
       ctx.strokeRect(-20.15, -pl / 2, 40.3, 16.5);
       ctx.strokeRect(-20.15, pl / 2 - 16.5, 40.3, 16.5);
     }
     ctx.restore();
   }
 
+  drawFloorBlocks2D(ctx, s) {
+    this.floorPolygons.forEach((item) => {
+      const isSelected = item.id === this.selectedFloorBlockId;
+      const blk = item.floorBlock;
+      ctx.save();
+      ctx.fillStyle = isSelected ? '#F43F5E' : (blk.color || '#3B82F6');
+      ctx.globalAlpha = isSelected ? 0.95 : 0.72;
+      ctx.fillRect(blk.x - blk.width / 2, blk.z - blk.depth / 2, blk.width, blk.depth);
+
+      ctx.strokeStyle = isSelected ? '#FFFFFF' : 'rgba(255,255,255,0.45)';
+      ctx.lineWidth = (isSelected ? 1.8 : 0.7) / s;
+      ctx.strokeRect(blk.x - blk.width / 2, blk.z - blk.depth / 2, blk.width, blk.depth);
+
+      // Subtle row lines inside floor block
+      ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+      ctx.lineWidth = 0.4 / s;
+      const rows = Math.min(14, blk.rows || 8);
+      for (let r = 1; r < rows; r++) {
+        const ry = blk.z - blk.depth / 2 + (r / rows) * blk.depth;
+        ctx.beginPath();
+        ctx.moveTo(blk.x - blk.width / 2 + 0.5, ry);
+        ctx.lineTo(blk.x + blk.width / 2 - 0.5, ry);
+        ctx.stroke();
+      }
+      ctx.restore();
+    });
+  }
+
   drawStage2D(ctx, s) {
-    const stage = this.venue.infield && this.venue.infield.stageConfig;
+    const infield = this.venue.infield;
+    const stage = infield && infield.stageConfig;
     if (!stage) return;
 
     ctx.save();
@@ -409,71 +445,54 @@ class Renderer2D {
     const sd = stage.depth || 20;
 
     if (stage.type === 'center-stage') {
-      // 360 Center stage
       ctx.fillStyle = 'rgba(236, 72, 153, 0.25)';
-      ctx.fillRect(-sw / 2 - 2, -sd / 2 - 2, sw + 4, sd + 4);
-
+      ctx.fillRect(-sw / 2 - 1.5, -sd / 2 - 1.5, sw + 3, sd + 3);
       ctx.fillStyle = '#DB2777';
-      ctx.strokeStyle = '#F472B6';
-      ctx.lineWidth = 1.5 / s;
+      ctx.strokeStyle = '#F9A8D4';
+      ctx.lineWidth = 1.2 / s;
       ctx.fillRect(-sw / 2, -sd / 2, sw, sd);
       ctx.strokeRect(-sw / 2, -sd / 2, sw, sd);
 
-      // Catwalks in 4 directions
       const cw = stage.catwalkWidth || 3.2;
-      const cl = stage.catwalkLength || 10;
+      const clZ = Math.min(stage.catwalkLength || 10, Math.max(3, (infield.length || 60) / 2 - sd / 2 - 2));
+      const clX = Math.min(stage.catwalkLength || 10, Math.max(2, (infield.width || 30) / 2 - sw / 2 - 1));
       ctx.fillStyle = '#F43F5E';
-      ctx.fillRect(-cw / 2, -sd / 2 - cl, cw, cl);
-      ctx.fillRect(-cw / 2, sd / 2, cw, cl);
-      ctx.fillRect(-sw / 2 - cl, -cw / 2, cl, cw);
-      ctx.fillRect(sw / 2, -cw / 2, cl, cw);
+      ctx.fillRect(-cw / 2, -sd / 2 - clZ, cw, clZ);
+      ctx.fillRect(-cw / 2, sd / 2, cw, clZ);
+      if (clX > 1) {
+        ctx.fillRect(-sw / 2 - clX, -cw / 2, clX, cw);
+        ctx.fillRect(sw / 2, -cw / 2, clX, cw);
+      }
     } else {
-      // End-stage or Festival-stage positioned at North end facing South
-      const stageY = -(this.venue.infield.pitchLength || 100) * 0.36;
+      const halfL = (infield.length || 100) / 2 - 4;
+      const stageY = -Math.min((infield.pitchLength || 100) * 0.36, halfL - sd / 2 - 2);
       ctx.translate(0, stageY);
 
-      // Glow aura
-      ctx.fillStyle = 'rgba(236, 72, 153, 0.22)';
-      ctx.beginPath();
-      ctx.arc(0, sd / 2, sw * 0.75, 0, Math.PI);
-      ctx.fill();
-
-      // Main stage deck
       ctx.fillStyle = '#BE185D';
-      ctx.strokeStyle = '#F472B6';
-      ctx.lineWidth = 1.5 / s;
+      ctx.strokeStyle = '#F9A8D4';
+      ctx.lineWidth = 1.2 / s;
       ctx.fillRect(-sw / 2, -sd / 2, sw, sd);
       ctx.strokeRect(-sw / 2, -sd / 2, sw, sd);
 
-      // LED Backdrop bar
       ctx.fillStyle = '#38BDF8';
-      ctx.fillRect(-sw * 0.6, -sd / 2 - 2.5, sw * 1.2, 2.5);
+      ctx.fillRect(-sw * 0.55, -sd / 2 - 2.2, sw * 1.1, 2.2);
 
-      // Catwalk extending South (+Y)
       const cw = stage.catwalkWidth || 3.5;
       const cl = stage.catwalkLength || 18;
       ctx.fillStyle = '#E11D48';
       ctx.fillRect(-cw / 2, sd / 2, cw, cl);
       ctx.strokeRect(-cw / 2, sd / 2, cw, cl);
 
-      // FOH Mix Tower
       if (stage.fohEnabled) {
         const fohDist = stage.fohDistance || 38;
         const fw = stage.fohWidth || 8;
         const fd = stage.fohDepth || 5;
         ctx.fillStyle = '#0284C7';
         ctx.strokeStyle = '#7DD3FC';
-        ctx.fillRect(-fw / 2, sd / 2 + fohDist, fw, fd);
-        ctx.strokeRect(-fw / 2, sd / 2 + fohDist, fw, fd);
+        ctx.fillRect(-fw / 2, sd / 2 + fohDist - fd / 2, fw, fd);
+        ctx.strokeRect(-fw / 2, sd / 2 + fohDist - fd / 2, fw, fd);
       }
     }
-
-    // Label STAGE
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = `bold ${Math.max(8, Math.round(11 / s))}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('STAGE 舞台', 0, 0);
     ctx.restore();
   }
 
@@ -481,7 +500,7 @@ class Renderer2D {
     const showVomitories = this.venue.gridSystem && this.venue.gridSystem.showVomitories;
 
     this.hitPolygons.forEach((item) => {
-      const isDimmed = this.activeTierFilter !== 'all' && item.tierLevel !== this.activeTierFilter;
+      const isDimmed = this.activeTierFilter !== 'all' && item.tierLevel !== this.activeTierFilter && item.tierLevel !== 0;
       const isSelected = (item.type === 'sector' && item.id === this.selectedSectorId) ||
                          (item.type === 'module' && item.id === this.selectedModuleId);
 
@@ -494,11 +513,11 @@ class Renderer2D {
       ctx.closePath();
 
       if (item.type === 'module') {
-        ctx.fillStyle = isSelected ? '#34D399' : (item.module.color || '#10B981');
+        ctx.fillStyle = isSelected ? '#F43F5E' : (item.module.color || '#10B981');
         ctx.globalAlpha = isDimmed ? 0.18 : (isSelected ? 0.95 : 0.78);
         ctx.fill();
         ctx.strokeStyle = isSelected ? '#FFFFFF' : '#A7F3D0';
-        ctx.lineWidth = (isSelected ? 2.2 : 1.0) / s;
+        ctx.lineWidth = (isSelected ? 2.0 : 0.9) / s;
         ctx.stroke();
       } else {
         const palette = TIER_COLORS[(item.tierLevel - 1) % TIER_COLORS.length];
@@ -512,34 +531,29 @@ class Renderer2D {
           ctx.fillStyle = palette.base;
         }
 
-        ctx.globalAlpha = isDimmed ? 0.14 : (isSelected ? 0.95 : 0.82);
+        ctx.globalAlpha = isDimmed ? 0.15 : (isSelected ? 0.95 : 0.84);
         ctx.fill();
 
         ctx.strokeStyle = isSelected ? '#FFFFFF' : (isVip ? '#FBBF24' : palette.stroke);
-        ctx.lineWidth = (isSelected ? 2.4 : 0.9) / s;
+        ctx.lineWidth = (isSelected ? 2.2 : 0.85) / s;
         ctx.stroke();
 
-        // Draw Vomitory portal if enabled
+        // Vomitory portal indicator
         if (showVomitories && item.vomitory && !isDimmed) {
           ctx.save();
           ctx.translate(item.vomitory.x, item.vomitory.y);
           ctx.rotate(item.vomitory.angleRad);
-          ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
-          ctx.lineWidth = 0.7 / s;
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
           ctx.fillRect(-item.vomitory.w / 2, -item.vomitory.h / 2, item.vomitory.w, item.vomitory.h);
-          ctx.strokeRect(-item.vomitory.w / 2, -item.vomitory.h / 2, item.vomitory.w, item.vomitory.h);
           ctx.restore();
         }
 
-        // Draw Sector Label if zoom/scale permits or selected
-        if (!isDimmed && (this.scale >= 0.85 || isSelected || item.tierLevel === 1 || item.tierLevel === 4)) {
-          const shortLabel = item.sector.name.length > 7
-            ? item.sector.name.slice(0, 6) + '…'
-            : item.sector.name;
-          ctx.fillStyle = isSelected ? '#FFFFFF' : palette.label;
-          const fontSize = Math.max(3.2, Math.min(7.5, 9.5 / Math.sqrt(this.scale))) / (this.baseMeterToPx * 0.45);
-          ctx.font = `${isSelected ? 'bold ' : ''}${fontSize.toFixed(1)}px sans-serif`;
+        // Only draw concise label for the selected sector or when zoomed in >= 1.5x (zero text clutter!)
+        if (!isDimmed && (isSelected || this.scale >= 1.55)) {
+          const shortLabel = item.sector.name.replace(/.*\((.+)\)/, '$1').slice(0, 6);
+          ctx.fillStyle = '#FFFFFF';
+          const pxSize = Math.max(9, Math.min(13, 11)) / s;
+          ctx.font = `bold ${pxSize.toFixed(2)}px sans-serif`;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillText(shortLabel, item.center.x, item.center.y);
@@ -550,24 +564,28 @@ class Renderer2D {
   }
 
   drawSightlineRay(ctx, s) {
-    const selected = this.hitPolygons.find(
-      it => (it.type === 'sector' && it.id === this.selectedSectorId) ||
-            (it.type === 'module' && it.id === this.selectedModuleId)
-    );
+    const selected =
+      this.floorPolygons.find(it => it.id === this.selectedFloorBlockId) ||
+      this.hitPolygons.find(
+        it => (it.type === 'sector' && it.id === this.selectedSectorId) ||
+              (it.type === 'module' && it.id === this.selectedModuleId)
+      );
     if (!selected) return;
 
     let targetX = 0;
     let targetY = 0;
-    const stage = this.venue.infield && this.venue.infield.stageConfig;
+    const infield = this.venue.infield;
+    const stage = infield && infield.stageConfig;
     if (this.viewMode === 'concert' && stage && stage.type !== 'center-stage') {
-      targetY = -(this.venue.infield.pitchLength || 100) * 0.36;
+      const halfL = (infield.length || 100) / 2 - 4;
+      const sd = stage.depth || 20;
+      targetY = -Math.min((infield.pitchLength || 100) * 0.36, halfL - sd / 2 - 2);
     }
 
     ctx.save();
-    // Viewing cone
     const angle = Math.atan2(targetY - selected.center.y, targetX - selected.center.x);
     const dist = Math.hypot(targetX - selected.center.x, targetY - selected.center.y);
-    const spread = 0.22;
+    const spread = 0.2;
 
     ctx.fillStyle = 'rgba(244, 63, 94, 0.16)';
     ctx.beginPath();
@@ -583,22 +601,20 @@ class Renderer2D {
     ctx.closePath();
     ctx.fill();
 
-    // Dashed sightline ray
     ctx.strokeStyle = '#FB7185';
-    ctx.lineWidth = 1.8 / s;
-    ctx.setLineDash([4 / s, 3 / s]);
+    ctx.lineWidth = 1.6 / s;
+    ctx.setLineDash([3.5 / s, 2.5 / s]);
     ctx.beginPath();
     ctx.moveTo(selected.center.x, selected.center.y);
     ctx.lineTo(targetX, targetY);
     ctx.stroke();
 
-    // Seat viewpoint pin
     ctx.setLineDash([]);
     ctx.fillStyle = '#F43F5E';
     ctx.strokeStyle = '#FFFFFF';
     ctx.lineWidth = 1.8 / s;
     ctx.beginPath();
-    ctx.arc(selected.center.x, selected.center.y, 4.5 / s, 0, Math.PI * 2);
+    ctx.arc(selected.center.x, selected.center.y, 3.8 / s, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
     ctx.restore();
@@ -606,12 +622,11 @@ class Renderer2D {
 
   drawOverlayHUD(ctx) {
     ctx.save();
-    // North Compass top-left
-    const x = 28;
-    const y = 32;
+    const x = 22;
+    const y = 24;
     ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
     ctx.beginPath();
-    ctx.arc(x, y, 16, 0, Math.PI * 2);
+    ctx.arc(x, y, 13, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = 'rgba(148, 163, 184, 0.3)';
     ctx.lineWidth = 1;
@@ -619,16 +634,16 @@ class Renderer2D {
 
     ctx.fillStyle = '#F43F5E';
     ctx.beginPath();
-    ctx.moveTo(x, y - 10);
-    ctx.lineTo(x - 4, y + 2);
-    ctx.lineTo(x + 4, y + 2);
+    ctx.moveTo(x, y - 8);
+    ctx.lineTo(x - 3.5, y + 1);
+    ctx.lineTo(x + 3.5, y + 1);
     ctx.closePath();
     ctx.fill();
 
     ctx.fillStyle = '#F8FAFC';
-    ctx.font = 'bold 9px sans-serif';
+    ctx.font = 'bold 8px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('N', x, y + 11);
+    ctx.fillText('N', x, y + 9);
     ctx.restore();
   }
 

@@ -1,5 +1,8 @@
 const { getAllVenues, getVenueById } = require('../../data/venues');
-const { calculateSeatSightline } = require('../../utils/schema-geometry');
+const {
+  calculateSeatSightline,
+  findDefaultEastFirstRowSelection
+} = require('../../utils/schema-geometry');
 const { Renderer2D } = require('../../utils/renderer-2d');
 const { Renderer3D } = require('../../utils/renderer-3d');
 
@@ -7,26 +10,26 @@ Page({
   data: {
     venues: [],
     currentVenue: null,
-    layoutMode: 'split', // '2d' | 'split' | '3d'
+    is3DFullscreen: false,
     viewMode: 'concert', // 'concert' | 'sports'
     activeTierFilter: 'all',
     cameraMode: 'bird', // 'bird' | 'seat'
     zoomLevel: 1.0,
     zoomOptions: [
-      { label: '0.5x 超广角', value: 0.5 },
-      { label: '1x 人眼实景', value: 1.0 },
-      { label: '2x 望远看台', value: 2.0 },
-      { label: '5x 舞台特写', value: 5.0 }
+      { label: '0.5x', value: 0.5 },
+      { label: '1x', value: 1.0 },
+      { label: '2x', value: 2.0 },
+      { label: '5x', value: 5.0 }
     ],
     sightline: {
-      sectorName: '1F-A',
+      sectorName: '1F-E',
       tierLevel: 1,
-      row: 15,
-      maxRows: 50,
+      row: 1,
+      maxRows: 30,
       seatNo: 16,
       distanceM: 68.5,
-      elevationM: 6.2,
-      verticalAngleDeg: -4.2,
+      elevationM: 2.2,
+      verticalAngleDeg: -1.5,
       cValueMm: 112,
       cValueStatus: '极佳 (FIFA特级视野)',
       slopeDeg: 15,
@@ -34,6 +37,7 @@ Page({
       guardrailMaterial: '超白钢化夹胶玻璃栏板'
     },
     showSchemaModal: false,
+    schemaTextareaFocus: false,
     customSchemaText: '',
     schemaError: ''
   },
@@ -47,14 +51,7 @@ Page({
     }));
 
     const initialVenue = formattedVenues[0];
-    this.activeSelection = {
-      tierIndex: 0,
-      sector: initialVenue.standTiers[0].sectors[0],
-      row: 18,
-      seatNo: 16,
-      isModule: false
-    };
-
+    this.activeSelection = findDefaultEastFirstRowSelection(initialVenue);
     const sightline = calculateSeatSightline(initialVenue, this.activeSelection, 'concert');
 
     this.setData({
@@ -74,9 +71,12 @@ Page({
     }
   },
 
+  noop() {},
+
   initCanvases() {
     const sysInfo = wx.getSystemInfoSync();
     const dpr = sysInfo.pixelRatio || 2;
+    this._dpr = dpr;
 
     // 1. Initialize 2D Seatmap Canvas
     wx.createSelectorQuery()
@@ -87,15 +87,15 @@ Page({
         if (!res || !res[0] || !res[0].node) return;
         const canvas = res[0].node;
         const width = res[0].width || 375;
-        const height = res[0].height || 260;
+        const height = res[0].height || 280;
         canvas.width = width * dpr;
         canvas.height = height * dpr;
         const ctx = canvas.getContext('2d');
-        ctx.scale(dpr, dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
         this.renderer2d = new Renderer2D(canvas, ctx, width, height, dpr);
         this.renderer2d.setVenue(this.data.currentVenue, this.data.viewMode);
-        this.renderer2d.setSelection(this.activeSelection.sector.id, null);
+        this.applySelectionToRenderers();
       });
 
     // 2. Initialize 3D WebGL Stadium Canvas
@@ -107,7 +107,7 @@ Page({
         if (!res || !res[0] || !res[0].node) return;
         const canvas = res[0].node;
         const width = res[0].width || 375;
-        const height = res[0].height || 280;
+        const height = res[0].height || 260;
         canvas.width = width * dpr;
         canvas.height = height * dpr;
 
@@ -117,9 +117,8 @@ Page({
         this.canvas3d = canvas;
         this.renderer3d = new Renderer3D(canvas, gl, width * dpr, height * dpr);
         this.renderer3d.setVenue(this.data.currentVenue, this.data.viewMode);
-        this.renderer3d.setSelection(this.activeSelection.sector.id, null);
+        this.applySelectionToRenderers();
 
-        // Start 60fps WebGL render loop
         const loop = () => {
           if (this.renderer3d) {
             this.renderer3d.renderFrame();
@@ -130,12 +129,25 @@ Page({
       });
   },
 
+  applySelectionToRenderers() {
+    const sel = this.activeSelection || {};
+    const sectorId = !sel.isModule && !sel.isFloorBlock && sel.sector ? sel.sector.id : null;
+    const moduleId = sel.isModule && sel.module ? sel.module.id : null;
+    const floorBlockId = sel.isFloorBlock && sel.floorBlock ? sel.floorBlock.id : null;
+
+    if (this.renderer2d) {
+      this.renderer2d.setSelection(sectorId, moduleId, floorBlockId);
+    }
+    if (this.renderer3d) {
+      this.renderer3d.setSelection(sectorId, moduleId, floorBlockId);
+    }
+  },
+
   refreshCanvasSizes() {
-    const sysInfo = wx.getSystemInfoSync();
-    const dpr = sysInfo.pixelRatio || 2;
+    const dpr = this._dpr || wx.getSystemInfoSync().pixelRatio || 2;
 
     setTimeout(() => {
-      if (this.data.layoutMode !== '3d' && this.renderer2d) {
+      if (!this.data.is3DFullscreen && this.renderer2d) {
         wx.createSelectorQuery()
           .in(this)
           .select('#seatmap2d')
@@ -144,12 +156,12 @@ Page({
             if (res && res[0] && res[0].width > 0 && res[0].height > 0) {
               this.renderer2d.canvas.width = res[0].width * dpr;
               this.renderer2d.canvas.height = res[0].height * dpr;
-              this.renderer2d.ctx.scale(dpr, dpr);
+              this.renderer2d.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
               this.renderer2d.resize(res[0].width, res[0].height);
             }
           });
       }
-      if (this.data.layoutMode !== '2d' && this.renderer3d) {
+      if (this.renderer3d) {
         wx.createSelectorQuery()
           .in(this)
           .select('#stadium3d')
@@ -162,10 +174,10 @@ Page({
             }
           });
       }
-    }, 60);
+    }, 80);
   },
 
-  // 切换场馆 Schema
+  // 切换场馆 Schema（默认选中东边第1排区域）
   onSelectVenue(e) {
     const venueId = e.currentTarget.dataset.id;
     const venue = this.data.venues.find(v => v.id === venueId) || getVenueById(venueId);
@@ -173,17 +185,7 @@ Page({
 
     wx.setStorageSync('STADIACAD_LAST_VENUE', venue.id);
 
-    const firstTier = venue.standTiers[0];
-    const firstSector = firstTier.sectors.find(s => !s.isDeleted && s.fillType !== 'empty-void') || firstTier.sectors[0];
-
-    this.activeSelection = {
-      tierIndex: 0,
-      sector: firstSector,
-      row: Math.ceil((firstSector.rows || 22) * 0.4),
-      seatNo: 16,
-      isModule: false
-    };
-
+    this.activeSelection = findDefaultEastFirstRowSelection(venue);
     const sightline = calculateSeatSightline(venue, this.activeSelection, this.data.viewMode);
 
     this.setData({
@@ -196,26 +198,32 @@ Page({
 
     if (this.renderer2d) {
       this.renderer2d.setVenue(venue, this.data.viewMode);
-      this.renderer2d.setSelection(firstSector.id, null);
     }
     if (this.renderer3d) {
       this.renderer3d.setVenue(venue, this.data.viewMode);
-      this.renderer3d.setSelection(firstSector.id, null);
       this.renderer3d.setBirdEyeView();
     }
+    this.applySelectionToRenderers();
   },
 
-  // 切换 2D / 2D+3D分屏 / 3D全屏
-  onSwitchLayout(e) {
-    const mode = e.currentTarget.dataset.mode;
-    this.setData({ layoutMode: mode }, () => {
+  // 3D 全屏 / 退出全屏切换
+  onToggle3DFullscreen() {
+    this.setData({
+      is3DFullscreen: !this.data.is3DFullscreen
+    }, () => {
       this.refreshCanvasSizes();
     });
   },
 
-  // 切换 演唱会舞美 / 体育赛场
+  // 切换 演唱会舞美 / 标准赛场
   onToggleViewMode() {
     const nextMode = this.data.viewMode === 'concert' ? 'sports' : 'concert';
+    // Switching from concert -> sports while on a concert floor block falls back to East Row 1
+    if (nextMode === 'sports' && this.activeSelection && this.activeSelection.isFloorBlock) {
+      this.activeSelection = findDefaultEastFirstRowSelection(this.data.currentVenue);
+      this.applySelectionToRenderers();
+    }
+
     const sightline = calculateSeatSightline(this.data.currentVenue, this.activeSelection, nextMode);
 
     this.setData({
@@ -250,7 +258,7 @@ Page({
     }
   },
 
-  // 2D Canvas 触摸交互（支持点击选区、单指拖拽平移、双指捏合缩放）
+  // 2D Canvas 触摸交互（点击选区、单指平移、双指缩放）
   onTouchStart2D(e) {
     if (!e.touches || e.touches.length === 0) return;
     this._t2dMoved = false;
@@ -290,32 +298,40 @@ Page({
     }
   },
 
-  onTouchEnd2D(e) {
+  onTouchEnd2D() {
     if (this._t2dMoved || !this._t2dStart || !this.renderer2d) return;
 
     const hit = this.renderer2d.hitTest(this._t2dStart.x, this._t2dStart.y);
     if (!hit) return;
 
-    if (hit.type === 'module') {
+    if (hit.type === 'floor') {
       this.activeSelection = {
+        isFloorBlock: true,
+        isModule: false,
+        floorBlock: hit.floorBlock,
+        row: hit.estimatedRow || 3,
+        seatNo: 10
+      };
+    } else if (hit.type === 'module') {
+      this.activeSelection = {
+        isFloorBlock: false,
         isModule: true,
         module: hit.module,
         row: hit.estimatedRow || 2,
         seatNo: 12
       };
-      this.renderer2d.setSelection(null, hit.module.id);
-      if (this.renderer3d) this.renderer3d.setSelection(null, hit.module.id);
     } else {
       this.activeSelection = {
+        isFloorBlock: false,
         isModule: false,
         tierIndex: hit.tierIndex,
         sector: hit.sector,
-        row: hit.estimatedRow || 15,
-        seatNo: 18
+        row: hit.estimatedRow || 1,
+        seatNo: 16
       };
-      this.renderer2d.setSelection(hit.sector.id, null);
-      if (this.renderer3d) this.renderer3d.setSelection(hit.sector.id, null);
     }
+
+    this.applySelectionToRenderers();
 
     const sightline = calculateSeatSightline(
       this.data.currentVenue,
@@ -328,7 +344,6 @@ Page({
       cameraMode: 'seat'
     });
 
-    // Fly 3D camera from Bird's-Eye View directly into selected seat looking at stage/pitch!
     if (this.renderer3d) {
       this.renderer3d.flyToSeat(sightline);
     }
@@ -380,6 +395,22 @@ Page({
     }
   },
 
+  // 一键飞入当前默认/所选席位
+  onFlyToSelectedSeat() {
+    const sightline = calculateSeatSightline(
+      this.data.currentVenue,
+      this.activeSelection,
+      this.data.viewMode
+    );
+    this.setData({
+      sightline,
+      cameraMode: 'seat'
+    });
+    if (this.renderer3d) {
+      this.renderer3d.flyToSeat(sightline);
+    }
+  },
+
   // 3D 舞台实景光学缩放切换 (0.5x, 1x, 2x, 5x)
   onSelectZoom(e) {
     const zoom = Number(e.currentTarget.dataset.zoom);
@@ -389,7 +420,7 @@ Page({
     }
   },
 
-  // 排数滑块实时微调，动态更新 3D 摄像机高度与距离
+  // 排数滑块实时微调
   onRowChanging(e) {
     this.updateRowSightline(Number(e.detail.value));
   },
@@ -415,17 +446,45 @@ Page({
     }
   },
 
-  // 自定义 Schema 导入弹窗
+  // 自定义 Schema 导入弹窗（通过 offscreen 隐藏原生 Canvas 后聚焦）
   onOpenSchemaModal() {
     this.setData({
       showSchemaModal: true,
       schemaError: '',
-      customSchemaText: ''
+      customSchemaText: '',
+      schemaTextareaFocus: false
+    }, () => {
+      setTimeout(() => {
+        this.setData({ schemaTextareaFocus: true });
+      }, 120);
     });
   },
 
   onCloseSchemaModal() {
-    this.setData({ showSchemaModal: false });
+    this.setData({
+      showSchemaModal: false,
+      schemaTextareaFocus: false
+    }, () => {
+      this.refreshCanvasSizes();
+    });
+  },
+
+  onPasteClipboard() {
+    wx.getClipboardData({
+      success: (res) => {
+        if (res && res.data) {
+          this.setData({
+            customSchemaText: res.data,
+            schemaError: ''
+          });
+        } else {
+          this.setData({ schemaError: '剪贴板为空，请先复制 Schema JSON' });
+        }
+      },
+      fail: () => {
+        this.setData({ schemaError: '读取剪贴板失败，请直接手动粘贴' });
+      }
+    });
   },
 
   onSchemaInput(e) {
@@ -452,34 +511,30 @@ Page({
       };
 
       const updatedVenues = [...this.data.venues, newVenue];
-      const firstSector = newVenue.standTiers[0].sectors[0];
-      this.activeSelection = {
-        tierIndex: 0,
-        sector: firstSector,
-        row: 12,
-        seatNo: 10,
-        isModule: false
-      };
-
+      this.activeSelection = findDefaultEastFirstRowSelection(newVenue);
       const sightline = calculateSeatSightline(newVenue, this.activeSelection, this.data.viewMode);
 
       this.setData({
         venues: updatedVenues,
         currentVenue: newVenue,
+        activeTierFilter: 'all',
         sightline,
         showSchemaModal: false,
-        cameraMode: 'bird'
+        schemaTextareaFocus: false,
+        cameraMode: 'bird',
+        zoomLevel: 1.0
+      }, () => {
+        this.refreshCanvasSizes();
       });
 
       if (this.renderer2d) {
         this.renderer2d.setVenue(newVenue, this.data.viewMode);
-        this.renderer2d.setSelection(firstSector.id, null);
       }
       if (this.renderer3d) {
         this.renderer3d.setVenue(newVenue, this.data.viewMode);
-        this.renderer3d.setSelection(firstSector.id, null);
         this.renderer3d.setBirdEyeView();
       }
+      this.applySelectionToRenderers();
     } catch (err) {
       this.setData({ schemaError: 'JSON 语法解析失败，请检查格式是否完整' });
     }
