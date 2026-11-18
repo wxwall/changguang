@@ -97,9 +97,9 @@ class Renderer2D {
     const footW = summary.outermostFootprintWidthM || 220;
     const footL = summary.outermostFootprintLengthM || 260;
 
-    // Maximize fill inside 2D viewport with comfortable margin
-    const sx = (this.width * 0.94) / footW;
-    const sy = (this.height * 0.94) / footL;
+    // 2D view is rotated 90° clockwise: venue length spans horizontally, width spans vertically
+    const sx = (this.width * 0.94) / footL;
+    const sy = (this.height * 0.94) / footW;
     this.baseMeterToPx = Math.max(0.4, Math.min(sx, sy));
   }
 
@@ -117,9 +117,8 @@ class Renderer2D {
 
         const startDeg = sec.startAngleDeg;
         const endDeg = sec.endAngleDeg;
-        const aisleGapDeg = 0.35;
-        const sDeg = startDeg + aisleGapDeg;
-        const eDeg = endDeg - aisleGapDeg;
+        const sDeg = startDeg;
+        const eDeg = endDeg;
         if (eDeg <= sDeg) return;
 
         // Build smooth angle samples (<= 1.5° step on arcs) including exact infield corner-transition angles
@@ -264,8 +263,11 @@ class Renderer2D {
     const cy = this.height / 2 + this.offsetY;
     const s = this.baseMeterToPx * this.scale;
 
-    const mx = (screenX - cx) / s;
-    const my = (screenY - cy) / s;
+    // Invert 90° clockwise rotation: (rx = -wz, ry = wx) => (wx = ry, wz = -rx)
+    const rx = (screenX - cx) / s;
+    const ry = (screenY - cy) / s;
+    const mx = ry;
+    const my = -rx;
 
     // 1. Check Concert Infield Floor Blocks first when in concert mode
     if (this.viewMode === 'concert') {
@@ -343,6 +345,7 @@ class Renderer2D {
 
     ctx.translate(cx, cy);
     ctx.scale(s, s);
+    ctx.rotate(Math.PI / 2);
 
     // 1. Subtle Polar Reference Ring
     this.drawGrid(ctx, s);
@@ -582,10 +585,21 @@ class Renderer2D {
   drawSectors(ctx, s) {
     const showVomitories = this.venue.gridSystem && this.venue.gridSystem.showVomitories;
 
+    // Draw non-selected items first, then selected item on top so touching borders never clip selection stroke
+    const ordered = [];
+    const selectedItems = [];
     this.hitPolygons.forEach((item) => {
       if (item.type === 'module' && this.viewMode !== 'sports') {
         return;
       }
+      const isSelected = (item.type === 'sector' && item.id === this.selectedSectorId) ||
+                         (item.type === 'module' && item.id === this.selectedModuleId);
+      if (isSelected) selectedItems.push(item);
+      else ordered.push(item);
+    });
+    const drawList = ordered.concat(selectedItems);
+
+    drawList.forEach((item) => {
       const isDimmed = this.activeTierFilter !== 'all' && item.tierLevel !== this.activeTierFilter && item.tierLevel !== 0;
       const isSelected = (item.type === 'sector' && item.id === this.selectedSectorId) ||
                          (item.type === 'module' && item.id === this.selectedModuleId);
@@ -617,11 +631,11 @@ class Renderer2D {
           ctx.fillStyle = palette.base;
         }
 
-        ctx.globalAlpha = isDimmed ? 0.15 : (isSelected ? 0.95 : 0.84);
+        ctx.globalAlpha = isDimmed ? 0.15 : (isSelected ? 0.95 : 0.88);
         ctx.fill();
 
         ctx.strokeStyle = isSelected ? '#FFFFFF' : (isVip ? '#FBBF24' : palette.stroke);
-        ctx.lineWidth = (isSelected ? 2.2 : 0.85) / s;
+        ctx.lineWidth = (isSelected ? 2.2 : 0.8) / s;
         ctx.stroke();
 
         // Vomitory portal indicator (highlight open front-connected exits in emerald/teal)
@@ -634,15 +648,19 @@ class Renderer2D {
           ctx.restore();
         }
 
-        // Only draw concise label for the selected sector or when zoomed in >= 1.5x (zero text clutter!)
+        // Only draw concise label for the selected sector or when zoomed in >= 1.55x (counter-rotated to remain upright)
         if (!isDimmed && (isSelected || this.scale >= 1.55)) {
           const shortLabel = item.sector.name.replace(/.*\((.+)\)/, '$1').slice(0, 6);
+          ctx.save();
+          ctx.translate(item.center.x, item.center.y);
+          ctx.rotate(-Math.PI / 2);
           ctx.fillStyle = '#FFFFFF';
           const pxSize = Math.max(9, Math.min(13, 11)) / s;
           ctx.font = `bold ${pxSize.toFixed(2)}px sans-serif`;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText(shortLabel, item.center.x, item.center.y);
+          ctx.fillText(shortLabel, 0, 0);
+          ctx.restore();
         }
       }
       ctx.restore();
@@ -718,18 +736,20 @@ class Renderer2D {
     ctx.lineWidth = 1;
     ctx.stroke();
 
+    // Rotated 90° clockwise: North points Right
     ctx.fillStyle = '#F43F5E';
     ctx.beginPath();
-    ctx.moveTo(x, y - 8);
-    ctx.lineTo(x - 3.5, y + 1);
-    ctx.lineTo(x + 3.5, y + 1);
+    ctx.moveTo(x + 9, y);
+    ctx.lineTo(x + 1, y - 3.5);
+    ctx.lineTo(x + 1, y + 3.5);
     ctx.closePath();
     ctx.fill();
 
     ctx.fillStyle = '#F8FAFC';
     ctx.font = 'bold 8px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('N', x, y + 9);
+    ctx.textBaseline = 'middle';
+    ctx.fillText('N', x - 4, y + 0.5);
     ctx.restore();
   }
 

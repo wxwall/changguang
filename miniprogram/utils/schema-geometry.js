@@ -592,23 +592,23 @@ function generateConcertInfieldBlocks(venue) {
   };
 
   // Front VIP Pit flanking catwalk (A1, A2)
-  const frontDepth = Math.max(0, Math.min(catEndZ, halfL - 3.5) - (stageFrontZ + 2.5));
+  const frontDepth = Math.max(0, Math.min(catEndZ, halfL - 2.5) - (stageFrontZ + 1.8));
   if (frontDepth > 3.5) {
-    const bw = Math.max(6, sideSpanW - cw / 2 - 2.0);
-    const bx = cw / 2 + 2.0 + bw / 2;
-    const bz = stageFrontZ + 2.5 + frontDepth / 2;
+    const bw = Math.max(6, sideSpanW - cw / 2 - 1.2);
+    const bx = cw / 2 + 1.2 + bw / 2;
+    const bz = stageFrontZ + 1.8 + frontDepth / 2;
     const rows = Math.max(4, Math.floor(frontDepth / 0.88));
     pushOrientedBlock('floor-a1', '内场前区 A1 (近T台)', -bx, bz, bw, frontDepth, rows, '#EC4899');
     pushOrientedBlock('floor-a2', '内场前区 A2 (近T台)', bx, bz, bw, frontDepth, rows, '#EC4899');
   }
 
   // Mid Floor flanking or ahead of FOH (B1, B2)
-  const midStartZ = Math.max(stageFrontZ + 3, catEndZ + 5.0);
-  const midEndZ = stage.fohEnabled ? Math.min(fohZ - fohD / 2 - 2.5, halfL - 3.5) : (halfL - 3.5);
+  const midStartZ = Math.max(stageFrontZ + 2.2, catEndZ + 2.0);
+  const midEndZ = stage.fohEnabled ? Math.min(fohZ - fohD / 2 - 1.8, halfL - 2.5) : (halfL - 2.5);
   const midDepth = midEndZ - midStartZ;
   if (midDepth > 3.5) {
-    const bw = Math.max(6, sideSpanW - 1.5);
-    const bx = 1.5 + bw / 2;
+    const bw = Math.max(6, sideSpanW - 1.0);
+    const bx = 1.0 + bw / 2;
     const bz = midStartZ + midDepth / 2;
     const rows = Math.max(4, Math.floor(midDepth / 0.88));
     pushOrientedBlock('floor-b1', '内场中区 B1', -bx, bz, bw, midDepth, rows, '#3B82F6');
@@ -617,12 +617,12 @@ function generateConcertInfieldBlocks(venue) {
 
   // Rear Floor behind FOH (C1, C2)
   if (stage.fohEnabled) {
-    const rearStartZ = fohZ + fohD / 2 + 2.5;
-    const rearEndZ = halfL - 2.5;
+    const rearStartZ = fohZ + fohD / 2 + 1.8;
+    const rearEndZ = halfL - 2.0;
     const rearDepth = rearEndZ - rearStartZ;
     if (rearDepth > 3.5) {
-      const bw = Math.max(6, sideSpanW - 1.5);
-      const bx = 1.5 + bw / 2;
+      const bw = Math.max(6, sideSpanW - 1.0);
+      const bx = 1.0 + bw / 2;
       const bz = rearStartZ + rearDepth / 2;
       const rows = Math.max(4, Math.floor(rearDepth / 0.88));
       pushOrientedBlock('floor-c1', '内场后区 C1', -bx, bz, bw, rearDepth, rows, '#6366F1');

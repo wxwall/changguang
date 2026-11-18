@@ -131,18 +131,14 @@ const FRAGMENT_SHADER = `
 
   void main() {
     if (uIsUnlit > 0.5) {
-      // Steady, gentle atmospheric glow without distracting strobing
-      float gentle = 0.95 + 0.05 * sin(uTime * 0.8 + vWorldPos.x * 0.05);
-      gl_FragColor = vec4(vColor.rgb * gentle, vColor.a);
+      gl_FragColor = vColor;
       return;
     }
     vec3 norm = normalize(vNormal);
-    vec3 lightDir1 = normalize(vec3(0.32, 0.88, 0.36));
-    vec3 lightDir2 = normalize(vec3(-0.45, 0.52, -0.58));
-    float diff1 = max(dot(norm, lightDir1), 0.0);
-    float diff2 = max(dot(norm, lightDir2), 0.0) * 0.32;
-    float ambient = 0.44;
-    float lighting = min(1.18, ambient + diff1 * 0.54 + diff2);
+    // Pure matte non-reflective shading: soft hemisphere + gentle wrapped diffuse, zero specular glare
+    float hemi = 0.5 + 0.5 * norm.y;
+    float wrap = max(0.0, (dot(norm, normalize(vec3(0.24, 0.94, 0.24))) + 0.65) / 1.65);
+    float lighting = 0.68 + 0.18 * hemi + 0.12 * wrap;
 
     gl_FragColor = vec4(vColor.rgb * lighting, vColor.a);
   }
@@ -215,22 +211,22 @@ class MeshBuilder {
   addSeat3D(cx, cy, cz, seatWidth, seatDepth, fx, fz, panColor, backColor) {
     const rx = -fz; // right-hand tangent vector
     const rz = fx;
-    const hw = seatWidth * 0.44;
-    const hd = seatDepth * 0.42;
-    const panY = cy + 0.36;
-    const backTopY = cy + 0.84;
+    const hw = seatWidth * 0.475;
+    const hd = seatDepth * 0.46;
+    const panY = cy + 0.28;
+    const backTopY = cy + 0.74;
 
-    // Seat pan quad
+    // Matte seat pan quad
     const pFL = { x: cx - rx * hw + fx * hd, y: panY, z: cz - rz * hw + fz * hd };
     const pFR = { x: cx + rx * hw + fx * hd, y: panY, z: cz + rz * hw + fz * hd };
-    const pBR = { x: cx + rx * hw - fx * hd * 0.7, y: panY, z: cz + rz * hw - fz * hd * 0.7 };
-    const pBL = { x: cx - rx * hw - fx * hd * 0.7, y: panY, z: cz - rz * hw - fz * hd * 0.7 };
+    const pBR = { x: cx + rx * hw - fx * hd * 0.75, y: panY, z: cz + rz * hw - fz * hd * 0.75 };
+    const pBL = { x: cx - rx * hw - fx * hd * 0.75, y: panY, z: cz - rz * hw - fz * hd * 0.75 };
     this.addQuad(pBL, pFL, pFR, pBR, panColor, { x: 0, y: 1, z: 0 });
 
-    // Angled backrest quad
-    const bTL = { x: cx - rx * hw - fx * hd * 0.95, y: backTopY, z: cz - rz * hw - fz * hd * 0.95 };
-    const bTR = { x: cx + rx * hw - fx * hd * 0.95, y: backTopY, z: cz + rz * hw - fz * hd * 0.95 };
-    this.addQuad(pBL, pBR, bTR, bTL, backColor, { x: fx * 0.9, y: 0.35, z: fz * 0.9 });
+    // Matte angled backrest quad with soft upward-biased normal (prevents directional glare/banding)
+    const bTL = { x: cx - rx * hw - fx * hd * 0.92, y: backTopY, z: cz - rz * hw - fz * hd * 0.92 };
+    const bTR = { x: cx + rx * hw - fx * hd * 0.92, y: backTopY, z: cz + rz * hw - fz * hd * 0.92 };
+    this.addQuad(pBL, pBR, bTR, bTL, backColor, { x: fx * 0.48, y: 0.86, z: fz * 0.48 });
   }
 
   /**
@@ -540,8 +536,7 @@ class Renderer3D {
     const isMorphedLast = lastTier.morphMode === 'concentric-circle' && (lastTier.concentricMorph || 0) > 0.1;
 
     const ringAngles = this.buildFullRingAngles(180);
-    const shellCol = [0.11, 0.14, 0.21, 1.0];
-    const finCol = [0.17, 0.22, 0.32, 1.0];
+    const shellCol = [0.10, 0.13, 0.19, 1.0];
 
     for (let i = 0; i < ringAngles.length - 1; i++) {
       const deg1 = ringAngles[i];
@@ -562,7 +557,7 @@ class Renderer3D {
       const p2_t = { x: x2, y: topWallY, z: z2 };
       const p1_t = { x: x1, y: topWallY, z: z1 };
 
-      solid.addQuad(p1_b, p1_t, p2_t, p2_b, i % 2 === 0 ? shellCol : finCol);
+      solid.addQuad(p1_b, p1_t, p2_t, p2_b, shellCol);
     }
   }
 
@@ -821,10 +816,10 @@ class Renderer3D {
   buildConcertInfieldSeatsMesh(solid) {
     const blocks = generateConcertInfieldBlocks(this.venue);
     blocks.forEach((blk) => {
-      // Keep seat & rail colors clean and consistent in 3D (no pink highlight border)
-      const panCol = [0.22, 0.55, 0.96, 1.0];
-      const backCol = [0.12, 0.36, 0.78, 1.0];
-      const railCol = [0.80, 0.86, 0.94, 1.0];
+      // Matte fabric seat & subtle dark-slate floor mat
+      const panCol = [0.18, 0.42, 0.76, 1.0];
+      const backCol = [0.14, 0.34, 0.64, 1.0];
+      const railCol = [0.58, 0.64, 0.72, 1.0];
       const rotDeg = blk.rotDeg || 0;
       const rotYRad = -rotDeg * DEG2RAD;
       const hw = blk.width / 2;
@@ -832,7 +827,7 @@ class Renderer3D {
 
       const matPt = (lx, lz) => {
         const rp = rotateXZ(lx, lz, rotDeg);
-        return { x: blk.x + rp.x, y: 0.18, z: blk.z + rp.z };
+        return { x: blk.x + rp.x, y: 0.14, z: blk.z + rp.z };
       };
 
       // Subtle rotated floor mat base
@@ -841,7 +836,7 @@ class Renderer3D {
         matPt(-hw, hd),
         matPt(hw, hd),
         matPt(hw, -hd),
-        [0.10, 0.14, 0.22, 1.0],
+        [0.08, 0.11, 0.17, 1.0],
         { x: 0, y: 1, z: 0 }
       );
 
@@ -858,10 +853,10 @@ class Renderer3D {
           const wp = rotateXZ(localX, localZ, rotDeg);
           solid.addSeat3D(
             blk.x + wp.x,
-            0.18,
+            0.14,
             blk.z + wp.z,
-            seatSpacing * stride * 0.9,
-            0.46,
+            seatSpacing * stride * 0.94,
+            0.50,
             blk.facingX || 0,
             blk.facingZ !== undefined ? blk.facingZ : -1,
             panCol,
@@ -889,16 +884,16 @@ class Renderer3D {
     const globalSeatStride = totalEstCap <= 35000 ? 1 : (totalEstCap <= 95000 ? 3 : 4);
 
     const tierSeatColors = [
-      { pan: [0.20, 0.45, 0.90, 1.0], back: [0.12, 0.30, 0.68, 1.0] }, // 1F Blue
-      { pan: [0.08, 0.68, 0.50, 1.0], back: [0.04, 0.46, 0.34, 1.0] }, // 2F Emerald
-      { pan: [0.92, 0.62, 0.14, 1.0], back: [0.72, 0.42, 0.08, 1.0] }, // 3F Amber VIP
-      { pan: [0.56, 0.34, 0.92, 1.0], back: [0.38, 0.20, 0.72, 1.0] }  // 4F Violet
+      { pan: [0.17, 0.37, 0.72, 1.0], back: [0.14, 0.31, 0.62, 1.0] }, // 1F Matte Navy-Blue
+      { pan: [0.09, 0.50, 0.39, 1.0], back: [0.07, 0.42, 0.32, 1.0] }, // 2F Matte Emerald
+      { pan: [0.68, 0.48, 0.16, 1.0], back: [0.56, 0.39, 0.12, 1.0] }, // 3F Matte Amber VIP
+      { pan: [0.40, 0.27, 0.68, 1.0], back: [0.33, 0.22, 0.58, 1.0] }  // 4F Matte Violet
     ];
-    const concreteStepCol = [0.24, 0.28, 0.36, 1.0];
-    const concreteRiserCol = [0.17, 0.21, 0.28, 1.0];
-    const vipFloorCol = [0.28, 0.24, 0.20, 1.0];
-    const stairStepCol = [0.38, 0.44, 0.54, 1.0];
-    const handrailCol = [0.88, 0.92, 0.98, 1.0];
+    const concreteStepCol = [0.15, 0.18, 0.24, 1.0];
+    const concreteRiserCol = [0.13, 0.16, 0.21, 1.0];
+    const vipFloorCol = [0.22, 0.19, 0.16, 1.0];
+    const stairStepCol = [0.24, 0.28, 0.35, 1.0];
+    const handrailCol = [0.68, 0.73, 0.80, 1.0];
 
     // Precompute front-connected vomitory angular windows per tier using strict vom.width solver
     const frontVomWindowsByTier = tiers.map((tier, tierIndex) => {
@@ -938,9 +933,9 @@ class Renderer3D {
         const isNearSelected = isSelected || (selectedIdxInTier !== -1 && Math.abs(activeIdx - selectedIdxInTier) <= 1);
         const isVip = sec.fillType === 'vip-box';
 
-        // Keep 3D seat & concrete colors unchanged when selected
-        const panCol = isVip ? [0.95, 0.70, 0.18, 1.0] : seatColPair.pan;
-        const backCol = isVip ? [0.74, 0.46, 0.08, 1.0] : seatColPair.back;
+        // Keep 3D matte seat & concrete colors unchanged when selected
+        const panCol = isVip ? [0.72, 0.52, 0.18, 1.0] : seatColPair.pan;
+        const backCol = isVip ? [0.58, 0.41, 0.14, 1.0] : seatColPair.back;
 
         const sDeg = sec.startAngleDeg;
         const eDeg = sec.endAngleDeg;
@@ -1158,14 +1153,24 @@ class Renderer3D {
           const tanZ = dxE / lenE;
 
           const hwAisle = radialAisleWidth * 0.42;
-          solid.addQuad(
-            { x: ptEdge.inX - tanX * hwAisle, y: baseElev + 0.04, z: ptEdge.inZ - tanZ * hwAisle },
-            { x: ptEdge.outX - tanX * hwAisle, y: topElev + 0.04, z: ptEdge.outZ - tanZ * hwAisle },
-            { x: ptEdge.outX + tanX * hwAisle, y: topElev + 0.04, z: ptEdge.outZ + tanZ * hwAisle },
-            { x: ptEdge.inX + tanX * hwAisle, y: baseElev + 0.04, z: ptEdge.inZ + tanZ * hwAisle },
-            stairStepCol,
-            { x: 0, y: 1, z: 0 }
-          );
+          // Stepped stair treads per row (y = treadY + 0.025) so aisle NEVER Z-fights through step noses
+          for (let rb = 0; rb < totalRows; rb++) {
+            const f0 = rb / totalRows;
+            const f1 = (rb + 1) / totalRows;
+            const sY = isVip ? (baseElev + 0.025) : (baseElev + rb * riserH + 0.025);
+            const sx0 = ptEdge.inX + dxE * f0;
+            const sz0 = ptEdge.inZ + dzE * f0;
+            const sx1 = ptEdge.inX + dxE * f1;
+            const sz1 = ptEdge.inZ + dzE * f1;
+            solid.addQuad(
+              { x: sx0 - tanX * hwAisle, y: sY, z: sz0 - tanZ * hwAisle },
+              { x: sx1 - tanX * hwAisle, y: sY, z: sz1 - tanZ * hwAisle },
+              { x: sx1 + tanX * hwAisle, y: sY, z: sz1 + tanZ * hwAisle },
+              { x: sx0 + tanX * hwAisle, y: sY, z: sz0 + tanZ * hwAisle },
+              stairStepCol,
+              { x: 0, y: 1, z: 0 }
+            );
+          }
 
           const postCount = Math.max(4, Math.ceil(lenE / 4.0));
           for (let p = 0; p < postCount; p++) {
@@ -1300,12 +1305,14 @@ class Renderer3D {
               fz = inward.z;
             }
 
+            const seatWFactor = stride > 1 ? 0.985 : 0.92;
+            const seatDepthM = stride > 1 ? Math.min(0.62, rowPitch * 0.74) : Math.min(0.50, rowPitch * 0.60);
             solid.addSeat3D(
               exactPt.x,
               rowElev,
               exactPt.z,
-              stepUnitW * 0.88,
-              Math.min(0.48, rowPitch * 0.56),
+              stepUnitW * seatWFactor,
+              seatDepthM,
               fx,
               fz,
               panCol,
@@ -1671,6 +1678,74 @@ class Renderer3D {
       const wp = rotateXZ(lx, lz, rotDeg);
       return { x: wp.x, y, z: wp.z };
     };
+    const addStageBeam = (lx1, y1, lz1, lx2, y2, lz2, thick, h, col) => {
+      solid.addBeam3D(rotPt(lx1, y1, lz1), rotPt(lx2, y2, lz2), thick, h, col);
+    };
+
+    // Volumetric dual-crossed spotlight beam cone with soft emitter-to-floor taper
+    const addRefinedBeam = (ox, oy, oz, tx, ty, tz, spreadW, col) => {
+      const pO = rotPt(ox, oy, oz);
+      const pL = rotPt(tx - spreadW, ty, tz);
+      const pR = rotPt(tx + spreadW, ty, tz);
+      const pF = rotPt(tx, ty, tz + spreadW * 0.85);
+      const pB = rotPt(tx, ty, tz - spreadW * 0.85);
+      beams.addTriangle(pO, pL, pR, col);
+      beams.addTriangle(pO, pB, pF, col);
+    };
+
+    // Refined multi-panel LED wall helper with black bezel mullions & glowing visual artwork
+    const addDetailedLEDWall = (cx, baseY, cz, totalW, totalH, cols, rows, localRotYRad, accentCol) => {
+      const cosR = Math.cos(localRotYRad || 0);
+      const sinR = Math.sin(localRotYRad || 0);
+      const toLocal = (px, py, pz) => ({
+        lx: cx + px * cosR + pz * sinR,
+        y: baseY + totalH / 2 + py,
+        lz: cz - px * sinR + pz * cosR
+      });
+
+      const blackFrame = [0.035, 0.04, 0.052, 1.0];
+      const bezelCol = [0.10, 0.11, 0.14, 1.0];
+      const oledBase = [0.04, 0.07, 0.15, 1.0];
+      const horizonCol = [0.10, 0.48, 0.86, 1.0];
+      const glowGold = [0.92, 0.66, 0.24, 1.0];
+      const glowAccent = accentCol || [0.42, 0.28, 0.90, 1.0];
+
+      // Black structural LED cabinet housing + top/bottom/side frame trim
+      addStageBox(cx, baseY + totalH / 2, cz, totalW + 0.9, totalH + 0.8, 1.15, blackFrame, localRotYRad);
+      addStageBox(cx, baseY + totalH + 0.25, cz, totalW + 1.1, 0.35, 1.35, bezelCol, localRotYRad);
+      addStageBox(cx, baseY + 0.15, cz, totalW + 1.1, 0.30, 1.35, bezelCol, localRotYRad);
+
+      // Modular LED tiles grid with dark seams
+      const padX = 0.24;
+      const padY = 0.22;
+      const tileW = (totalW - padX * (cols + 1)) / cols;
+      const tileH = (totalH - padY * (rows + 1)) / rows;
+      const faceZ = 0.62;
+
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const px = -totalW / 2 + padX + tileW / 2 + c * (tileW + padX);
+          const py = -totalH / 2 + padY + tileH / 2 + r * (tileH + padY);
+          const distCenter = Math.abs(c - (cols - 1) / 2) / Math.max(1, (cols - 1) / 2);
+          let panelCol = oledBase;
+          if (r === 1 && distCenter < 0.55) {
+            panelCol = glowAccent;
+          } else if (r === 0 && distCenter < 0.72) {
+            panelCol = horizonCol;
+          } else if (r === rows - 1 && distCenter < 0.4) {
+            panelCol = glowGold;
+          }
+          const tp = toLocal(px, py, faceZ);
+          addStageBox(tp.lx, tp.y, tp.lz, tileW, tileH, 0.08, panelCol, localRotYRad);
+        }
+      }
+
+      // Crisp luminous horizontal audio-horizon ribbon & central portal arch highlight
+      const rib = toLocal(0, -totalH * 0.08, faceZ + 0.06);
+      addStageBox(rib.lx, rib.y, rib.lz, totalW * 0.86, Math.max(0.28, totalH * 0.06), 0.06, [0.28, 0.82, 0.98, 1.0], localRotYRad);
+      const coreArch = toLocal(0, totalH * 0.05, faceZ + 0.08);
+      addStageBox(coreArch.lx, coreArch.y, coreArch.lz, totalW * 0.28, totalH * 0.44, 0.06, [0.96, 0.76, 0.34, 1.0], localRotYRad);
+    };
 
     const sw = stage.width || 36;
     const sd = stage.depth || 22;
@@ -1678,112 +1753,176 @@ class Renderer3D {
     const backH = stage.backdropHeight || 14;
     const cw = stage.catwalkWidth || 3.5;
 
+    const stageBlack = [0.045, 0.050, 0.062, 1.0];
+    const stageDeckTop = [0.065, 0.072, 0.088, 1.0];
+    const stageTrim = [0.15, 0.17, 0.21, 1.0];
+    const trussBlack = [0.06, 0.068, 0.082, 1.0];
+    const trussBrace = [0.12, 0.135, 0.165, 1.0];
+    const speakerCol = [0.035, 0.040, 0.050, 1.0];
+    const edgeStripBlue = [0.32, 0.74, 0.98, 1.0];
+    const edgeStripAmber = [0.96, 0.72, 0.30, 1.0];
+
     if (stage.type === 'center-stage') {
-      addStageBox(0, sh / 2, 0, sw, sh, sd, [0.12, 0.14, 0.20, 1.0], 0);
-      solid.addQuad(
-        rotPt(-sw / 2 + 0.6, sh + 0.12, -sd / 2 + 0.6),
-        rotPt(-sw / 2 + 0.6, sh + 0.12, sd / 2 - 0.6),
-        rotPt(sw / 2 - 0.6, sh + 0.12, sd / 2 - 0.6),
-        rotPt(sw / 2 - 0.6, sh + 0.12, -sd / 2 + 0.6),
-        [0.88, 0.16, 0.46, 1.0],
-        { x: 0, y: 1, z: 0 }
-      );
+      // Matte-black central stage + recessed edge trim
+      addStageBox(0, sh / 2, 0, sw, sh, sd, stageBlack, 0);
+      addStageBox(0, sh + 0.04, 0, sw - 0.8, 0.08, sd - 0.8, stageDeckTop, 0);
+      addStageBox(0, sh + 0.09, -sd / 2 + 0.22, sw, 0.08, 0.18, edgeStripBlue, 0);
+      addStageBox(0, sh + 0.09, sd / 2 - 0.22, sw, 0.08, 0.18, edgeStripBlue, 0);
 
       const clZ = Math.min(stage.catwalkLength || 10, Math.max(3, st.alongHalf - sd / 2 + 1));
       const clX = Math.min(stage.catwalkLength || 10, Math.max(2, st.crossHalf - sw / 2 + 1));
-      addStageBox(0, sh / 2, -sd / 2 - clZ / 2, cw, sh, clZ, [0.85, 0.15, 0.38, 1.0], 0);
-      addStageBox(0, sh / 2, sd / 2 + clZ / 2, cw, sh, clZ, [0.85, 0.15, 0.38, 1.0], 0);
+      addStageBox(0, sh / 2, -sd / 2 - clZ / 2, cw, sh, clZ, stageBlack, 0);
+      addStageBox(0, sh / 2, sd / 2 + clZ / 2, cw, sh, clZ, stageBlack, 0);
+      addStageBox(-cw / 2 + 0.1, sh + 0.05, -sd / 2 - clZ / 2, 0.12, 0.08, clZ, edgeStripAmber, 0);
+      addStageBox(cw / 2 - 0.1, sh + 0.05, -sd / 2 - clZ / 2, 0.12, 0.08, clZ, edgeStripAmber, 0);
+      addStageBox(-cw / 2 + 0.1, sh + 0.05, sd / 2 + clZ / 2, 0.12, 0.08, clZ, edgeStripAmber, 0);
+      addStageBox(cw / 2 - 0.1, sh + 0.05, sd / 2 + clZ / 2, 0.12, 0.08, clZ, edgeStripAmber, 0);
       if (clX > 1.5) {
-        addStageBox(-sw / 2 - clX / 2, sh / 2, 0, clX, sh, cw, [0.85, 0.15, 0.38, 1.0], 0);
-        addStageBox(sw / 2 + clX / 2, sh / 2, 0, clX, sh, cw, [0.85, 0.15, 0.38, 1.0], 0);
+        addStageBox(-sw / 2 - clX / 2, sh / 2, 0, clX, sh, cw, stageBlack, 0);
+        addStageBox(sw / 2 + clX / 2, sh / 2, 0, clX, sh, cw, stageBlack, 0);
       }
 
-      const rigY = sh + backH * 0.88;
-      addStageBox(0, rigY, 0, sw * 0.68, backH * 0.62, sd * 0.68, [0.08, 0.65, 0.95, 1.0], 0);
+      // Overhead matte-black truss rig & 4-sided hanging LED cube
+      const rigY = sh + backH * 0.78;
+      const cubeW = sw * 0.56;
+      const cubeH = backH * 0.52;
+      const cubeD = sd * 0.56;
+      addStageBox(0, rigY + cubeH + 0.6, 0, sw * 0.84, 0.9, sd * 0.84, trussBlack, 0);
+      addStageBox(0, rigY + cubeH / 2, 0, cubeW, cubeH, cubeD, stageBlack, 0);
+      addDetailedLEDWall(0, rigY, cubeD / 2, cubeW * 0.92, cubeH * 0.9, 4, 2, 0, [0.36, 0.58, 0.98, 1.0]);
+      addDetailedLEDWall(0, rigY, -cubeD / 2, cubeW * 0.92, cubeH * 0.9, 4, 2, Math.PI, [0.36, 0.58, 0.98, 1.0]);
 
       const beamColors = [
-        [0.95, 0.28, 0.56, 0.18],
-        [0.24, 0.72, 0.98, 0.18],
-        [0.65, 0.32, 0.95, 0.18]
+        [0.35, 0.78, 1.0, 0.12],
+        [1.0, 0.76, 0.36, 0.12],
+        [0.62, 0.42, 0.98, 0.12]
       ];
-      for (let i = 0; i < 8; i++) {
-        const ang = (i / 8) * Math.PI * 2;
-        const bx = Math.cos(ang) * (sw * 0.32);
-        const bz = Math.sin(ang) * (sd * 0.32);
-        const tx = Math.cos(ang) * (sw * 1.2);
-        const tz = Math.sin(ang) * (sd * 1.2);
-        beams.addTriangle(
-          rotPt(bx, rigY + 1.5, bz),
-          rotPt(tx - Math.sin(ang) * 2.5, sh + 0.2, tz + Math.cos(ang) * 2.5),
-          rotPt(tx + Math.sin(ang) * 2.5, sh + 0.2, tz - Math.cos(ang) * 2.5),
-          beamColors[i % beamColors.length]
+      for (let i = 0; i < 12; i++) {
+        const ang = (i / 12) * Math.PI * 2;
+        const bx = Math.cos(ang) * (sw * 0.36);
+        const bz = Math.sin(ang) * (sd * 0.36);
+        const tx = Math.cos(ang) * (sw * 0.95);
+        const tz = Math.sin(ang) * (sd * 0.95);
+        addStageBox(
+          rotPt(bx, 0, bz).x ? bx : bx,
+          rigY + cubeH + 0.1,
+          bz,
+          0.55, 0.55, 0.55, trussBrace, 0
         );
+        addRefinedBeam(bx, rigY + cubeH, bz, tx, sh + 0.15, tz, 2.2, beamColors[i % beamColors.length]);
       }
       return;
     }
 
-    // End-Stage or Festival-Stage strictly aligned with stageConfig.orientationDeg
+    // End-Stage or Festival-Stage: All-Black Touring Production Architecture
     const stageZ = st.stageLocalZ;
     const cl = st.catwalkLength;
 
-    addStageBox(0, sh / 2, stageZ, sw, sh, sd, [0.14, 0.16, 0.24, 1.0], 0);
-    solid.addQuad(
-      rotPt(-sw / 2 + 1, sh + 0.12, stageZ - sd / 2 + 1),
-      rotPt(-sw / 2 + 1, sh + 0.12, stageZ + sd / 2 - 1),
-      rotPt(sw / 2 - 1, sh + 0.12, stageZ + sd / 2 - 1),
-      rotPt(sw / 2 - 1, sh + 0.12, stageZ - sd / 2 + 1),
-      [0.86, 0.16, 0.45, 1.0],
-      { x: 0, y: 1, z: 0 }
-    );
+    // 1. Matte-black stage deck, recessed apron skirt & subtle dark trim
+    addStageBox(0, sh / 2, stageZ, sw, sh, sd, stageBlack, 0);
+    addStageBox(0, sh + 0.04, stageZ, sw - 0.8, 0.08, sd - 0.8, stageDeckTop, 0);
+    addStageBox(0, sh + 0.06, stageZ + sd / 2 - 0.18, sw, 0.10, 0.24, stageTrim, 0);
 
+    // Subtle front stage footlight strip & stage access stairs on left/right wings
+    addStageBox(0, sh + 0.11, stageZ + sd / 2 - 0.16, sw * 0.88, 0.06, 0.10, edgeStripBlue, 0);
+    addStageBox(-sw / 2 - 1.2, sh * 0.38, stageZ + sd * 0.2, 2.4, sh * 0.76, 3.6, stageBlack, 0);
+    addStageBox(sw / 2 + 1.2, sh * 0.38, stageZ + sd * 0.2, 2.4, sh * 0.76, 3.6, stageBlack, 0);
+
+    // 2. Matte-black Catwalk & B-Stage thrust with slim edge accent strips
     const catZ = stageZ + sd / 2 + cl / 2;
-    addStageBox(0, sh / 2, catZ, cw, sh, cl, [0.85, 0.15, 0.42, 1.0], 0);
-    addStageBox(0, sh / 2, stageZ + sd / 2 + cl + 2.5, cw * 2.1, sh, 5, [0.95, 0.24, 0.48, 1.0], 0);
+    const bStageZ = stageZ + sd / 2 + cl + 2.5;
+    addStageBox(0, sh / 2, catZ, cw, sh, cl, stageBlack, 0);
+    addStageBox(0, sh + 0.04, catZ, cw - 0.4, 0.08, cl, stageDeckTop, 0);
+    addStageBox(-cw / 2 + 0.10, sh + 0.09, catZ, 0.12, 0.06, cl, edgeStripAmber, 0);
+    addStageBox(cw / 2 - 0.10, sh + 0.09, catZ, 0.12, 0.06, cl, edgeStripAmber, 0);
 
-    // Main LED Screen + Side Angled IMAX Wing Screens
-    const screenZ = stageZ - sd / 2 + 1.5;
-    addStageBox(0, sh + backH / 2, screenZ, sw * 0.92, backH, 1.2, [0.06, 0.58, 0.92, 1.0], 0);
+    addStageBox(0, sh / 2, bStageZ, cw * 2.2, sh, 5.2, stageBlack, 0);
+    addStageBox(0, sh + 0.04, bStageZ, cw * 2.0, 0.08, 4.8, stageDeckTop, 0);
+    addStageBox(0, sh + 0.09, bStageZ + 2.48, cw * 2.1, 0.06, 0.12, edgeStripBlue, 0);
 
-    const wingW = sw * 0.36;
-    const wingH = backH * 0.86;
-    addStageBox(-sw * 0.66, sh + wingH / 2, screenZ + 4, wingW, wingH, 1.0, [0.55, 0.24, 0.92, 1.0], 0.35);
-    addStageBox(sw * 0.66, sh + wingH / 2, screenZ + 4, wingW, wingH, 1.0, [0.55, 0.24, 0.92, 1.0], -0.35);
+    // 3. Refined Multi-Panel Main LED Backdrop & Angled Side IMAG Wing Screens
+    const screenZ = stageZ - sd / 2 + 2.0;
+    addDetailedLEDWall(0, sh + 0.4, screenZ, sw * 0.88, backH * 0.92, 7, 3, 0, [0.46, 0.32, 0.96, 1.0]);
 
-    // Overhead Truss Rig & Towers
-    const trussH = sh + backH + 1.5;
-    addStageBox(0, trussH, stageZ, sw * 1.04, 1.6, sd * 0.88, [0.35, 0.42, 0.52, 1.0], 0);
-    addStageBox(-sw * 0.48, (sh + backH) / 2, stageZ - sd * 0.4, 1.1, sh + backH, 1.1, [0.3, 0.36, 0.45, 1.0], 0);
-    addStageBox(sw * 0.48, (sh + backH) / 2, stageZ - sd * 0.4, 1.1, sh + backH, 1.1, [0.3, 0.36, 0.45, 1.0], 0);
-    addStageBox(-sw * 0.48, (sh + backH) / 2, stageZ + sd * 0.4, 1.1, sh + backH, 1.1, [0.3, 0.36, 0.45, 1.0], 0);
-    addStageBox(sw * 0.48, (sh + backH) / 2, stageZ + sd * 0.4, 1.1, sh + backH, 1.1, [0.3, 0.36, 0.45, 1.0], 0);
+    const wingW = sw * 0.34;
+    const wingH = backH * 0.82;
+    addDetailedLEDWall(-sw * 0.66, sh + 0.8, screenZ + 4.2, wingW, wingH, 3, 2, 0.38, [0.14, 0.68, 0.96, 1.0]);
+    addDetailedLEDWall(sw * 0.66, sh + 0.8, screenZ + 4.2, wingW, wingH, 3, 2, -0.38, [0.14, 0.68, 0.96, 1.0]);
 
-    // FOH Sound/Light Tower
+    // 4. Matte-Black Overhead Box Truss Rig, Vertical Towers & Hanging PA Line-Array Speakers
+    const trussH = sh + backH + 1.4;
+    const frontTrussZ = stageZ + sd * 0.42;
+    const midTrussZ = stageZ;
+    const backTrussZ = stageZ - sd * 0.42;
+
+    // 4 main black vertical truss towers + cantilever arms for IMAG screens
+    addStageBox(-sw * 0.48, trussH / 2, backTrussZ, 1.0, trussH, 1.0, trussBlack, 0);
+    addStageBox(sw * 0.48, trussH / 2, backTrussZ, 1.0, trussH, 1.0, trussBlack, 0);
+    addStageBox(-sw * 0.48, trussH / 2, frontTrussZ, 1.0, trussH, 1.0, trussBlack, 0);
+    addStageBox(sw * 0.48, trussH / 2, frontTrussZ, 1.0, trussH, 1.0, trussBlack, 0);
+
+    // Open-frame black overhead truss grid (chords + cross-beams + wing arms)
+    addStageBeam(-sw * 0.50, trussH, frontTrussZ, sw * 0.50, trussH, frontTrussZ, 0.75, 0.95, trussBlack);
+    addStageBeam(-sw * 0.50, trussH, midTrussZ, sw * 0.50, trussH, midTrussZ, 0.65, 0.85, trussBlack);
+    addStageBeam(-sw * 0.50, trussH, backTrussZ, sw * 0.50, trussH, backTrussZ, 0.75, 0.95, trussBlack);
+    addStageBeam(-sw * 0.48, trussH, backTrussZ, -sw * 0.48, trussH, frontTrussZ, 0.75, 0.95, trussBlack);
+    addStageBeam(sw * 0.48, trussH, backTrussZ, sw * 0.48, trussH, frontTrussZ, 0.75, 0.95, trussBlack);
+    addStageBeam(0, trussH, backTrussZ, 0, trussH, frontTrussZ, 0.55, 0.75, trussBrace);
+    addStageBeam(-sw * 0.48, trussH - 0.5, backTrussZ + 1.5, -sw * 0.66, sh + wingH + 1.0, screenZ + 4.2, 0.55, 0.65, trussBlack);
+    addStageBeam(sw * 0.48, trussH - 0.5, backTrussZ + 1.5, sw * 0.66, sh + wingH + 1.0, screenZ + 4.2, 0.55, 0.65, trussBlack);
+
+    // Curved matte-black PA Line-Array Speaker Hangs flanking main stage front
+    [-sw * 0.44, sw * 0.44].forEach((sx) => {
+      for (let k = 0; k < 5; k++) {
+        addStageBox(sx, trussH - 1.4 - k * 0.72, frontTrussZ + 0.6 + k * 0.14, 1.8, 0.58, 1.1, speakerCol, k * 0.04);
+      }
+    });
+
+    // 5. Matte-Black FOH Sound & Lighting Control Tower
     if (stage.fohEnabled) {
       const fohZ = st.fohLocalZ;
       const fw = stage.fohWidth || 8;
       const fd = stage.fohDepth || 5;
-      addStageBox(0, 1.8, fohZ, fw, 3.6, fd, [0.08, 0.38, 0.65, 1.0], 0);
+      addStageBox(0, 1.3, fohZ, fw, 2.6, fd, stageBlack, 0);
+      addStageBox(0, 2.75, fohZ, fw * 0.85, 0.35, fd * 0.45, trussBrace, 0);
+      addStageBox(0, 3.05, fohZ - fd * 0.15, fw * 0.55, 0.28, 0.45, [0.16, 0.62, 0.92, 1.0], 0);
     }
 
-    // Soft Volumetric Stage Light Beams (non-flashing)
-    const numBeams = 8;
-    const beamCols = [
-      [0.98, 0.22, 0.52, 0.16],
-      [0.18, 0.78, 0.98, 0.16],
-      [0.68, 0.28, 0.98, 0.16]
+    // 6. Refined Lighting Fixtures (moving-head pods + emitter lenses) & Soft Volumetric Cones
+    const beamPalette = [
+      [0.34, 0.80, 1.0, 0.11],  // Ice Cyan
+      [1.0, 0.76, 0.36, 0.10],  // Warm Gold
+      [0.64, 0.42, 0.98, 0.10]  // Royal Violet
     ];
-    for (let i = 0; i < numBeams; i++) {
-      const frac = (i / (numBeams - 1)) - 0.5;
-      const bx = frac * sw * 0.85;
-      const origin = rotPt(bx, trussH - 0.5, stageZ + 2);
-      const targetZ = stageZ + sd + 12 + (i % 2) * 10;
-      const spreadX = bx * 1.45;
-      beams.addTriangle(
-        origin,
-        rotPt(spreadX - 3.8, 0.25, targetZ),
-        rotPt(spreadX + 3.8, 0.25, targetZ),
-        beamCols[i % beamCols.length]
-      );
+    const lensPalette = [
+      [0.65, 0.92, 1.0, 1.0],
+      [1.0, 0.88, 0.58, 1.0],
+      [0.82, 0.68, 1.0, 1.0]
+    ];
+
+    // Front overhead truss spotlights (9 detailed moving-head pods aiming across stage & catwalk)
+    const frontPods = 9;
+    for (let i = 0; i < frontPods; i++) {
+      const frac = (i / (frontPods - 1)) - 0.5;
+      const fx = frac * sw * 0.84;
+      const podY = trussH - 0.65;
+      addStageBox(fx, podY, frontTrussZ, 0.55, 0.55, 0.55, trussBrace, 0);
+      addStageBox(fx, podY - 0.32, frontTrussZ + 0.1, 0.32, 0.18, 0.32, lensPalette[i % lensPalette.length], 0);
+
+      const targetZ = (i % 3 === 1) ? bStageZ : (stageZ + sd * 0.55 + (i % 2) * 8);
+      const targetX = frac * sw * 0.95;
+      addRefinedBeam(fx, podY - 0.35, frontTrussZ + 0.1, targetX, sh + 0.15, targetZ, 2.1, beamPalette[i % beamPalette.length]);
+    }
+
+    // Mid-truss & side tower accent wash lights
+    const sidePods = 4;
+    for (let i = 0; i < sidePods; i++) {
+      const frac = (i / (sidePods - 1)) - 0.5;
+      const bx = frac * sw * 0.72;
+      const podY = trussH - 0.55;
+      addStageBox(bx, podY, midTrussZ, 0.50, 0.48, 0.50, trussBrace, 0);
+      addStageBox(bx, podY - 0.28, midTrussZ, 0.28, 0.16, 0.28, lensPalette[(i + 1) % lensPalette.length], 0);
+      addRefinedBeam(bx, podY - 0.3, midTrussZ, -bx * 0.6, sh + 0.15, stageZ + sd * 0.25, 2.4, beamPalette[(i + 1) % beamPalette.length]);
     }
   }
 
