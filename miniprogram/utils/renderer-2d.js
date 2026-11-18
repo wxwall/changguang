@@ -6,9 +6,13 @@
 
 const {
   DEG2RAD,
+  rotateXZ,
   evalTierPoint,
   getInfieldCornerTransitionAngles,
   getRowInwardNormal,
+  computeRunningTrackSpec,
+  getStageTransform,
+  computeVomitoryAngularBounds,
   generateConcertInfieldBlocks
 } = require('./schema-geometry');
 
@@ -118,8 +122,8 @@ class Renderer2D {
         const eDeg = endDeg - aisleGapDeg;
         if (eDeg <= sDeg) return;
 
-        // Build angle samples including exact infield corner-transition angles
-        const steps = Math.max(4, Math.ceil((eDeg - sDeg) / 4));
+        // Build smooth angle samples (<= 1.5° step on arcs) including exact infield corner-transition angles
+        const steps = Math.max(6, Math.ceil((eDeg - sDeg) / 1.5));
         const rawSampleDegs = [];
         for (let i = 0; i <= steps; i++) {
           rawSampleDegs.push(sDeg + (eDeg - sDeg) * (i / steps));
@@ -157,25 +161,29 @@ class Renderer2D {
         let vomitoryRect = null;
         if (sec.vomitory && sec.vomitory.position !== 'none' && sec.vomitory.enabled !== false) {
           const totalRows = sec.rows || tier.defaultRows || 22;
-          const rawStartRow = (sec.vomitory.startRow !== undefined && sec.vomitory.startRow !== null)
-            ? Number(sec.vomitory.startRow)
-            : 5;
-          const rawSpan = (sec.vomitory.rowSpan !== undefined && sec.vomitory.rowSpan !== null)
-            ? Number(sec.vomitory.rowSpan)
-            : 4;
-          const isFrontConnected = rawStartRow <= 1;
-          const startRowFrac = isFrontConnected
-            ? Math.min(0.22, Math.max(0.06, (Math.max(1, rawSpan) * 0.45) / totalRows))
-            : Math.min(0.85, Math.max(0.15, (rawStartRow + rawSpan * 0.5) / totalRows));
-          const vomPt = evalTierPoint(this.venue, tierIndex, midDeg, startRowFrac, sec.customRadialDepth);
-          const nrm = getRowInwardNormal(this.venue, tierIndex, midDeg, startRowFrac, sec.customRadialDepth);
+          const vomInfo = computeVomitoryAngularBounds(
+            this.venue,
+            tierIndex,
+            sDeg,
+            eDeg,
+            sec.vomitory,
+            totalRows,
+            sec.customRadialDepth
+          );
+          const vomPt = evalTierPoint(this.venue, tierIndex, vomInfo.vomCenterDeg, vomInfo.vomRowFrac, sec.customRadialDepth);
+          const nrm = getRowInwardNormal(this.venue, tierIndex, vomInfo.vomCenterDeg, vomInfo.vomRowFrac, sec.customRadialDepth);
+          const rowSpanCount = vomInfo.vomEndRow >= vomInfo.vomStartRow
+            ? (vomInfo.vomEndRow - vomInfo.vomStartRow + 1)
+            : 1;
           vomitoryRect = {
             x: vomPt.x,
             y: vomPt.z,
             angleRad: Math.atan2(nrm.x, -nrm.z),
-            w: sec.vomitory.width || 3.2,
-            h: Math.max(2.2, Math.min(6, midDepth * 0.28)),
-            isFrontConnected
+            w: vomInfo.actualWidthM,
+            h: vomInfo.isFrontConnected && vomInfo.vomEndRow < 1
+              ? 1.8
+              : Math.max(2.0, (rowSpanCount / Math.max(1, totalRows)) * midDepth),
+            isFrontConnected: vomInfo.isFrontConnected
           };
         }
 
@@ -225,17 +233,21 @@ class Renderer2D {
       });
     });
 
-    // Concert Infield Floor Seating Blocks
+    // Concert Infield Floor Seating Blocks (properly rotated to stageConfig.orientationDeg)
     const floorBlocks = generateConcertInfieldBlocks(this.venue);
     floorBlocks.forEach((blk) => {
       const hw = blk.width / 2;
       const hd = blk.depth / 2;
-      const polygon = [
-        { x: blk.x - hw, y: blk.z - hd },
-        { x: blk.x + hw, y: blk.z - hd },
-        { x: blk.x + hw, y: blk.z + hd },
-        { x: blk.x - hw, y: blk.z + hd }
+      const localCorners = [
+        { x: -hw, z: -hd },
+        { x: hw, z: -hd },
+        { x: hw, z: hd },
+        { x: -hw, z: hd }
       ];
+      const polygon = localCorners.map((pt) => {
+        const rp = rotateXZ(pt.x, pt.z, blk.rotDeg || 0);
+        return { x: blk.x + rp.x, y: blk.z + rp.z };
+      });
       this.floorPolygons.push({
         type: 'floor',
         id: blk.id,
@@ -262,17 +274,21 @@ class Renderer2D {
         if (this.pointInPolygon(mx, my, blkItem.polygon)) {
           const blk = blkItem.floorBlock;
           const totalRows = blk.rows || 10;
-          const relY = (my - (blk.z - blk.depth / 2)) / Math.max(1, blk.depth);
-          const ratio = blk.facingZ === 1 ? (1 - relY) : relY;
+          const localPt = rotateXZ(mx - blk.x, my - blk.z, -(blk.rotDeg || 0));
+          const relY = (localPt.z + blk.depth / 2) / Math.max(1, blk.depth);
+          const ratio = blk.localFacingZ === 1 ? (1 - relY) : relY;
           const estimatedRow = Math.max(1, Math.min(totalRows, Math.round(ratio * totalRows)));
           return { ...blkItem, estimatedRow };
         }
       }
     }
 
-    // 2. Check Stand Sectors & Infield Modules
+    // 2. Check Stand Sectors & (in sports mode) Infield Modules
     for (let i = this.hitPolygons.length - 1; i >= 0; i--) {
       const item = this.hitPolygons[i];
+      if (item.type === 'module' && this.viewMode !== 'sports') {
+        continue;
+      }
       if (this.activeTierFilter !== 'all' && item.tierLevel !== this.activeTierFilter && item.tierLevel !== 0) {
         continue;
       }
@@ -377,7 +393,7 @@ class Renderer2D {
     ctx.save();
     this.traceRoundedRect(ctx, 0, 0, infield.width, infield.length, infield.cornerRadius);
     if (infield.surfaceType === 'synthetic-track') {
-      ctx.fillStyle = '#7C2D12';
+      ctx.fillStyle = '#064E3B';
     } else if (infield.surfaceType === 'hardwood-court') {
       ctx.fillStyle = '#1E293B';
     } else {
@@ -388,16 +404,45 @@ class Renderer2D {
     ctx.lineWidth = 1.2 / s;
     ctx.stroke();
 
-    if (infield.sportPreset === 'track-field') {
-      ctx.strokeStyle = 'rgba(255,255,255,0.16)';
-      ctx.lineWidth = 0.7 / s;
-      for (let lane = 1; lane <= 4; lane++) {
-        const shrink = lane * 2.4;
+    if (infield.sportPreset === 'track-field' || infield.surfaceType === 'synthetic-track') {
+      const spec = computeRunningTrackSpec(infield);
+
+      // Outer brick-red synthetic running track belt
+      this.traceRoundedRect(
+        ctx,
+        0,
+        0,
+        spec.outerTrackWidth,
+        spec.outerTrackLength,
+        spec.outerTrackCornerRadius
+      );
+      ctx.fillStyle = '#9A3412';
+      ctx.fill();
+
+      // Inner green field apron surrounding pitch + D-zones
+      this.traceRoundedRect(
+        ctx,
+        0,
+        0,
+        spec.innerApronWidth,
+        spec.innerApronLength,
+        spec.innerApronCornerRadius
+      );
+      ctx.fillStyle = '#065F46';
+      ctx.fill();
+
+      // Exact schema-computed lane lines (lanes + 1 boundaries spaced by laneWidth)
+      ctx.strokeStyle = 'rgba(255,255,255,0.42)';
+      ctx.lineWidth = 0.65 / s;
+      for (let lane = 0; lane <= spec.lanes; lane++) {
+        const shrink = lane * spec.laneWidth;
         this.traceRoundedRect(
-          ctx, 0, 0,
-          infield.width - shrink * 2,
-          infield.length - shrink * 2,
-          Math.max(4, infield.cornerRadius - shrink)
+          ctx,
+          0,
+          0,
+          spec.outerTrackWidth - shrink * 2,
+          spec.outerTrackLength - shrink * 2,
+          Math.max(2, spec.outerTrackCornerRadius - shrink)
         );
         ctx.stroke();
       }
@@ -406,6 +451,8 @@ class Renderer2D {
     const pw = infield.pitchWidth || 68;
     const pl = infield.pitchLength || 105;
 
+    ctx.save();
+    ctx.rotate((infield.pitchOrientationDeg || 0) * DEG2RAD);
     if (infield.surfaceType === 'hardwood-court') {
       ctx.fillStyle = '#B45309';
       ctx.fillRect(-pw / 2, -pl / 2, pw, pl);
@@ -422,7 +469,7 @@ class Renderer2D {
     } else {
       ctx.fillStyle = '#047857';
       ctx.fillRect(-pw / 2, -pl / 2, pw, pl);
-      ctx.strokeStyle = 'rgba(255,255,255,0.38)';
+      ctx.strokeStyle = 'rgba(255,255,255,0.42)';
       ctx.lineWidth = 0.9 / s;
       ctx.strokeRect(-pw / 2, -pl / 2, pw, pl);
       ctx.beginPath();
@@ -436,6 +483,7 @@ class Renderer2D {
       ctx.strokeRect(-20.15, pl / 2 - 16.5, 40.3, 16.5);
     }
     ctx.restore();
+    ctx.restore();
   }
 
   drawFloorBlocks2D(ctx, s) {
@@ -443,23 +491,26 @@ class Renderer2D {
       const isSelected = item.id === this.selectedFloorBlockId;
       const blk = item.floorBlock;
       ctx.save();
+      ctx.translate(blk.x, blk.z);
+      ctx.rotate((blk.rotDeg || 0) * DEG2RAD);
+
       ctx.fillStyle = isSelected ? '#F43F5E' : (blk.color || '#3B82F6');
       ctx.globalAlpha = isSelected ? 0.95 : 0.72;
-      ctx.fillRect(blk.x - blk.width / 2, blk.z - blk.depth / 2, blk.width, blk.depth);
+      ctx.fillRect(-blk.width / 2, -blk.depth / 2, blk.width, blk.depth);
 
       ctx.strokeStyle = isSelected ? '#FFFFFF' : 'rgba(255,255,255,0.45)';
       ctx.lineWidth = (isSelected ? 1.8 : 0.7) / s;
-      ctx.strokeRect(blk.x - blk.width / 2, blk.z - blk.depth / 2, blk.width, blk.depth);
+      ctx.strokeRect(-blk.width / 2, -blk.depth / 2, blk.width, blk.depth);
 
       // Subtle row lines inside floor block
       ctx.strokeStyle = 'rgba(255,255,255,0.2)';
       ctx.lineWidth = 0.4 / s;
       const rows = Math.min(14, blk.rows || 8);
       for (let r = 1; r < rows; r++) {
-        const ry = blk.z - blk.depth / 2 + (r / rows) * blk.depth;
+        const ry = -blk.depth / 2 + (r / rows) * blk.depth;
         ctx.beginPath();
-        ctx.moveTo(blk.x - blk.width / 2 + 0.5, ry);
-        ctx.lineTo(blk.x + blk.width / 2 - 0.5, ry);
+        ctx.moveTo(-blk.width / 2 + 0.5, ry);
+        ctx.lineTo(blk.width / 2 - 0.5, ry);
         ctx.stroke();
       }
       ctx.restore();
@@ -471,7 +522,10 @@ class Renderer2D {
     const stage = infield && infield.stageConfig;
     if (!stage) return;
 
+    const st = getStageTransform(this.venue);
     ctx.save();
+    ctx.rotate((st.rotFromSouthDeg || 0) * DEG2RAD);
+
     const sw = stage.width || 30;
     const sd = stage.depth || 20;
 
@@ -485,8 +539,8 @@ class Renderer2D {
       ctx.strokeRect(-sw / 2, -sd / 2, sw, sd);
 
       const cw = stage.catwalkWidth || 3.2;
-      const clZ = Math.min(stage.catwalkLength || 10, Math.max(3, (infield.length || 60) / 2 - sd / 2 - 2));
-      const clX = Math.min(stage.catwalkLength || 10, Math.max(2, (infield.width || 30) / 2 - sw / 2 - 1));
+      const clZ = Math.min(stage.catwalkLength || 10, Math.max(3, st.alongHalf - sd / 2 + 1));
+      const clX = Math.min(stage.catwalkLength || 10, Math.max(2, st.crossHalf - sw / 2 + 1));
       ctx.fillStyle = '#F43F5E';
       ctx.fillRect(-cw / 2, -sd / 2 - clZ, cw, clZ);
       ctx.fillRect(-cw / 2, sd / 2, cw, clZ);
@@ -495,9 +549,7 @@ class Renderer2D {
         ctx.fillRect(sw / 2, -cw / 2, clX, cw);
       }
     } else {
-      const halfL = (infield.length || 100) / 2 - 4;
-      const stageY = -Math.min((infield.pitchLength || 100) * 0.36, halfL - sd / 2 - 2);
-      ctx.translate(0, stageY);
+      ctx.translate(0, st.stageLocalZ);
 
       ctx.fillStyle = '#BE185D';
       ctx.strokeStyle = '#F9A8D4';
@@ -509,19 +561,19 @@ class Renderer2D {
       ctx.fillRect(-sw * 0.55, -sd / 2 - 2.2, sw * 1.1, 2.2);
 
       const cw = stage.catwalkWidth || 3.5;
-      const cl = stage.catwalkLength || 18;
+      const cl = st.catwalkLength;
       ctx.fillStyle = '#E11D48';
       ctx.fillRect(-cw / 2, sd / 2, cw, cl);
       ctx.strokeRect(-cw / 2, sd / 2, cw, cl);
 
       if (stage.fohEnabled) {
-        const fohDist = stage.fohDistance || 38;
+        const fohRelY = st.fohLocalZ - st.stageLocalZ;
         const fw = stage.fohWidth || 8;
         const fd = stage.fohDepth || 5;
         ctx.fillStyle = '#0284C7';
         ctx.strokeStyle = '#7DD3FC';
-        ctx.fillRect(-fw / 2, sd / 2 + fohDist - fd / 2, fw, fd);
-        ctx.strokeRect(-fw / 2, sd / 2 + fohDist - fd / 2, fw, fd);
+        ctx.fillRect(-fw / 2, fohRelY - fd / 2, fw, fd);
+        ctx.strokeRect(-fw / 2, fohRelY - fd / 2, fw, fd);
       }
     }
     ctx.restore();
@@ -531,6 +583,9 @@ class Renderer2D {
     const showVomitories = this.venue.gridSystem && this.venue.gridSystem.showVomitories;
 
     this.hitPolygons.forEach((item) => {
+      if (item.type === 'module' && this.viewMode !== 'sports') {
+        return;
+      }
       const isDimmed = this.activeTierFilter !== 'all' && item.tierLevel !== this.activeTierFilter && item.tierLevel !== 0;
       const isSelected = (item.type === 'sector' && item.id === this.selectedSectorId) ||
                          (item.type === 'module' && item.id === this.selectedModuleId);
@@ -607,10 +662,10 @@ class Renderer2D {
     let targetY = 0;
     const infield = this.venue.infield;
     const stage = infield && infield.stageConfig;
-    if (this.viewMode === 'concert' && stage && stage.type !== 'center-stage') {
-      const halfL = (infield.length || 100) / 2 - 4;
-      const sd = stage.depth || 20;
-      targetY = -Math.min((infield.pitchLength || 100) * 0.36, halfL - sd / 2 - 2);
+    if (this.viewMode === 'concert' && stage) {
+      const st = getStageTransform(this.venue);
+      targetX = st.centerX;
+      targetY = st.centerZ;
     }
 
     ctx.save();

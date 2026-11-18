@@ -7,6 +7,21 @@ const DEG2RAD = Math.PI / 180;
 const RAD2DEG = 180 / Math.PI;
 
 /**
+ * Rotates local (lx, lz) around origin by deg clockwise in top-down XZ plane
+ * (matching 0°=North (0,-1), 90°=East (+1,0), 180°=South (0,+1), 270°=West (-1,0)).
+ */
+function rotateXZ(lx, lz, deg) {
+  if (!deg || Math.abs(deg) < 1e-6) return { x: lx, z: lz };
+  const rad = deg * DEG2RAD;
+  const c = Math.cos(rad);
+  const s = Math.sin(rad);
+  return {
+    x: lx * c - lz * s,
+    z: lx * s + lz * c
+  };
+}
+
+/**
  * Evaluates a point on a rounded-rectangle perimeter AND its true outward unit normal
  * at angleDeg (polar ray from center).
  * Angle convention:
@@ -265,108 +280,353 @@ function polarToWorld3D(angleDeg, radius, elevation) {
 }
 
 /**
+ * Computes strict parameter-driven Olympic running track dimensions from venue.infield:
+ * - infield.length, infield.width, infield.cornerRadius
+ * - infield.pitchLength, infield.pitchWidth, infield.safetyMargin
+ * - Optional infield.trackLanes, infield.trackLaneWidth
+ */
+function computeRunningTrackSpec(infield) {
+  const length = (infield && infield.length) || 188;
+  const width = (infield && infield.width) || 118;
+  const cornerRadius = Math.min((infield && infield.cornerRadius) || 38, width / 2, length / 2);
+  const pitchLength = (infield && infield.pitchLength) || 105;
+  const pitchWidth = (infield && infield.pitchWidth) || 68;
+  const safetyMargin = (infield && infield.safetyMargin !== undefined && infield.safetyMargin !== null)
+    ? Number(infield.safetyMargin)
+    : 12;
+
+  const sideClearance = Math.max(0, (width - pitchWidth) / 2);
+  const endClearance = Math.max(0, (length - pitchLength) / 2);
+  const minClearance = Math.min(sideClearance, endClearance);
+
+  const laneWidth = (infield && infield.trackLaneWidth) ? Number(infield.trackLaneWidth) : 1.22;
+  const maxUsableBand = Math.max(laneWidth * 2, minClearance - 2.0);
+  const safetyLimitedBand = Math.max(laneWidth * 4, minClearance - safetyMargin);
+  const targetBand = Math.min(maxUsableBand, safetyLimitedBand);
+
+  const lanes = (infield && infield.trackLanes)
+    ? Math.max(1, Math.min(12, Math.round(Number(infield.trackLanes))))
+    : Math.max(4, Math.min(10, Math.floor(targetBand / laneWidth)));
+
+  const trackBandWidth = Number((lanes * laneWidth).toFixed(3));
+  const remainingSlack = Math.max(0, minClearance - trackBandWidth);
+  const outerInset = (infield && infield.trackOuterMargin !== undefined)
+    ? Math.max(0, Number(infield.trackOuterMargin))
+    : Number(Math.min(2.2, remainingSlack * 0.14).toFixed(3));
+
+  const outerTrackWidth = Math.max(pitchWidth + trackBandWidth * 2 + 1, width - outerInset * 2);
+  const outerTrackLength = Math.max(pitchLength + trackBandWidth * 2 + 1, length - outerInset * 2);
+  const outerTrackCornerRadius = Math.max(4, cornerRadius - outerInset);
+
+  const innerApronWidth = Math.max(pitchWidth + 1.0, outerTrackWidth - trackBandWidth * 2);
+  const innerApronLength = Math.max(pitchLength + 1.0, outerTrackLength - trackBandWidth * 2);
+  const innerApronCornerRadius = Math.max(2, outerTrackCornerRadius - trackBandWidth);
+
+  return {
+    lanes,
+    laneWidth,
+    trackBandWidth,
+    outerInset,
+    outerTrackWidth,
+    outerTrackLength,
+    outerTrackCornerRadius,
+    innerApronWidth,
+    innerApronLength,
+    innerApronCornerRadius
+  };
+}
+
+/**
+ * Computes the exact stage orientation, center, facing unit vector, FOH position,
+ * and longitudinal/transverse infield bounds derived strictly from stageConfig.orientationDeg.
+ * Convention: stageConfig.orientationDeg is the direction the stage FACES
+ * (0°=North, 90°=East, 180°=South, 270°=West).
+ */
+function getStageTransform(venue) {
+  const infield = (venue && venue.infield) || {};
+  const stage = infield.stageConfig || {};
+  const oriDeg = (stage.orientationDeg !== undefined && stage.orientationDeg !== null)
+    ? Number(stage.orientationDeg)
+    : 180;
+  const rotFromSouthDeg = oriDeg - 180;
+
+  const oriRad = oriDeg * DEG2RAD;
+  const facingX = Math.sin(oriRad);
+  const facingZ = -Math.cos(oriRad);
+
+  const alongHalf = Math.max(
+    12,
+    evalInfieldPerimeterAndNormal(oriDeg, infield.length || 100, infield.width || 60, infield.cornerRadius || 10).dist - 4
+  );
+  const crossHalf = Math.max(
+    10,
+    evalInfieldPerimeterAndNormal(oriDeg + 90, infield.length || 100, infield.width || 60, infield.cornerRadius || 10).dist - 4
+  );
+
+  const sw = stage.width || 30;
+  const sd = stage.depth || 20;
+  const sh = stage.height || 2.0;
+
+  if (stage.type === 'center-stage') {
+    return {
+      type: 'center-stage',
+      orientationDeg: oriDeg,
+      rotFromSouthDeg,
+      facingX,
+      facingZ,
+      alongHalf,
+      crossHalf,
+      stageLocalZ: 0,
+      centerX: 0,
+      centerZ: 0,
+      targetY: sh + 1.6,
+      catwalkLength: stage.catwalkLength || 10,
+      fohLocalZ: 0
+    };
+  }
+
+  // Fit stage deck inside longitudinal axis
+  const alongPitchHalf = (Math.abs(Math.sin(oriRad)) > Math.abs(Math.cos(oriRad)))
+    ? (infield.pitchWidth || infield.width || 68)
+    : (infield.pitchLength || infield.length || 100);
+  const stageOffset = Math.max(
+    sd / 2 + 2,
+    Math.min(alongPitchHalf * 0.36, alongHalf - sd / 2 - 1.5)
+  );
+  const stageLocalZ = -stageOffset;
+  const stageFrontLocalZ = stageLocalZ + sd / 2;
+
+  const maxCatwalk = Math.max(4, alongHalf - stageFrontLocalZ - 4);
+  const catwalkLength = Math.min(stage.catwalkLength || 18, maxCatwalk);
+
+  const fohD = stage.fohDepth || 5;
+  const maxFohDist = Math.max(catwalkLength + 6, alongHalf - stageFrontLocalZ - fohD / 2 - 2);
+  const fohDist = Math.min(stage.fohDistance || 38, maxFohDist);
+  const fohLocalZ = stageFrontLocalZ + fohDist;
+
+  const centerWorld = rotateXZ(0, stageLocalZ, rotFromSouthDeg);
+  return {
+    type: stage.type || 'end-stage',
+    orientationDeg: oriDeg,
+    rotFromSouthDeg,
+    facingX,
+    facingZ,
+    alongHalf,
+    crossHalf,
+    stageLocalZ,
+    stageFrontLocalZ,
+    centerX: centerWorld.x,
+    centerZ: centerWorld.z,
+    targetY: sh + 2.2,
+    catwalkLength,
+    fohLocalZ
+  };
+}
+
+/**
+ * Strictly computes the vomitory angular bounds [vomStartDeg, vomEndDeg] so that
+ * the physical Euclidean opening width along the stand matches vom.width (in meters),
+ * honoring vom.position, vom.angularOffsetPct, vom.startRow, and vom.rowSpan.
+ */
+function computeVomitoryAngularBounds(venue, tierIndex, sDeg, eDeg, vom, totalRows, customRadialDepth) {
+  const angularSpan = eDeg - sDeg;
+  const tier = (venue.standTiers && venue.standTiers[tierIndex]) || {};
+  const radialAisleWidth = tier.radialAisleWidth || 1.6;
+  const rawStartRow = (vom.startRow !== undefined && vom.startRow !== null) ? Number(vom.startRow) : 5;
+  const rawRowSpan = (vom.rowSpan !== undefined && vom.rowSpan !== null) ? Number(vom.rowSpan) : 5;
+  const isFrontConnected = rawStartRow <= 1;
+
+  let vomStartRow;
+  let vomEndRow;
+  if (rawStartRow === 0 && rawRowSpan === 0) {
+    vomStartRow = 1;
+    vomEndRow = 0;
+  } else {
+    vomStartRow = Math.max(1, rawStartRow);
+    vomEndRow = Math.min(totalRows, vomStartRow + Math.max(1, rawRowSpan) - 1);
+  }
+
+  const vomRowFrac = isFrontConnected
+    ? (vomEndRow < 1 ? 0.08 : Math.min(0.45, Math.max(0.06, ((vomEndRow - 0.5) * 0.5) / Math.max(1, totalRows))))
+    : Math.min(0.92, Math.max(0.08, ((vomStartRow + vomEndRow) * 0.5 - 0.5) / Math.max(1, totalRows)));
+
+  let centerRatio = 0.5;
+  if (vom.position === 'left') centerRatio = 0.28;
+  else if (vom.position === 'right') centerRatio = 0.72;
+  const offsetRatio = ((vom.angularOffsetPct || 0) / 100) * 0.5;
+  centerRatio = Math.max(0.2, Math.min(0.8, centerRatio + offsetRatio));
+  const vomCenterDeg = sDeg + angularSpan * centerRatio;
+
+  const targetWidth = Math.max(0.8, Number(vom.width) || 3.2);
+
+  // Measure local arc speed at vomCenterDeg and refine halfDeg so chord === targetWidth
+  const eps = 0.25;
+  const pMinus = evalTierPoint(venue, tierIndex, vomCenterDeg - eps, vomRowFrac, customRadialDepth);
+  const pPlus = evalTierPoint(venue, tierIndex, vomCenterDeg + eps, vomRowFrac, customRadialDepth);
+  let metersPerDeg = Math.hypot(pPlus.x - pMinus.x, pPlus.z - pMinus.z) / (2 * eps);
+  if (metersPerDeg < 0.05) metersPerDeg = 0.5;
+
+  let halfDeg = (targetWidth * 0.5) / metersPerDeg;
+  for (let iter = 0; iter < 4; iter++) {
+    const pL = evalTierPoint(venue, tierIndex, vomCenterDeg - halfDeg, vomRowFrac, customRadialDepth);
+    const pR = evalTierPoint(venue, tierIndex, vomCenterDeg + halfDeg, vomRowFrac, customRadialDepth);
+    const chord = Math.hypot(pR.x - pL.x, pR.z - pL.z);
+    if (chord > 0.05) {
+      halfDeg = halfDeg * (targetWidth / chord);
+    }
+  }
+
+  // Clamp only to keep clear of side stair aisles
+  const aisleMarginDeg = ((radialAisleWidth * 0.55) + 0.15) / metersPerDeg;
+  const maxHalfLeft = Math.max(0.1, (vomCenterDeg - sDeg) - aisleMarginDeg);
+  const maxHalfRight = Math.max(0.1, (eDeg - vomCenterDeg) - aisleMarginDeg);
+  const clampedHalf = Math.max(0.1, Math.min(halfDeg, maxHalfLeft, maxHalfRight));
+
+  const vomStartDeg = vomCenterDeg - clampedHalf;
+  const vomEndDeg = vomCenterDeg + clampedHalf;
+  const pFinalL = evalTierPoint(venue, tierIndex, vomStartDeg, vomRowFrac, customRadialDepth);
+  const pFinalR = evalTierPoint(venue, tierIndex, vomEndDeg, vomRowFrac, customRadialDepth);
+
+  return {
+    vomStartDeg,
+    vomEndDeg,
+    vomCenterDeg,
+    vomStartRow,
+    vomEndRow,
+    isFrontConnected,
+    vomRowFrac,
+    targetWidth,
+    actualWidthM: Math.hypot(pFinalR.x - pFinalL.x, pFinalR.z - pFinalL.z)
+  };
+}
+
+/**
  * Generates Concert Infield Floor Seating Blocks derived strictly from
- * venue.infield and venue.infield.stageConfig (stage size, catwalk, FOH tower).
+ * venue.infield and venue.infield.stageConfig (including stageConfig.orientationDeg).
  */
 function generateConcertInfieldBlocks(venue) {
   const infield = venue.infield;
   const stage = infield && infield.stageConfig;
   if (!infield || !stage) return [];
 
+  const st = getStageTransform(venue);
   const blocks = [];
-  const halfW = (infield.width || 60) / 2 - 4;
-  const halfL = (infield.length || 100) / 2 - 4;
-  const sw = stage.width || 30;
+  const halfL = st.alongHalf;
+  const usableHalfW = Math.max(10, st.crossHalf);
   const sd = stage.depth || 20;
 
-  // Keep clear of infieldModules if present
-  const mods = venue.infieldModules || [];
-  let maxModHalfX = halfW;
-  mods.forEach(m => {
-    if (Math.abs(m.x) > 10) {
-      maxModHalfX = Math.min(maxModHalfX, Math.abs(m.x) - (m.depth || 5) / 2 - 2.5);
-    }
-  });
-  const usableHalfW = Math.max(10, Math.min(halfW, maxModHalfX));
-
   if (stage.type === 'center-stage') {
-    // 4-sided center stage: place North & South floor VIP blocks (and small E/W if room)
     const cw = stage.catwalkWidth || 3.2;
-    const clZ = Math.min(stage.catwalkLength || 10, Math.max(4, halfL - sd / 2 - 4));
     const zStart = sd / 2 + 2.5;
     const zEnd = halfL - 1.5;
     const depthZ = zEnd - zStart;
 
     if (depthZ > 3) {
       const rows = Math.max(3, Math.floor(depthZ / 0.9));
-      const bw = Math.max(6, usableHalfW - cw / 2 - 2.5);
+      const bw = Math.max(5.5, usableHalfW - cw / 2 - 2.5);
       const bxOffset = cw / 2 + 2.0 + bw / 2;
       const bzCenter = zStart + depthZ / 2;
 
-      blocks.push(
-        { id: 'floor-nw', name: '内场北西VIP区', x: -bxOffset, z: -bzCenter, width: bw, depth: depthZ, rows, rowPitch: 0.9, seatSpacing: 0.52, facingZ: 1, color: '#0EA5E9' },
-        { id: 'floor-ne', name: '内场北东VIP区', x: bxOffset, z: -bzCenter, width: bw, depth: depthZ, rows, rowPitch: 0.9, seatSpacing: 0.52, facingZ: 1, color: '#0EA5E9' },
-        { id: 'floor-sw', name: '内场南西VIP区', x: -bxOffset, z: bzCenter, width: bw, depth: depthZ, rows, rowPitch: 0.9, seatSpacing: 0.52, facingZ: -1, color: '#0EA5E9' },
-        { id: 'floor-se', name: '内场南东VIP区', x: bxOffset, z: bzCenter, width: bw, depth: depthZ, rows, rowPitch: 0.9, seatSpacing: 0.52, facingZ: -1, color: '#0EA5E9' }
-      );
+      const specs = [
+        { id: 'floor-nw', name: '内场北西VIP区', lx: -bxOffset, lz: -bzCenter, localFacingZ: 1 },
+        { id: 'floor-ne', name: '内场北东VIP区', lx: bxOffset, lz: -bzCenter, localFacingZ: 1 },
+        { id: 'floor-sw', name: '内场南西VIP区', lx: -bxOffset, lz: bzCenter, localFacingZ: -1 },
+        { id: 'floor-se', name: '内场南东VIP区', lx: bxOffset, lz: bzCenter, localFacingZ: -1 }
+      ];
+      specs.forEach((sp) => {
+        const wp = rotateXZ(sp.lx, sp.lz, st.rotFromSouthDeg);
+        const fv = rotateXZ(0, sp.localFacingZ, st.rotFromSouthDeg);
+        blocks.push({
+          id: sp.id,
+          name: sp.name,
+          x: wp.x,
+          z: wp.z,
+          width: bw,
+          depth: depthZ,
+          rows,
+          rowPitch: 0.9,
+          seatSpacing: 0.52,
+          rotDeg: st.rotFromSouthDeg,
+          localFacingZ: sp.localFacingZ,
+          facingX: fv.x,
+          facingZ: fv.z,
+          color: '#0EA5E9'
+        });
+      });
     }
     return blocks;
   }
 
-  // End-stage or Festival-stage positioned at North end facing South (+Z)
-  const stageZ = -Math.min((infield.pitchLength || 100) * 0.36, halfL - sd / 2 - 2);
-  const stageFrontZ = stageZ + sd / 2;
-  const cl = stage.catwalkLength || 18;
+  // End-stage or Festival-stage aligned strictly to st.orientationDeg
+  const stageFrontZ = st.stageFrontLocalZ;
+  const cl = st.catwalkLength;
   const cw = stage.catwalkWidth || 3.2;
   const catEndZ = stageFrontZ + cl;
-  const fohZ = stage.fohEnabled ? (stageFrontZ + (stage.fohDistance || 38)) : (halfL + 100);
-  const fohW = stage.fohWidth || 8;
+  const fohZ = stage.fohEnabled ? st.fohLocalZ : (halfL + 100);
   const fohD = stage.fohDepth || 5;
 
-  const sideSpanW = Math.min(usableHalfW - 2, Math.max(18, (infield.pitchWidth || 60) * 0.46));
+  const alongPitchCrossW = (Math.abs(st.facingX) > Math.abs(st.facingZ))
+    ? (infield.pitchLength || infield.length || 90)
+    : (infield.pitchWidth || infield.width || 60);
+  const sideSpanW = Math.min(usableHalfW - 1.5, Math.max(16, alongPitchCrossW * 0.44));
+
+  const pushOrientedBlock = (id, name, lx, lz, bw, bd, rows, color) => {
+    const wp = rotateXZ(lx, lz, st.rotFromSouthDeg);
+    const fv = rotateXZ(0, -1, st.rotFromSouthDeg); // In stage-local space, seats face -Z (toward stage!)
+    blocks.push({
+      id,
+      name,
+      x: wp.x,
+      z: wp.z,
+      width: bw,
+      depth: bd,
+      rows,
+      rowPitch: 0.88,
+      seatSpacing: 0.5,
+      rotDeg: st.rotFromSouthDeg,
+      localFacingZ: -1,
+      facingX: fv.x,
+      facingZ: fv.z,
+      color
+    });
+  };
 
   // Front VIP Pit flanking catwalk (A1, A2)
-  const frontDepth = Math.max(0, Math.min(catEndZ, halfL - 4) - (stageFrontZ + 2.5));
+  const frontDepth = Math.max(0, Math.min(catEndZ, halfL - 3.5) - (stageFrontZ + 2.5));
   if (frontDepth > 3.5) {
-    const bw = sideSpanW - cw / 2 - 2.0;
+    const bw = Math.max(6, sideSpanW - cw / 2 - 2.0);
     const bx = cw / 2 + 2.0 + bw / 2;
     const bz = stageFrontZ + 2.5 + frontDepth / 2;
     const rows = Math.max(4, Math.floor(frontDepth / 0.88));
-    blocks.push(
-      { id: 'floor-a1', name: '内场前区 A1 (近T台)', x: -bx, z: bz, width: bw, depth: frontDepth, rows, rowPitch: 0.88, seatSpacing: 0.5, facingZ: -1, color: '#EC4899' },
-      { id: 'floor-a2', name: '内场前区 A2 (近T台)', x: bx, z: bz, width: bw, depth: frontDepth, rows, rowPitch: 0.88, seatSpacing: 0.5, facingZ: -1, color: '#EC4899' }
-    );
+    pushOrientedBlock('floor-a1', '内场前区 A1 (近T台)', -bx, bz, bw, frontDepth, rows, '#EC4899');
+    pushOrientedBlock('floor-a2', '内场前区 A2 (近T台)', bx, bz, bw, frontDepth, rows, '#EC4899');
   }
 
   // Mid Floor flanking or ahead of FOH (B1, B2)
-  const midStartZ = Math.max(stageFrontZ + 3, catEndZ + 5.5);
-  const midEndZ = stage.fohEnabled ? Math.min(fohZ - fohD / 2 - 2.5, halfL - 4) : (halfL - 4);
+  const midStartZ = Math.max(stageFrontZ + 3, catEndZ + 5.0);
+  const midEndZ = stage.fohEnabled ? Math.min(fohZ - fohD / 2 - 2.5, halfL - 3.5) : (halfL - 3.5);
   const midDepth = midEndZ - midStartZ;
   if (midDepth > 3.5) {
-    const bw = sideSpanW - 1.5;
+    const bw = Math.max(6, sideSpanW - 1.5);
     const bx = 1.5 + bw / 2;
     const bz = midStartZ + midDepth / 2;
     const rows = Math.max(4, Math.floor(midDepth / 0.88));
-    blocks.push(
-      { id: 'floor-b1', name: '内场中区 B1', x: -bx, z: bz, width: bw, depth: midDepth, rows, rowPitch: 0.88, seatSpacing: 0.5, facingZ: -1, color: '#3B82F6' },
-      { id: 'floor-b2', name: '内场中区 B2', x: bx, z: bz, width: bw, depth: midDepth, rows, rowPitch: 0.88, seatSpacing: 0.5, facingZ: -1, color: '#3B82F6' }
-    );
+    pushOrientedBlock('floor-b1', '内场中区 B1', -bx, bz, bw, midDepth, rows, '#3B82F6');
+    pushOrientedBlock('floor-b2', '内场中区 B2', bx, bz, bw, midDepth, rows, '#3B82F6');
   }
 
   // Rear Floor behind FOH (C1, C2)
   if (stage.fohEnabled) {
     const rearStartZ = fohZ + fohD / 2 + 2.5;
-    const rearEndZ = halfL - 3;
+    const rearEndZ = halfL - 2.5;
     const rearDepth = rearEndZ - rearStartZ;
     if (rearDepth > 3.5) {
-      const bw = sideSpanW - 1.5;
+      const bw = Math.max(6, sideSpanW - 1.5);
       const bx = 1.5 + bw / 2;
       const bz = rearStartZ + rearDepth / 2;
       const rows = Math.max(4, Math.floor(rearDepth / 0.88));
-      blocks.push(
-        { id: 'floor-c1', name: '内场后区 C1', x: -bx, z: bz, width: bw, depth: rearDepth, rows, rowPitch: 0.88, seatSpacing: 0.5, facingZ: -1, color: '#6366F1' },
-        { id: 'floor-c2', name: '内场后区 C2', x: bx, z: bz, width: bw, depth: rearDepth, rows, rowPitch: 0.88, seatSpacing: 0.5, facingZ: -1, color: '#6366F1' }
-      );
+      pushOrientedBlock('floor-c1', '内场后区 C1', -bx, bz, bw, rearDepth, rows, '#6366F1');
+      pushOrientedBlock('floor-c2', '内场后区 C2', bx, bz, bw, rearDepth, rows, '#6366F1');
     }
   }
 
@@ -431,17 +691,10 @@ function calculateSeatSightline(venue, selection, viewMode) {
   let targetZ = 0;
 
   if (viewMode === 'concert' && stage) {
-    if (stage.type === 'center-stage') {
-      targetX = 0;
-      targetY = (stage.height || 1.8) + 1.6;
-      targetZ = 0;
-    } else {
-      const halfL = (infield.length || 100) / 2 - 4;
-      const sd = stage.depth || 20;
-      targetX = 0;
-      targetZ = -Math.min((infield.pitchLength || 100) * 0.36, halfL - sd / 2 - 2);
-      targetY = (stage.height || 2.0) + 2.2;
-    }
+    const st = getStageTransform(venue);
+    targetX = st.centerX;
+    targetY = st.targetY;
+    targetZ = st.centerZ;
   } else {
     targetX = 0;
     targetY = 0.8;
@@ -454,8 +707,10 @@ function calculateSeatSightline(venue, selection, viewMode) {
     const totalRows = blk.rows || 10;
     const rowIdx = Math.min(Math.max(1, selection.row || 1), totalRows);
     const localZ = -blk.depth / 2 + (rowIdx - 0.5) * (blk.depth / totalRows);
-    const eyeZ = blk.facingZ === 1 ? (blk.z - localZ) : (blk.z + localZ);
-    const eyeX = blk.x;
+    const dirSign = (blk.localFacingZ === 1) ? -1 : 1;
+    const offset = rotateXZ(0, dirSign * localZ, blk.rotDeg || 0);
+    const eyeX = blk.x + offset.x;
+    const eyeZ = blk.z + offset.z;
     const eyeY = sightCfg.spectatorEyeHeight || 1.15;
 
     const dx = targetX - eyeX;
@@ -599,6 +854,7 @@ function calculateSeatSightline(venue, selection, viewMode) {
 module.exports = {
   DEG2RAD,
   RAD2DEG,
+  rotateXZ,
   evalInfieldPerimeterAndNormal,
   getInfieldCornerTransitionAngles,
   evalTierPoint,
@@ -606,6 +862,9 @@ module.exports = {
   computeTierRadialBounds,
   getRowInwardNormal,
   polarToWorld3D,
+  computeRunningTrackSpec,
+  getStageTransform,
+  computeVomitoryAngularBounds,
   generateConcertInfieldBlocks,
   findDefaultEastFirstRowSelection,
   calculateSeatSightline

@@ -116,7 +116,7 @@ Page({
 
         this.canvas3d = canvas;
         this.renderer3d = new Renderer3D(canvas, gl, width * dpr, height * dpr);
-        this.renderer3d.setVenue(this.data.currentVenue, this.data.viewMode);
+        this.renderer3d.setVenue(this.data.currentVenue, this.data.viewMode, this.getSelectionIds());
         this.applySelectionToRenderers();
 
         const loop = () => {
@@ -129,11 +129,17 @@ Page({
       });
   },
 
-  applySelectionToRenderers() {
+  getSelectionIds() {
     const sel = this.activeSelection || {};
-    const sectorId = !sel.isModule && !sel.isFloorBlock && sel.sector ? sel.sector.id : null;
-    const moduleId = sel.isModule && sel.module ? sel.module.id : null;
-    const floorBlockId = sel.isFloorBlock && sel.floorBlock ? sel.floorBlock.id : null;
+    return {
+      sectorId: !sel.isModule && !sel.isFloorBlock && sel.sector ? sel.sector.id : null,
+      moduleId: sel.isModule && sel.module ? sel.module.id : null,
+      floorBlockId: sel.isFloorBlock && sel.floorBlock ? sel.floorBlock.id : null
+    };
+  },
+
+  applySelectionToRenderers() {
+    const { sectorId, moduleId, floorBlockId } = this.getSelectionIds();
 
     if (this.renderer2d) {
       this.renderer2d.setSelection(sectorId, moduleId, floorBlockId);
@@ -200,7 +206,7 @@ Page({
       this.renderer2d.setVenue(venue, this.data.viewMode);
     }
     if (this.renderer3d) {
-      this.renderer3d.setVenue(venue, this.data.viewMode);
+      this.renderer3d.setVenue(venue, this.data.viewMode, this.getSelectionIds());
       this.renderer3d.setBirdEyeView();
     }
     this.applySelectionToRenderers();
@@ -218,8 +224,11 @@ Page({
   // 切换 演唱会舞美 / 标准赛场
   onToggleViewMode() {
     const nextMode = this.data.viewMode === 'concert' ? 'sports' : 'concert';
-    // Switching from concert -> sports while on a concert floor block falls back to East Row 1
-    if (nextMode === 'sports' && this.activeSelection && this.activeSelection.isFloorBlock) {
+    // Switching modes clears incompatible infield-only selections back to East Row 1
+    if (
+      (nextMode === 'sports' && this.activeSelection && this.activeSelection.isFloorBlock) ||
+      (nextMode === 'concert' && this.activeSelection && this.activeSelection.isModule)
+    ) {
       this.activeSelection = findDefaultEastFirstRowSelection(this.data.currentVenue);
       this.applySelectionToRenderers();
     }
@@ -531,7 +540,7 @@ Page({
         this.renderer2d.setVenue(newVenue, this.data.viewMode);
       }
       if (this.renderer3d) {
-        this.renderer3d.setVenue(newVenue, this.data.viewMode);
+        this.renderer3d.setVenue(newVenue, this.data.viewMode, this.getSelectionIds());
         this.renderer3d.setBirdEyeView();
       }
       this.applySelectionToRenderers();
