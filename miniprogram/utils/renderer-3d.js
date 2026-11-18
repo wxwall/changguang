@@ -176,6 +176,33 @@ class MeshBuilder {
     this.addTriangle(p1, p3, p4, color, customNormal);
   }
 
+  addVertexColoredTriangle(p1, c1, p2, c2, p3, c3, customNormal) {
+    let nx = 0, ny = 1, nz = 0;
+    if (customNormal) {
+      nx = customNormal.x; ny = customNormal.y; nz = customNormal.z;
+    } else {
+      const ux = p2.x - p1.x, uy = p2.y - p1.y, uz = p2.z - p1.z;
+      const vx = p3.x - p1.x, vy = p3.y - p1.y, vz = p3.z - p1.z;
+      nx = uy * vz - uz * vy;
+      ny = uz * vx - ux * vz;
+      nz = ux * vy - uy * vx;
+      const len = Math.hypot(nx, ny, nz) || 1;
+      nx /= len; ny /= len; nz /= len;
+    }
+    this.positions.push(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z, p3.x, p3.y, p3.z);
+    this.normals.push(nx, ny, nz, nx, ny, nz, nx, ny, nz);
+    this.colors.push(
+      c1[0], c1[1], c1[2], c1[3] !== undefined ? c1[3] : 1.0,
+      c2[0], c2[1], c2[2], c2[3] !== undefined ? c2[3] : 1.0,
+      c3[0], c3[1], c3[2], c3[3] !== undefined ? c3[3] : 1.0
+    );
+  }
+
+  addVertexColoredQuad(p1, c1, p2, c2, p3, c3, p4, c4, customNormal) {
+    this.addVertexColoredTriangle(p1, c1, p2, c2, p3, c3, customNormal);
+    this.addVertexColoredTriangle(p1, c1, p3, c3, p4, c4, customNormal);
+  }
+
   addBox(cx, cy, cz, w, h, d, color, rotYRad) {
     const hw = w / 2, hh = h / 2, hd = d / 2;
     const cosY = Math.cos(rotYRad || 0);
@@ -299,6 +326,7 @@ class Renderer3D {
     this.mvpMat = Mat4.create();
 
     this.solidBuffers = null;
+    this.screenBuffers = null;
     this.alphaBuffers = null;
     this.beamBuffers = null;
 
@@ -472,10 +500,12 @@ class Renderer3D {
     if (!this.venue || !this.gl) return;
 
     this.disposeBufferGroup(this.solidBuffers);
+    this.disposeBufferGroup(this.screenBuffers);
     this.disposeBufferGroup(this.alphaBuffers);
     this.disposeBufferGroup(this.beamBuffers);
 
     const solid = new MeshBuilder();
+    const screens = new MeshBuilder();
     const alpha = new MeshBuilder();
     const beams = new MeshBuilder();
 
@@ -500,12 +530,13 @@ class Renderer3D {
     // 6. Concert Stage + Concert Infield Floor Seating Blocks OR Sports Goals/Hoops
     if (this.viewMode === 'concert') {
       this.buildConcertInfieldSeatsMesh(solid);
-      this.buildConcertStageMesh(solid, beams);
+      this.buildConcertStageMesh(solid, screens, beams);
     } else {
       this.buildSportsEquipmentMesh(solid);
     }
 
     this.solidBuffers = this.uploadMesh(solid);
+    this.screenBuffers = this.uploadMesh(screens);
     this.alphaBuffers = this.uploadMesh(alpha);
     this.beamBuffers = this.uploadMesh(beams);
   }
@@ -1065,6 +1096,7 @@ class Renderer3D {
           }
 
           // Front Guardrail (OMITTED across front-connected Row-0/Row-1 vomitories!)
+          // Single top horizontal bar ONLY + vertical posts/pickets (+ glass/concrete infill)
           if (showGuardrails && guard.frontRailEnabled !== false && !(isVomStrip && isFrontConnected)) {
             const frontH = guard.frontRailHeight || 1.1;
             const f1_bot = { x: pt1.inX, y: baseElev, z: pt1.inZ };
@@ -1072,51 +1104,17 @@ class Renderer3D {
             const g1_top = { x: pt1.inX, y: baseElev + frontH, z: pt1.inZ };
             const g2_top = { x: pt2.inX, y: baseElev + frontH, z: pt2.inZ };
 
-            // Volumetric 3D top handrail + vertical stanchion post
+            // Single volumetric 3D top horizontal handrail + vertical stanchion post
             solid.addBeam3D(g1_top, g2_top, 0.11, 0.11, secRailCol);
             if (a === 0 || a % 2 === 0) {
               solid.addBox(f1_bot.x, baseElev + frontH / 2, f1_bot.z, 0.09, frontH, 0.09, secRailCol, 0);
             }
 
-            if (tier.level === 1) {
-              // 1F between infield and stand: open metallic rails ONLY (zero dark glass/slab)
-              solid.addBeam3D(
-                { x: pt1.inX, y: baseElev + frontH * 0.56, z: pt1.inZ },
-                { x: pt2.inX, y: baseElev + frontH * 0.56, z: pt2.inZ },
-                0.08, 0.08, secRailCol
-              );
-              solid.addBeam3D(
-                { x: pt1.inX, y: baseElev + frontH * 0.24, z: pt1.inZ },
-                { x: pt2.inX, y: baseElev + frontH * 0.24, z: pt2.inZ },
-                0.06, 0.06, secRailCol
-              );
-              const segLen = Math.hypot(f2_bot.x - f1_bot.x, f2_bot.z - f1_bot.z);
-              const pickets = Math.max(1, Math.min(4, Math.floor(segLen / 1.1)));
-              for (let p = 1; p <= pickets; p++) {
-                const pt = p / (pickets + 1);
-                solid.addBox(
-                  f1_bot.x + (f2_bot.x - f1_bot.x) * pt,
-                  baseElev + frontH / 2,
-                  f1_bot.z + (f2_bot.z - f1_bot.z) * pt,
-                  0.05, frontH, 0.05, secRailCol, 0
-                );
-              }
-            } else if (guard.material === 'tempered-glass') {
-              // Tempered glass panel with bright bottom clamp shoe + top rail
-              alpha.addQuad(f1_bot, g1_top, g2_top, f2_bot, [0.50, 0.84, 1.0, 0.36]);
-              solid.addBeam3D(
-                { x: pt1.inX, y: baseElev + 0.07, z: pt1.inZ },
-                { x: pt2.inX, y: baseElev + 0.07, z: pt2.inZ },
-                0.09, 0.12, secRailCol
-              );
-            } else if (guard.material === 'concrete-parapet') {
+            if (guard.material === 'tempered-glass' && tier.level > 1) {
+              alpha.addQuad(f1_bot, g1_top, g2_top, f2_bot, [0.50, 0.84, 1.0, 0.34]);
+            } else if (guard.material === 'concrete-parapet' && tier.level > 1) {
               solid.addQuad(f1_bot, g1_top, g2_top, f2_bot, [0.42, 0.48, 0.58, 1.0]);
             } else {
-              solid.addBeam3D(
-                { x: pt1.inX, y: baseElev + frontH * 0.56, z: pt1.inZ },
-                { x: pt2.inX, y: baseElev + frontH * 0.56, z: pt2.inZ },
-                0.08, 0.08, secRailCol
-              );
               const segLen = Math.hypot(f2_bot.x - f1_bot.x, f2_bot.z - f1_bot.z);
               const pickets = Math.max(1, Math.min(4, Math.floor(segLen / 1.1)));
               for (let p = 1; p <= pickets; p++) {
@@ -1180,16 +1178,11 @@ class Renderer3D {
             const py = baseElev + (topElev - baseElev) * pf;
             solid.addBox(px, py + 0.50, pz, 0.09, 1.0, 0.09, handrailCol, 0);
           }
-          // Volumetric continuous sloped top & mid handrails along the inter-stand aisle
+          // Single top sloped handrail along the inter-stand aisle
           solid.addBeam3D(
             { x: ptEdge.inX, y: baseElev + 1.00, z: ptEdge.inZ },
             { x: ptEdge.outX, y: topElev + 1.00, z: ptEdge.outZ },
             0.10, 0.10, handrailCol
-          );
-          solid.addBeam3D(
-            { x: ptEdge.inX, y: baseElev + 0.52, z: ptEdge.inZ },
-            { x: ptEdge.outX, y: topElev + 0.52, z: ptEdge.outZ },
-            0.07, 0.07, handrailCol
           );
         }
 
@@ -1376,7 +1369,7 @@ class Renderer3D {
           pitWallCol,
           { x: 0, y: -1, z: 0 }
         );
-        // Side safety rails on bridge (continuous 3D sloped top + mid rail + posts; front & back open)
+        // Single-bar side safety rails on bridge (front & back open)
         const addRailRun = (pA, yA, pB, yB) => {
           const span = Math.hypot(pB.x - pA.x, pB.z - pA.z);
           const posts = Math.max(2, Math.ceil(span / 2.8) + 1);
@@ -1390,7 +1383,6 @@ class Renderer3D {
             );
           }
           solid.addBeam3D({ x: pA.x, y: yA + 1.00, z: pA.z }, { x: pB.x, y: yB + 1.00, z: pB.z }, 0.10, 0.10, handrailCol);
-          solid.addBeam3D({ x: pA.x, y: yA + 0.52, z: pA.z }, { x: pB.x, y: yB + 0.52, z: pB.z }, 0.07, 0.07, handrailCol);
         };
         addRailRun(prevL, prevTopY, { x: ptL0.inX, z: ptL0.inZ }, baseElev);
         addRailRun(prevR, prevTopY, { x: ptR0.inX, z: ptR0.inZ }, baseElev);
@@ -1461,8 +1453,8 @@ class Renderer3D {
         solid.addBox((ptL1.x + ptR1.x) / 2, portalTopY + 0.14, (ptL1.z + ptR1.z) / 2, widthM * 0.65, 0.22, 0.24, [0.10, 0.88, 0.48, 1.0], exitRot);
       }
 
-      // Full continuous left & right corridor rim railings (front remains 100% open!)
-      const addCorridorSideRail = (pA, yA, pB, yB) => {
+      // Single-bar corridor side railings + upper portal edge guardrail (front exit remains 100% open!)
+      const addCorridorRail = (pA, yA, pB, yB) => {
         const span = Math.hypot(pB.x - pA.x, pB.z - pA.z);
         const posts = Math.max(2, Math.ceil(span / 2.5) + 1);
         for (let i = 0; i < posts; i++) {
@@ -1475,10 +1467,12 @@ class Renderer3D {
           );
         }
         solid.addBeam3D({ x: pA.x, y: yA + 1.00, z: pA.z }, { x: pB.x, y: yB + 1.00, z: pB.z }, 0.10, 0.10, handrailCol);
-        solid.addBeam3D({ x: pA.x, y: yA + 0.52, z: pA.z }, { x: pB.x, y: yB + 0.52, z: pB.z }, 0.07, 0.07, handrailCol);
       };
-      addCorridorSideRail({ x: ptL0.inX, z: ptL0.inZ }, baseElev, ptL1, yBack);
-      addCorridorSideRail({ x: ptR0.inX, z: ptR0.inZ }, baseElev, ptR1, yBack);
+      addCorridorRail({ x: ptL0.inX, z: ptL0.inZ }, baseElev, ptL1, yBack);
+      addCorridorRail({ x: ptR0.inX, z: ptR0.inZ }, baseElev, ptR1, yBack);
+      if (vomEndRow < totalRows) {
+        addCorridorRail(ptL1, yBack, ptR1, yBack);
+      }
       return;
     }
 
@@ -1493,10 +1487,11 @@ class Renderer3D {
 
     const yFront = baseElev + (vomStartRow - 1) * riserH;
     const yBack = baseElev + (vomEndRow - 1) * riserH;
-    const floorFrontY = Math.max(0.15, yFront - 0.65);
-    const floorBackY = Math.max(0.15, yFront - 1.35);
+    // Lower exit mouth opens smoothly toward stand rows; recessed floor slopes down toward upper/back portal
+    const floorFrontY = Math.max(0.15, yFront - 0.15);
+    const floorBackY = Math.max(0.15, yFront - 1.55);
 
-    // Sunken floor quad sloping down into the rear tunnel doorway
+    // Sunken floor quad sloping down into the upper/back tunnel doorway
     solid.addQuad(
       { x: ptL_in.x, y: floorFrontY, z: ptL_in.z },
       { x: ptL_out.x, y: floorBackY, z: ptL_out.z },
@@ -1506,7 +1501,7 @@ class Renderer3D {
       { x: 0, y: 1, z: 0 }
     );
 
-    // Front step-down threshold riser connecting step (vomStartRow-1) down to sunken floor
+    // Smooth front threshold riser connecting lower row mouth down to passage floor
     solid.addQuad(
       { x: ptL_in.x, y: floorFrontY, z: ptL_in.z },
       { x: ptL_in.x, y: yFront, z: ptL_in.z },
@@ -1553,7 +1548,7 @@ class Renderer3D {
     const exitRot = Math.atan2(-(ptR_out.z - ptL_out.z), ptR_out.x - ptL_out.x);
     solid.addBox((ptL_out.x + ptR_out.x) / 2, portalTopY + 0.14, (ptL_out.z + ptR_out.z) / 2, widthM * 0.65, 0.22, 0.24, [0.10, 0.88, 0.48, 1.0], exitRot);
 
-    // Complete 3-sided safety guardrail around recessed mid-stand vomitory pit (Left, Right, and Front rim)
+    // 3-sided single-bar guardrail around recessed vomitory: Left, Right, and UPPER portal rim (exit mouth ptL_in->ptR_in stays 100% OPEN!)
     const addPitRail = (pA, yA, pB, yB) => {
       const span = Math.hypot(pB.x - pA.x, pB.z - pA.z);
       const posts = Math.max(2, Math.ceil(span / 2.2) + 1);
@@ -1567,11 +1562,10 @@ class Renderer3D {
         );
       }
       solid.addBeam3D({ x: pA.x, y: yA + 1.00, z: pA.z }, { x: pB.x, y: yB + 1.00, z: pB.z }, 0.10, 0.10, handrailCol);
-      solid.addBeam3D({ x: pA.x, y: yA + 0.52, z: pA.z }, { x: pB.x, y: yB + 0.52, z: pB.z }, 0.07, 0.07, handrailCol);
     };
     addPitRail(ptL_in, yFront, ptL_out, yBack);
     addPitRail(ptR_in, yFront, ptR_out, yBack);
-    addPitRail(ptL_in, yFront, ptR_in, yFront);
+    addPitRail(ptL_out, yBack, ptR_out, yBack);
   }
 
   buildStadiumCanopyRim(solid) {
@@ -1661,7 +1655,7 @@ class Renderer3D {
     }
   }
 
-  buildConcertStageMesh(solid, beams) {
+  buildConcertStageMesh(solid, screens, beams) {
     const infield = this.venue.infield;
     const stage = infield && infield.stageConfig;
     if (!stage) return;
@@ -1693,8 +1687,21 @@ class Renderer3D {
       beams.addTriangle(pO, pB, pF, col);
     };
 
-    // Refined multi-panel LED wall helper with black bezel mullions & glowing visual artwork
-    const addDetailedLEDWall = (cx, baseY, cz, totalW, totalH, cols, rows, localRotYRad, accentCol) => {
+    // Full-screen 100%-lit flowing aurora LED wall (unlit self-luminous vertex-colored surface)
+    const evalAuroraColor = (u, v, phase) => {
+      const ph = phase || 0;
+      const band1 = 0.5 + 0.5 * Math.sin(u * 5.2 + v * 3.1 + ph);
+      const band2 = 0.5 + 0.5 * Math.cos(u * 7.8 - v * 4.4 + ph * 1.35);
+      const wave = 0.5 + 0.5 * Math.sin((u - 0.5) * 4.2 + Math.sin(v * 3.5 + ph) * 1.4);
+      const ribbon = Math.pow(0.5 + 0.5 * Math.sin(u * 6.5 - v * 5.0 + ph * 0.8), 1.4);
+
+      const r = Math.min(1.0, 0.24 + 0.44 * band2 + 0.34 * ribbon);
+      const g = Math.min(1.0, 0.34 + 0.46 * band1 + 0.22 * wave);
+      const b = Math.min(1.0, 0.68 + 0.32 * (1.0 - band2 * 0.45) + 0.18 * band1);
+      return [r, g, b, 1.0];
+    };
+
+    const addDetailedLEDWall = (cx, baseY, cz, totalW, totalH, colsGrid, rowsGrid, localRotYRad, phaseOffset) => {
       const cosR = Math.cos(localRotYRad || 0);
       const sinR = Math.sin(localRotYRad || 0);
       const toLocal = (px, py, pz) => ({
@@ -1705,46 +1712,52 @@ class Renderer3D {
 
       const blackFrame = [0.035, 0.04, 0.052, 1.0];
       const bezelCol = [0.10, 0.11, 0.14, 1.0];
-      const oledBase = [0.04, 0.07, 0.15, 1.0];
-      const horizonCol = [0.10, 0.48, 0.86, 1.0];
-      const glowGold = [0.92, 0.66, 0.24, 1.0];
-      const glowAccent = accentCol || [0.42, 0.28, 0.90, 1.0];
 
-      // Black structural LED cabinet housing + top/bottom/side frame trim
-      addStageBox(cx, baseY + totalH / 2, cz, totalW + 0.9, totalH + 0.8, 1.15, blackFrame, localRotYRad);
-      addStageBox(cx, baseY + totalH + 0.25, cz, totalW + 1.1, 0.35, 1.35, bezelCol, localRotYRad);
-      addStageBox(cx, baseY + 0.15, cz, totalW + 1.1, 0.30, 1.35, bezelCol, localRotYRad);
+      // Slim black structural LED cabinet housing & outer trim behind the luminous surface
+      addStageBox(cx, baseY + totalH / 2, cz, totalW + 0.7, totalH + 0.6, 0.95, blackFrame, localRotYRad);
+      addStageBox(cx, baseY + totalH + 0.20, cz, totalW + 0.9, 0.28, 1.15, bezelCol, localRotYRad);
+      addStageBox(cx, baseY + 0.12, cz, totalW + 0.9, 0.24, 1.15, bezelCol, localRotYRad);
 
-      // Modular LED tiles grid with dark seams
-      const padX = 0.24;
-      const padY = 0.22;
-      const tileW = (totalW - padX * (cols + 1)) / cols;
-      const tileH = (totalH - padY * (rows + 1)) / rows;
-      const faceZ = 0.62;
+      // 100%-lit seamless flowing aurora canvas filling the entire LED surface edge-to-edge
+      const faceZ = 0.54;
+      const gCols = Math.max(8, colsGrid || 20);
+      const gRows = Math.max(4, rowsGrid || 8);
+      const gridPts = [];
+      const gridCols = [];
 
-      for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-          const px = -totalW / 2 + padX + tileW / 2 + c * (tileW + padX);
-          const py = -totalH / 2 + padY + tileH / 2 + r * (tileH + padY);
-          const distCenter = Math.abs(c - (cols - 1) / 2) / Math.max(1, (cols - 1) / 2);
-          let panelCol = oledBase;
-          if (r === 1 && distCenter < 0.55) {
-            panelCol = glowAccent;
-          } else if (r === 0 && distCenter < 0.72) {
-            panelCol = horizonCol;
-          } else if (r === rows - 1 && distCenter < 0.4) {
-            panelCol = glowGold;
-          }
-          const tp = toLocal(px, py, faceZ);
-          addStageBox(tp.lx, tp.y, tp.lz, tileW, tileH, 0.08, panelCol, localRotYRad);
+      for (let r = 0; r <= gRows; r++) {
+        const v = r / gRows;
+        const py = (v - 0.5) * totalH;
+        const rowPts = [];
+        const rowCols = [];
+        for (let c = 0; c <= gCols; c++) {
+          const u = c / gCols;
+          const px = (u - 0.5) * totalW;
+          const lp = toLocal(px, py, faceZ);
+          rowPts.push(rotPt(lp.lx, lp.y, lp.lz));
+          rowCols.push(evalAuroraColor(u, v, phaseOffset));
         }
+        gridPts.push(rowPts);
+        gridCols.push(rowCols);
       }
 
-      // Crisp luminous horizontal audio-horizon ribbon & central portal arch highlight
-      const rib = toLocal(0, -totalH * 0.08, faceZ + 0.06);
-      addStageBox(rib.lx, rib.y, rib.lz, totalW * 0.86, Math.max(0.28, totalH * 0.06), 0.06, [0.28, 0.82, 0.98, 1.0], localRotYRad);
-      const coreArch = toLocal(0, totalH * 0.05, faceZ + 0.08);
-      addStageBox(coreArch.lx, coreArch.y, coreArch.lz, totalW * 0.28, totalH * 0.44, 0.06, [0.96, 0.76, 0.34, 1.0], localRotYRad);
+      const normLocal = toLocal(0, 0, faceZ + 1);
+      const normBase = toLocal(0, 0, faceZ);
+      const wn1 = rotPt(normBase.lx, normBase.y, normBase.lz);
+      const wn2 = rotPt(normLocal.lx, normLocal.y, normLocal.lz);
+      const nVec = { x: wn2.x - wn1.x, y: wn2.y - wn1.y, z: wn2.z - wn1.z };
+
+      for (let r = 0; r < gRows; r++) {
+        for (let c = 0; c < gCols; c++) {
+          screens.addVertexColoredQuad(
+            gridPts[r][c], gridCols[r][c],
+            gridPts[r][c + 1], gridCols[r][c + 1],
+            gridPts[r + 1][c + 1], gridCols[r + 1][c + 1],
+            gridPts[r + 1][c], gridCols[r + 1][c],
+            nVec
+          );
+        }
+      }
     };
 
     const sw = stage.width || 36;
@@ -1762,35 +1775,40 @@ class Renderer3D {
     const edgeStripBlue = [0.32, 0.74, 0.98, 1.0];
     const edgeStripAmber = [0.96, 0.72, 0.30, 1.0];
 
-    if (stage.type === 'center-stage') {
-      // Matte-black central stage + recessed edge trim
-      addStageBox(0, sh / 2, 0, sw, sh, sd, stageBlack, 0);
-      addStageBox(0, sh + 0.04, 0, sw - 0.8, 0.08, sd - 0.8, stageDeckTop, 0);
-      addStageBox(0, sh + 0.09, -sd / 2 + 0.22, sw, 0.08, 0.18, edgeStripBlue, 0);
-      addStageBox(0, sh + 0.09, sd / 2 - 0.22, sw, 0.08, 0.18, edgeStripBlue, 0);
+    const stageX = st.stageLocalX || 0;
 
-      const clZ = Math.min(stage.catwalkLength || 10, Math.max(3, st.alongHalf - sd / 2 + 1));
-      const clX = Math.min(stage.catwalkLength || 10, Math.max(2, st.crossHalf - sw / 2 + 1));
-      addStageBox(0, sh / 2, -sd / 2 - clZ / 2, cw, sh, clZ, stageBlack, 0);
-      addStageBox(0, sh / 2, sd / 2 + clZ / 2, cw, sh, clZ, stageBlack, 0);
-      addStageBox(-cw / 2 + 0.1, sh + 0.05, -sd / 2 - clZ / 2, 0.12, 0.08, clZ, edgeStripAmber, 0);
-      addStageBox(cw / 2 - 0.1, sh + 0.05, -sd / 2 - clZ / 2, 0.12, 0.08, clZ, edgeStripAmber, 0);
-      addStageBox(-cw / 2 + 0.1, sh + 0.05, sd / 2 + clZ / 2, 0.12, 0.08, clZ, edgeStripAmber, 0);
-      addStageBox(cw / 2 - 0.1, sh + 0.05, sd / 2 + clZ / 2, 0.12, 0.08, clZ, edgeStripAmber, 0);
+    if (stage.type === 'center-stage') {
+      const stageZ = st.stageLocalZ || 0;
+      // Matte-black central stage + recessed edge trim
+      addStageBox(stageX, sh / 2, stageZ, sw, sh, sd, stageBlack, 0);
+      addStageBox(stageX, sh + 0.04, stageZ, sw - 0.8, 0.08, sd - 0.8, stageDeckTop, 0);
+      addStageBox(stageX, sh + 0.09, stageZ - sd / 2 + 0.22, sw, 0.08, 0.18, edgeStripBlue, 0);
+      addStageBox(stageX, sh + 0.09, stageZ + sd / 2 - 0.22, sw, 0.08, 0.18, edgeStripBlue, 0);
+
+      const clZ = st.catwalkLength || Math.min(stage.catwalkLength || 10, Math.max(3, st.alongHalf - sd / 2 + 1));
+      const clX = st.catwalkLengthX || Math.min(stage.catwalkLength || 10, Math.max(2, st.crossHalf - sw / 2 + 1));
+      addStageBox(stageX, sh / 2, stageZ - sd / 2 - clZ / 2, cw, sh, clZ, stageBlack, 0);
+      addStageBox(stageX, sh / 2, stageZ + sd / 2 + clZ / 2, cw, sh, clZ, stageBlack, 0);
+      addStageBox(stageX - cw / 2 + 0.1, sh + 0.05, stageZ - sd / 2 - clZ / 2, 0.12, 0.08, clZ, edgeStripAmber, 0);
+      addStageBox(stageX + cw / 2 - 0.1, sh + 0.05, stageZ - sd / 2 - clZ / 2, 0.12, 0.08, clZ, edgeStripAmber, 0);
+      addStageBox(stageX - cw / 2 + 0.1, sh + 0.05, stageZ + sd / 2 + clZ / 2, 0.12, 0.08, clZ, edgeStripAmber, 0);
+      addStageBox(stageX + cw / 2 - 0.1, sh + 0.05, stageZ + sd / 2 + clZ / 2, 0.12, 0.08, clZ, edgeStripAmber, 0);
       if (clX > 1.5) {
-        addStageBox(-sw / 2 - clX / 2, sh / 2, 0, clX, sh, cw, stageBlack, 0);
-        addStageBox(sw / 2 + clX / 2, sh / 2, 0, clX, sh, cw, stageBlack, 0);
+        addStageBox(stageX - sw / 2 - clX / 2, sh / 2, stageZ, clX, sh, cw, stageBlack, 0);
+        addStageBox(stageX + sw / 2 + clX / 2, sh / 2, stageZ, clX, sh, cw, stageBlack, 0);
       }
 
-      // Overhead matte-black truss rig & 4-sided hanging LED cube
+      // Overhead matte-black truss rig & 4-sided glowing aurora LED cube
       const rigY = sh + backH * 0.78;
       const cubeW = sw * 0.56;
       const cubeH = backH * 0.52;
       const cubeD = sd * 0.56;
-      addStageBox(0, rigY + cubeH + 0.6, 0, sw * 0.84, 0.9, sd * 0.84, trussBlack, 0);
-      addStageBox(0, rigY + cubeH / 2, 0, cubeW, cubeH, cubeD, stageBlack, 0);
-      addDetailedLEDWall(0, rigY, cubeD / 2, cubeW * 0.92, cubeH * 0.9, 4, 2, 0, [0.36, 0.58, 0.98, 1.0]);
-      addDetailedLEDWall(0, rigY, -cubeD / 2, cubeW * 0.92, cubeH * 0.9, 4, 2, Math.PI, [0.36, 0.58, 0.98, 1.0]);
+      addStageBox(stageX, rigY + cubeH + 0.6, stageZ, sw * 0.84, 0.9, sd * 0.84, trussBlack, 0);
+      addStageBox(stageX, rigY + cubeH / 2, stageZ, cubeW, cubeH, cubeD, stageBlack, 0);
+      addDetailedLEDWall(stageX, rigY, stageZ + cubeD / 2, cubeW * 0.94, cubeH * 0.92, 12, 6, 0, 0.2);
+      addDetailedLEDWall(stageX, rigY, stageZ - cubeD / 2, cubeW * 0.94, cubeH * 0.92, 12, 6, Math.PI, 1.4);
+      addDetailedLEDWall(stageX + cubeW / 2, rigY, stageZ, cubeD * 0.94, cubeH * 0.92, 12, 6, Math.PI / 2, 0.8);
+      addDetailedLEDWall(stageX - cubeW / 2, rigY, stageZ, cubeD * 0.94, cubeH * 0.92, 12, 6, -Math.PI / 2, 2.0);
 
       const beamColors = [
         [0.35, 0.78, 1.0, 0.12],
@@ -1799,55 +1817,51 @@ class Renderer3D {
       ];
       for (let i = 0; i < 12; i++) {
         const ang = (i / 12) * Math.PI * 2;
-        const bx = Math.cos(ang) * (sw * 0.36);
-        const bz = Math.sin(ang) * (sd * 0.36);
-        const tx = Math.cos(ang) * (sw * 0.95);
-        const tz = Math.sin(ang) * (sd * 0.95);
-        addStageBox(
-          rotPt(bx, 0, bz).x ? bx : bx,
-          rigY + cubeH + 0.1,
-          bz,
-          0.55, 0.55, 0.55, trussBrace, 0
-        );
+        const bx = stageX + Math.cos(ang) * (sw * 0.36);
+        const bz = stageZ + Math.sin(ang) * (sd * 0.36);
+        const tx = stageX + Math.cos(ang) * (sw * 0.95);
+        const tz = stageZ + Math.sin(ang) * (sd * 0.95);
+        addStageBox(bx, rigY + cubeH + 0.1, bz, 0.55, 0.55, 0.55, trussBrace, 0);
         addRefinedBeam(bx, rigY + cubeH, bz, tx, sh + 0.15, tz, 2.2, beamColors[i % beamColors.length]);
       }
       return;
     }
 
-    // End-Stage or Festival-Stage: All-Black Touring Production Architecture
+    // End-Stage or Festival-Stage: Strictly positioned per getStageTransform schema bounds
     const stageZ = st.stageLocalZ;
     const cl = st.catwalkLength;
 
     // 1. Matte-black stage deck, recessed apron skirt & subtle dark trim
-    addStageBox(0, sh / 2, stageZ, sw, sh, sd, stageBlack, 0);
-    addStageBox(0, sh + 0.04, stageZ, sw - 0.8, 0.08, sd - 0.8, stageDeckTop, 0);
-    addStageBox(0, sh + 0.06, stageZ + sd / 2 - 0.18, sw, 0.10, 0.24, stageTrim, 0);
+    addStageBox(stageX, sh / 2, stageZ, sw, sh, sd, stageBlack, 0);
+    addStageBox(stageX, sh + 0.04, stageZ, sw - 0.8, 0.08, sd - 0.8, stageDeckTop, 0);
+    addStageBox(stageX, sh + 0.06, stageZ + sd / 2 - 0.18, sw, 0.10, 0.24, stageTrim, 0);
 
     // Subtle front stage footlight strip & stage access stairs on left/right wings
-    addStageBox(0, sh + 0.11, stageZ + sd / 2 - 0.16, sw * 0.88, 0.06, 0.10, edgeStripBlue, 0);
-    addStageBox(-sw / 2 - 1.2, sh * 0.38, stageZ + sd * 0.2, 2.4, sh * 0.76, 3.6, stageBlack, 0);
-    addStageBox(sw / 2 + 1.2, sh * 0.38, stageZ + sd * 0.2, 2.4, sh * 0.76, 3.6, stageBlack, 0);
+    addStageBox(stageX, sh + 0.11, stageZ + sd / 2 - 0.16, sw * 0.88, 0.06, 0.10, edgeStripBlue, 0);
+    addStageBox(stageX - sw / 2 - 1.2, sh * 0.38, stageZ + sd * 0.2, 2.4, sh * 0.76, 3.6, stageBlack, 0);
+    addStageBox(stageX + sw / 2 + 1.2, sh * 0.38, stageZ + sd * 0.2, 2.4, sh * 0.76, 3.6, stageBlack, 0);
 
-    // 2. Matte-black Catwalk & B-Stage thrust with slim edge accent strips
+    // 2. Matte-black Catwalk & B-Stage strictly bounded within st.catwalkLength
+    const bStageD = Math.min(5.2, cl * 0.35);
     const catZ = stageZ + sd / 2 + cl / 2;
-    const bStageZ = stageZ + sd / 2 + cl + 2.5;
-    addStageBox(0, sh / 2, catZ, cw, sh, cl, stageBlack, 0);
-    addStageBox(0, sh + 0.04, catZ, cw - 0.4, 0.08, cl, stageDeckTop, 0);
-    addStageBox(-cw / 2 + 0.10, sh + 0.09, catZ, 0.12, 0.06, cl, edgeStripAmber, 0);
-    addStageBox(cw / 2 - 0.10, sh + 0.09, catZ, 0.12, 0.06, cl, edgeStripAmber, 0);
+    const bStageZ = stageZ + sd / 2 + cl - bStageD / 2;
+    addStageBox(stageX, sh / 2, catZ, cw, sh, cl, stageBlack, 0);
+    addStageBox(stageX, sh + 0.04, catZ, cw - 0.4, 0.08, cl, stageDeckTop, 0);
+    addStageBox(stageX - cw / 2 + 0.10, sh + 0.09, catZ, 0.12, 0.06, cl, edgeStripAmber, 0);
+    addStageBox(stageX + cw / 2 - 0.10, sh + 0.09, catZ, 0.12, 0.06, cl, edgeStripAmber, 0);
 
-    addStageBox(0, sh / 2, bStageZ, cw * 2.2, sh, 5.2, stageBlack, 0);
-    addStageBox(0, sh + 0.04, bStageZ, cw * 2.0, 0.08, 4.8, stageDeckTop, 0);
-    addStageBox(0, sh + 0.09, bStageZ + 2.48, cw * 2.1, 0.06, 0.12, edgeStripBlue, 0);
+    addStageBox(stageX, sh / 2, bStageZ, cw * 2.2, sh, bStageD, stageBlack, 0);
+    addStageBox(stageX, sh + 0.04, bStageZ, cw * 2.0, 0.08, Math.max(1.2, bStageD - 0.4), stageDeckTop, 0);
+    addStageBox(stageX, sh + 0.09, bStageZ + bStageD / 2 - 0.08, cw * 2.1, 0.06, 0.12, edgeStripBlue, 0);
 
-    // 3. Refined Multi-Panel Main LED Backdrop & Angled Side IMAG Wing Screens
+    // 3. Full-Lit Flowing Aurora Main LED Backdrop & Angled Side IMAG Wing Screens
     const screenZ = stageZ - sd / 2 + 2.0;
-    addDetailedLEDWall(0, sh + 0.4, screenZ, sw * 0.88, backH * 0.92, 7, 3, 0, [0.46, 0.32, 0.96, 1.0]);
+    addDetailedLEDWall(stageX, sh + 0.4, screenZ, sw * 0.90, backH * 0.94, 24, 10, 0, 0.35);
 
     const wingW = sw * 0.34;
     const wingH = backH * 0.82;
-    addDetailedLEDWall(-sw * 0.66, sh + 0.8, screenZ + 4.2, wingW, wingH, 3, 2, 0.38, [0.14, 0.68, 0.96, 1.0]);
-    addDetailedLEDWall(sw * 0.66, sh + 0.8, screenZ + 4.2, wingW, wingH, 3, 2, -0.38, [0.14, 0.68, 0.96, 1.0]);
+    addDetailedLEDWall(stageX - sw * 0.66, sh + 0.8, screenZ + 4.2, wingW, wingH, 12, 8, 0.38, 1.55);
+    addDetailedLEDWall(stageX + sw * 0.66, sh + 0.8, screenZ + 4.2, wingW, wingH, 12, 8, -0.38, 2.75);
 
     // 4. Matte-Black Overhead Box Truss Rig, Vertical Towers & Hanging PA Line-Array Speakers
     const trussH = sh + backH + 1.4;
@@ -1855,37 +1869,35 @@ class Renderer3D {
     const midTrussZ = stageZ;
     const backTrussZ = stageZ - sd * 0.42;
 
-    // 4 main black vertical truss towers + cantilever arms for IMAG screens
-    addStageBox(-sw * 0.48, trussH / 2, backTrussZ, 1.0, trussH, 1.0, trussBlack, 0);
-    addStageBox(sw * 0.48, trussH / 2, backTrussZ, 1.0, trussH, 1.0, trussBlack, 0);
-    addStageBox(-sw * 0.48, trussH / 2, frontTrussZ, 1.0, trussH, 1.0, trussBlack, 0);
-    addStageBox(sw * 0.48, trussH / 2, frontTrussZ, 1.0, trussH, 1.0, trussBlack, 0);
+    addStageBox(stageX - sw * 0.48, trussH / 2, backTrussZ, 1.0, trussH, 1.0, trussBlack, 0);
+    addStageBox(stageX + sw * 0.48, trussH / 2, backTrussZ, 1.0, trussH, 1.0, trussBlack, 0);
+    addStageBox(stageX - sw * 0.48, trussH / 2, frontTrussZ, 1.0, trussH, 1.0, trussBlack, 0);
+    addStageBox(stageX + sw * 0.48, trussH / 2, frontTrussZ, 1.0, trussH, 1.0, trussBlack, 0);
 
-    // Open-frame black overhead truss grid (chords + cross-beams + wing arms)
-    addStageBeam(-sw * 0.50, trussH, frontTrussZ, sw * 0.50, trussH, frontTrussZ, 0.75, 0.95, trussBlack);
-    addStageBeam(-sw * 0.50, trussH, midTrussZ, sw * 0.50, trussH, midTrussZ, 0.65, 0.85, trussBlack);
-    addStageBeam(-sw * 0.50, trussH, backTrussZ, sw * 0.50, trussH, backTrussZ, 0.75, 0.95, trussBlack);
-    addStageBeam(-sw * 0.48, trussH, backTrussZ, -sw * 0.48, trussH, frontTrussZ, 0.75, 0.95, trussBlack);
-    addStageBeam(sw * 0.48, trussH, backTrussZ, sw * 0.48, trussH, frontTrussZ, 0.75, 0.95, trussBlack);
-    addStageBeam(0, trussH, backTrussZ, 0, trussH, frontTrussZ, 0.55, 0.75, trussBrace);
-    addStageBeam(-sw * 0.48, trussH - 0.5, backTrussZ + 1.5, -sw * 0.66, sh + wingH + 1.0, screenZ + 4.2, 0.55, 0.65, trussBlack);
-    addStageBeam(sw * 0.48, trussH - 0.5, backTrussZ + 1.5, sw * 0.66, sh + wingH + 1.0, screenZ + 4.2, 0.55, 0.65, trussBlack);
+    addStageBeam(stageX - sw * 0.50, trussH, frontTrussZ, stageX + sw * 0.50, trussH, frontTrussZ, 0.75, 0.95, trussBlack);
+    addStageBeam(stageX - sw * 0.50, trussH, midTrussZ, stageX + sw * 0.50, trussH, midTrussZ, 0.65, 0.85, trussBlack);
+    addStageBeam(stageX - sw * 0.50, trussH, backTrussZ, stageX + sw * 0.50, trussH, backTrussZ, 0.75, 0.95, trussBlack);
+    addStageBeam(stageX - sw * 0.48, trussH, backTrussZ, stageX - sw * 0.48, trussH, frontTrussZ, 0.75, 0.95, trussBlack);
+    addStageBeam(stageX + sw * 0.48, trussH, backTrussZ, stageX + sw * 0.48, trussH, frontTrussZ, 0.75, 0.95, trussBlack);
+    addStageBeam(stageX, trussH, backTrussZ, stageX, trussH, frontTrussZ, 0.55, 0.75, trussBrace);
+    addStageBeam(stageX - sw * 0.48, trussH - 0.5, backTrussZ + 1.5, stageX - sw * 0.66, sh + wingH + 1.0, screenZ + 4.2, 0.55, 0.65, trussBlack);
+    addStageBeam(stageX + sw * 0.48, trussH - 0.5, backTrussZ + 1.5, stageX + sw * 0.66, sh + wingH + 1.0, screenZ + 4.2, 0.55, 0.65, trussBlack);
 
     // Curved matte-black PA Line-Array Speaker Hangs flanking main stage front
     [-sw * 0.44, sw * 0.44].forEach((sx) => {
       for (let k = 0; k < 5; k++) {
-        addStageBox(sx, trussH - 1.4 - k * 0.72, frontTrussZ + 0.6 + k * 0.14, 1.8, 0.58, 1.1, speakerCol, k * 0.04);
+        addStageBox(stageX + sx, trussH - 1.4 - k * 0.72, frontTrussZ + 0.6 + k * 0.14, 1.8, 0.58, 1.1, speakerCol, k * 0.04);
       }
     });
 
-    // 5. Matte-Black FOH Sound & Lighting Control Tower
+    // 5. Matte-Black FOH Sound & Lighting Control Tower at schema fohDistance
     if (stage.fohEnabled) {
       const fohZ = st.fohLocalZ;
       const fw = stage.fohWidth || 8;
       const fd = stage.fohDepth || 5;
-      addStageBox(0, 1.3, fohZ, fw, 2.6, fd, stageBlack, 0);
-      addStageBox(0, 2.75, fohZ, fw * 0.85, 0.35, fd * 0.45, trussBrace, 0);
-      addStageBox(0, 3.05, fohZ - fd * 0.15, fw * 0.55, 0.28, 0.45, [0.16, 0.62, 0.92, 1.0], 0);
+      addStageBox(stageX, 1.3, fohZ, fw, 2.6, fd, stageBlack, 0);
+      addStageBox(stageX, 2.75, fohZ, fw * 0.85, 0.35, fd * 0.45, trussBrace, 0);
+      addStageBox(stageX, 3.05, fohZ - fd * 0.15, fw * 0.55, 0.28, 0.45, [0.16, 0.62, 0.92, 1.0], 0);
     }
 
     // 6. Refined Lighting Fixtures (moving-head pods + emitter lenses) & Soft Volumetric Cones
@@ -1900,29 +1912,27 @@ class Renderer3D {
       [0.82, 0.68, 1.0, 1.0]
     ];
 
-    // Front overhead truss spotlights (9 detailed moving-head pods aiming across stage & catwalk)
     const frontPods = 9;
     for (let i = 0; i < frontPods; i++) {
       const frac = (i / (frontPods - 1)) - 0.5;
-      const fx = frac * sw * 0.84;
+      const fx = stageX + frac * sw * 0.84;
       const podY = trussH - 0.65;
       addStageBox(fx, podY, frontTrussZ, 0.55, 0.55, 0.55, trussBrace, 0);
       addStageBox(fx, podY - 0.32, frontTrussZ + 0.1, 0.32, 0.18, 0.32, lensPalette[i % lensPalette.length], 0);
 
       const targetZ = (i % 3 === 1) ? bStageZ : (stageZ + sd * 0.55 + (i % 2) * 8);
-      const targetX = frac * sw * 0.95;
+      const targetX = stageX + frac * sw * 0.95;
       addRefinedBeam(fx, podY - 0.35, frontTrussZ + 0.1, targetX, sh + 0.15, targetZ, 2.1, beamPalette[i % beamPalette.length]);
     }
 
-    // Mid-truss & side tower accent wash lights
     const sidePods = 4;
     for (let i = 0; i < sidePods; i++) {
       const frac = (i / (sidePods - 1)) - 0.5;
-      const bx = frac * sw * 0.72;
+      const bx = stageX + frac * sw * 0.72;
       const podY = trussH - 0.55;
       addStageBox(bx, podY, midTrussZ, 0.50, 0.48, 0.50, trussBrace, 0);
       addStageBox(bx, podY - 0.28, midTrussZ, 0.28, 0.16, 0.28, lensPalette[(i + 1) % lensPalette.length], 0);
-      addRefinedBeam(bx, podY - 0.3, midTrussZ, -bx * 0.6, sh + 0.15, stageZ + sd * 0.25, 2.4, beamPalette[(i + 1) % beamPalette.length]);
+      addRefinedBeam(bx, podY - 0.3, midTrussZ, stageX - (bx - stageX) * 0.6, sh + 0.15, stageZ + sd * 0.25, 2.4, beamPalette[(i + 1) % beamPalette.length]);
     }
   }
 
@@ -2031,6 +2041,11 @@ class Renderer3D {
     gl.disable(gl.BLEND);
     gl.depthMask(true);
     this.drawBufferGroup(this.solidBuffers, false);
+
+    // 1b. Self-luminous 100%-lit flowing aurora concert LED screens
+    if (this.viewMode === 'concert') {
+      this.drawBufferGroup(this.screenBuffers, true);
+    }
 
     // 2. Tempered glass guardrails
     gl.enable(gl.BLEND);

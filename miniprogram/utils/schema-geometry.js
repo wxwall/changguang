@@ -354,13 +354,16 @@ function getStageTransform(venue) {
   const facingX = Math.sin(oriRad);
   const facingZ = -Math.cos(oriRad);
 
-  const alongHalf = Math.max(
-    12,
-    evalInfieldPerimeterAndNormal(oriDeg, infield.length || 100, infield.width || 60, infield.cornerRadius || 10).dist - 4
-  );
+  const lenM = infield.length || 100;
+  const widM = infield.width || 60;
+  const radM = infield.cornerRadius || 10;
+
+  const frontPerimeter = evalInfieldPerimeterAndNormal(oriDeg, lenM, widM, radM).dist;
+  const backPerimeter = evalInfieldPerimeterAndNormal(oriDeg + 180, lenM, widM, radM).dist;
+  const alongHalf = Math.max(12, frontPerimeter - 3.0);
   const crossHalf = Math.max(
     10,
-    evalInfieldPerimeterAndNormal(oriDeg + 90, infield.length || 100, infield.width || 60, infield.cornerRadius || 10).dist - 4
+    evalInfieldPerimeterAndNormal(oriDeg + 90, lenM, widM, radM).dist - 3.0
   );
 
   const sw = stage.width || 30;
@@ -368,6 +371,15 @@ function getStageTransform(venue) {
   const sh = stage.height || 2.0;
 
   if (stage.type === 'center-stage') {
+    let cx = 0;
+    let cz = 0;
+    if (stage.x !== undefined && (stage.y !== undefined || stage.z !== undefined)) {
+      cx = Number(stage.x) || 0;
+      cz = Number(stage.z !== undefined ? stage.z : stage.y) || 0;
+    }
+    const localCenter = rotateXZ(cx, cz, -rotFromSouthDeg);
+    const maxCat = Math.max(2, alongHalf - sd / 2 - 1.5);
+    const maxCatX = Math.max(2, crossHalf - sw / 2 - 1.5);
     return {
       type: 'center-stage',
       orientationDeg: oriDeg,
@@ -376,35 +388,54 @@ function getStageTransform(venue) {
       facingZ,
       alongHalf,
       crossHalf,
-      stageLocalZ: 0,
-      centerX: 0,
-      centerZ: 0,
+      stageLocalZ: localCenter.z,
+      stageLocalX: localCenter.x,
+      centerX: cx,
+      centerZ: cz,
       targetY: sh + 1.6,
-      catwalkLength: stage.catwalkLength || 10,
-      fohLocalZ: 0
+      catwalkLength: Math.min(stage.catwalkLength || 10, maxCat),
+      catwalkLengthX: Math.min(stage.catwalkLength || 10, maxCatX),
+      fohLocalZ: localCenter.z + Math.min(stage.fohDistance || 18, Math.max(4, alongHalf - 3))
     };
   }
 
-  // Fit stage deck inside longitudinal axis
-  const alongPitchHalf = (Math.abs(Math.sin(oriRad)) > Math.abs(Math.cos(oriRad)))
-    ? (infield.pitchWidth || infield.width || 68)
-    : (infield.pitchLength || infield.length || 100);
-  const stageOffset = Math.max(
-    sd / 2 + 2,
-    Math.min(alongPitchHalf * 0.36, alongHalf - sd / 2 - 1.5)
-  );
-  const stageLocalZ = -stageOffset;
+  // Compute exact longitudinal center along stage axis strictly from schema stageConfig
+  let stageLocalZ = 0;
+  let stageLocalX = 0;
+
+  if (stage.x !== undefined && (stage.y !== undefined || stage.z !== undefined)) {
+    const wx = Number(stage.x) || 0;
+    const wz = Number(stage.z !== undefined ? stage.z : stage.y) || 0;
+    const lp = rotateXZ(wx, wz, -rotFromSouthDeg);
+    stageLocalX = lp.x;
+    stageLocalZ = lp.z;
+  } else if (stage.distanceFromCenter !== undefined && stage.distanceFromCenter !== null) {
+    stageLocalZ = -Number(stage.distanceFromCenter);
+  } else if (stage.offsetM !== undefined && stage.offsetM !== null) {
+    stageLocalZ = -Number(stage.offsetM);
+  } else {
+    // End-Stage / Festival-Stage: place back of stage cleanly at back infield boundary
+    // (accounting for corner curvature across half stage width so rear corners stay inside infield)
+    const backClearance = (stage.backClearance !== undefined && stage.backClearance !== null)
+      ? Number(stage.backClearance)
+      : 3.5;
+    let safeBackEdge = backPerimeter - backClearance;
+    const cornerPullback = Math.max(0, radM - Math.sqrt(Math.max(0, radM * radM - Math.pow(Math.max(0, sw * 0.45 - Math.max(0, crossHalf - radM)), 2))));
+    safeBackEdge = Math.max(sd / 2 + 2, safeBackEdge - cornerPullback * 0.5);
+    stageLocalZ = -(safeBackEdge - sd / 2);
+  }
+
   const stageFrontLocalZ = stageLocalZ + sd / 2;
 
-  const maxCatwalk = Math.max(4, alongHalf - stageFrontLocalZ - 4);
+  const maxCatwalk = Math.max(4, alongHalf - stageFrontLocalZ - 2.0);
   const catwalkLength = Math.min(stage.catwalkLength || 18, maxCatwalk);
 
   const fohD = stage.fohDepth || 5;
-  const maxFohDist = Math.max(catwalkLength + 6, alongHalf - stageFrontLocalZ - fohD / 2 - 2);
+  const maxFohDist = Math.max(catwalkLength + 4, alongHalf - stageFrontLocalZ - fohD / 2 - 1.5);
   const fohDist = Math.min(stage.fohDistance || 38, maxFohDist);
   const fohLocalZ = stageFrontLocalZ + fohDist;
 
-  const centerWorld = rotateXZ(0, stageLocalZ, rotFromSouthDeg);
+  const centerWorld = rotateXZ(stageLocalX, stageLocalZ, rotFromSouthDeg);
   return {
     type: stage.type || 'end-stage',
     orientationDeg: oriDeg,
@@ -413,6 +444,7 @@ function getStageTransform(venue) {
     facingZ,
     alongHalf,
     crossHalf,
+    stageLocalX,
     stageLocalZ,
     stageFrontLocalZ,
     centerX: centerWorld.x,
@@ -534,7 +566,7 @@ function generateConcertInfieldBlocks(venue) {
         { id: 'floor-se', name: '内场南东VIP区', lx: bxOffset, lz: bzCenter, localFacingZ: -1 }
       ];
       specs.forEach((sp) => {
-        const wp = rotateXZ(sp.lx, sp.lz, st.rotFromSouthDeg);
+        const wp = rotateXZ((st.stageLocalX || 0) + sp.lx, (st.stageLocalZ || 0) + sp.lz, st.rotFromSouthDeg);
         const fv = rotateXZ(0, sp.localFacingZ, st.rotFromSouthDeg);
         blocks.push({
           id: sp.id,
@@ -558,6 +590,7 @@ function generateConcertInfieldBlocks(venue) {
   }
 
   // End-stage or Festival-stage aligned strictly to st.orientationDeg
+  const stageX = st.stageLocalX || 0;
   const stageFrontZ = st.stageFrontLocalZ;
   const cl = st.catwalkLength;
   const cw = stage.catwalkWidth || 3.2;
@@ -571,7 +604,7 @@ function generateConcertInfieldBlocks(venue) {
   const sideSpanW = Math.min(usableHalfW - 1.5, Math.max(16, alongPitchCrossW * 0.44));
 
   const pushOrientedBlock = (id, name, lx, lz, bw, bd, rows, color) => {
-    const wp = rotateXZ(lx, lz, st.rotFromSouthDeg);
+    const wp = rotateXZ(stageX + lx, lz, st.rotFromSouthDeg);
     const fv = rotateXZ(0, -1, st.rotFromSouthDeg); // In stage-local space, seats face -Z (toward stage!)
     blocks.push({
       id,

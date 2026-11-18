@@ -533,6 +533,7 @@ class Renderer2D {
     const sd = stage.depth || 20;
 
     if (stage.type === 'center-stage') {
+      ctx.translate(st.stageLocalX || 0, st.stageLocalZ || 0);
       ctx.fillStyle = 'rgba(236, 72, 153, 0.25)';
       ctx.fillRect(-sw / 2 - 1.5, -sd / 2 - 1.5, sw + 3, sd + 3);
       ctx.fillStyle = '#DB2777';
@@ -542,8 +543,8 @@ class Renderer2D {
       ctx.strokeRect(-sw / 2, -sd / 2, sw, sd);
 
       const cw = stage.catwalkWidth || 3.2;
-      const clZ = Math.min(stage.catwalkLength || 10, Math.max(3, st.alongHalf - sd / 2 + 1));
-      const clX = Math.min(stage.catwalkLength || 10, Math.max(2, st.crossHalf - sw / 2 + 1));
+      const clZ = st.catwalkLength || Math.min(stage.catwalkLength || 10, Math.max(3, st.alongHalf - sd / 2 + 1));
+      const clX = st.catwalkLengthX || Math.min(stage.catwalkLength || 10, Math.max(2, st.crossHalf - sw / 2 + 1));
       ctx.fillStyle = '#F43F5E';
       ctx.fillRect(-cw / 2, -sd / 2 - clZ, cw, clZ);
       ctx.fillRect(-cw / 2, sd / 2, cw, clZ);
@@ -552,7 +553,7 @@ class Renderer2D {
         ctx.fillRect(sw / 2, -cw / 2, clX, cw);
       }
     } else {
-      ctx.translate(0, st.stageLocalZ);
+      ctx.translate(st.stageLocalX || 0, st.stageLocalZ);
 
       ctx.fillStyle = '#BE185D';
       ctx.strokeStyle = '#F9A8D4';
@@ -568,6 +569,11 @@ class Renderer2D {
       ctx.fillStyle = '#E11D48';
       ctx.fillRect(-cw / 2, sd / 2, cw, cl);
       ctx.strokeRect(-cw / 2, sd / 2, cw, cl);
+
+      const bStageD = Math.min(5.2, cl * 0.35);
+      const bStageW = cw * 2.2;
+      ctx.fillRect(-bStageW / 2, sd / 2 + cl - bStageD, bStageW, bStageD);
+      ctx.strokeRect(-bStageW / 2, sd / 2 + cl - bStageD, bStageW, bStageD);
 
       if (stage.fohEnabled) {
         const fohRelY = st.fohLocalZ - st.stageLocalZ;
