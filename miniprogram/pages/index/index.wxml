@@ -119,6 +119,7 @@
         min="1"
         max="{{sightline.maxRows}}"
         value="{{sightline.row}}"
+        disabled="{{sightline.maxRows <= 1}}"
         activeColor="#F43F5E"
         backgroundColor="#1E293B"
         block-size="16"

@@ -284,11 +284,13 @@ Page({
   onTouchMove2D(e) {
     if (!this.renderer2d || !e.touches) return;
     if (e.touches.length === 1 && this._t2dLast) {
+      const distFromStart = Math.hypot(e.touches[0].x - this._t2dStart.x, e.touches[0].y - this._t2dStart.y);
+      if (!this._t2dMoved && distFromStart <= 7) {
+        return;
+      }
+      this._t2dMoved = true;
       const dx = e.touches[0].x - this._t2dLast.x;
       const dy = e.touches[0].y - this._t2dLast.y;
-      if (Math.hypot(e.touches[0].x - this._t2dStart.x, e.touches[0].y - this._t2dStart.y) > 6) {
-        this._t2dMoved = true;
-      }
       this.renderer2d.offsetX += dx;
       this.renderer2d.offsetY += dy;
       this._t2dLast = { x: e.touches[0].x, y: e.touches[0].y };
@@ -311,6 +313,8 @@ Page({
     if (this._t2dMoved || !this._t2dStart || !this.renderer2d) return;
 
     const hit = this.renderer2d.hitTest(this._t2dStart.x, this._t2dStart.y);
+    this._t2dStart = null;
+    this._t2dLast = null;
     if (!hit) return;
 
     if (hit.type === 'floor') {

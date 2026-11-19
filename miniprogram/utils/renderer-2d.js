@@ -186,6 +186,15 @@ class Renderer2D {
           };
         }
 
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (let k = 0; k < polygon.length; k++) {
+          const p = polygon[k];
+          if (p.x < minX) minX = p.x;
+          if (p.x > maxX) maxX = p.x;
+          if (p.y < minY) minY = p.y;
+          if (p.y > maxY) maxY = p.y;
+        }
+
         this.hitPolygons.push({
           type: 'sector',
           id: sec.id,
@@ -194,6 +203,7 @@ class Renderer2D {
           tierLevel: tier.level,
           tierName: tier.name,
           polygon,
+          bbox: { minX, maxX, minY, maxY },
           center: {
             x: midPt.x,
             y: midPt.z
@@ -247,12 +257,21 @@ class Renderer2D {
         const rp = rotateXZ(pt.x, pt.z, blk.rotDeg || 0);
         return { x: blk.x + rp.x, y: blk.z + rp.z };
       });
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (let k = 0; k < polygon.length; k++) {
+        const p = polygon[k];
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.y > maxY) maxY = p.y;
+      }
       this.floorPolygons.push({
         type: 'floor',
         id: blk.id,
         floorBlock: blk,
         tierLevel: 0,
         polygon,
+        bbox: { minX, maxX, minY, maxY },
         center: { x: blk.x, y: blk.z }
       });
     });
@@ -273,6 +292,8 @@ class Renderer2D {
     if (this.viewMode === 'concert') {
       for (let i = this.floorPolygons.length - 1; i >= 0; i--) {
         const blkItem = this.floorPolygons[i];
+        const bb = blkItem.bbox;
+        if (bb && (mx < bb.minX || mx > bb.maxX || my < bb.minY || my > bb.maxY)) continue;
         if (this.pointInPolygon(mx, my, blkItem.polygon)) {
           const blk = blkItem.floorBlock;
           const totalRows = blk.rows || 10;
@@ -294,7 +315,16 @@ class Renderer2D {
       if (this.activeTierFilter !== 'all' && item.tierLevel !== this.activeTierFilter && item.tierLevel !== 0) {
         continue;
       }
+      const bb = item.bbox;
+      if (bb && (mx < bb.minX || mx > bb.maxX || my < bb.minY || my > bb.maxY)) continue;
       if (this.pointInPolygon(mx, my, item.polygon)) {
+        const isVip = item.type === 'sector' && (
+          item.sector.fillType === 'vip-box' ||
+          (this.venue.standTiers[item.tierIndex] && this.venue.standTiers[item.tierIndex].defaultFillType === 'vip-box')
+        );
+        if (isVip) {
+          return { ...item, estimatedRow: 1 };
+        }
         let rowRatio = 0.5;
         if (item.type === 'sector') {
           const angleDeg = (Math.atan2(mx, -my) * 180 / Math.PI + 360) % 360;

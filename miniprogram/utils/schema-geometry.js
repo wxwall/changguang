@@ -288,45 +288,41 @@ function polarToWorld3D(angleDeg, radius, elevation) {
 function computeRunningTrackSpec(infield) {
   const length = (infield && infield.length) || 188;
   const width = (infield && infield.width) || 118;
-  const cornerRadius = Math.min((infield && infield.cornerRadius) || 38, width / 2, length / 2);
   const pitchLength = (infield && infield.pitchLength) || 105;
   const pitchWidth = (infield && infield.pitchWidth) || 68;
-  const safetyMargin = (infield && infield.safetyMargin !== undefined && infield.safetyMargin !== null)
-    ? Number(infield.safetyMargin)
-    : 12;
 
-  const sideClearance = Math.max(0, (width - pitchWidth) / 2);
-  const endClearance = Math.max(0, (length - pitchLength) / 2);
-  const minClearance = Math.min(sideClearance, endClearance);
-
+  // Compute running track OUTWARD along the pitch perimeter (NOT inward from outer infield wall)
   const laneWidth = (infield && infield.trackLaneWidth) ? Number(infield.trackLaneWidth) : 1.22;
-  const maxUsableBand = Math.max(laneWidth * 2, minClearance - 2.0);
-  const safetyLimitedBand = Math.max(laneWidth * 4, minClearance - safetyMargin);
-  const targetBand = Math.min(maxUsableBand, safetyLimitedBand);
+  const innerSideGap = (infield && infield.trackInnerMargin !== undefined && infield.trackInnerMargin !== null)
+    ? Math.max(0.5, Number(infield.trackInnerMargin))
+    : Number(Math.min(2.5, Math.max(1.0, (width - pitchWidth) * 0.05)).toFixed(3));
+
+  const innerApronWidth = Number((pitchWidth + innerSideGap * 2).toFixed(3));
+  const innerApronCornerRadius = Number(Math.max(4, innerApronWidth / 2).toFixed(3));
+
+  const maxTrackBandW = Math.max(laneWidth * 2, (width - innerApronWidth) / 2 - 2.0);
+  const maxTrackBandL = Math.max(laneWidth * 2, (length - (pitchLength + innerSideGap * 2)) / 2 - 2.0);
+  const maxTrackBand = Math.min(maxTrackBandW, maxTrackBandL);
 
   const lanes = (infield && infield.trackLanes)
     ? Math.max(1, Math.min(12, Math.round(Number(infield.trackLanes))))
-    : Math.max(4, Math.min(10, Math.floor(targetBand / laneWidth)));
+    : Math.max(4, Math.min(9, Math.floor(maxTrackBand / laneWidth)));
 
-  const trackBandWidth = Number((lanes * laneWidth).toFixed(3));
-  const remainingSlack = Math.max(0, minClearance - trackBandWidth);
-  const outerInset = (infield && infield.trackOuterMargin !== undefined)
-    ? Math.max(0, Number(infield.trackOuterMargin))
-    : Number(Math.min(2.2, remainingSlack * 0.14).toFixed(3));
+  const trackBandWidth = Number(Math.min(maxTrackBand + 1.0, lanes * laneWidth).toFixed(3));
 
-  const outerTrackWidth = Math.max(pitchWidth + trackBandWidth * 2 + 1, width - outerInset * 2);
-  const outerTrackLength = Math.max(pitchLength + trackBandWidth * 2 + 1, length - outerInset * 2);
-  const outerTrackCornerRadius = Math.max(4, cornerRadius - outerInset);
+  const desiredInnerLen = Math.max(pitchLength + innerSideGap * 2, pitchLength + innerApronCornerRadius * 1.44);
+  const maxInnerLen = Math.max(pitchLength + innerSideGap * 2, length - trackBandWidth * 2 - 3.0);
+  const innerApronLength = Number(Math.min(desiredInnerLen, maxInnerLen).toFixed(3));
 
-  const innerApronWidth = Math.max(pitchWidth + 1.0, outerTrackWidth - trackBandWidth * 2);
-  const innerApronLength = Math.max(pitchLength + 1.0, outerTrackLength - trackBandWidth * 2);
-  const innerApronCornerRadius = Math.max(2, outerTrackCornerRadius - trackBandWidth);
+  const outerTrackWidth = Number((innerApronWidth + trackBandWidth * 2).toFixed(3));
+  const outerTrackLength = Number((innerApronLength + trackBandWidth * 2).toFixed(3));
+  const outerTrackCornerRadius = Number(Math.min(outerTrackWidth / 2, innerApronCornerRadius + trackBandWidth).toFixed(3));
 
   return {
     lanes,
     laneWidth,
     trackBandWidth,
-    outerInset,
+    innerSideGap,
     outerTrackWidth,
     outerTrackLength,
     outerTrackCornerRadius,
@@ -813,14 +809,19 @@ function calculateSeatSightline(venue, selection, viewMode) {
   const sector = (selection && selection.sector) || tier.sectors.find(s => !s.isDeleted && s.fillType !== 'empty-void') || tier.sectors[0];
 
   const isVipBox = (sector.fillType || tier.defaultFillType) === 'vip-box';
-  const totalRows = sector.rows || tier.defaultRows || 22;
-  const row = Math.min(Math.max(1, (selection && selection.row) || 1), totalRows);
+  const totalRows = isVipBox ? 1 : (sector.rows || tier.defaultRows || 22);
+  const row = isVipBox ? 1 : Math.min(Math.max(1, (selection && selection.row) || 1), totalRows);
   const rowPitch = sector.rowPitch || tier.defaultRowPitch || 0.85;
   const slopeDeg = isVipBox ? 0 : (sector.slopeDeg || tier.defaultSlopeDeg || 20);
   const riserHeight = isVipBox ? 0 : (sector.riserHeight || Number((rowPitch * Math.tan(slopeDeg * DEG2RAD)).toFixed(3)));
 
   const midAngleDeg = ((sector.startAngleDeg + sector.endAngleDeg) / 2) % 360;
-  const rowFrac = totalRows > 1 ? (row - 0.5) / totalRows : 0.5;
+  let rowFrac = totalRows > 1 ? (row - 0.5) / totalRows : 0.5;
+  if (isVipBox) {
+    const vipEdge = evalTierPoint(venue, tierIndex, midAngleDeg, 0, sector.customRadialDepth);
+    const vipDepth = Math.hypot(vipEdge.outX - vipEdge.inX, vipEdge.outZ - vipEdge.inZ);
+    rowFrac = Math.max(0.08, Math.min(0.28, 0.9 / Math.max(1.5, vipDepth)));
+  }
   const seatPt = evalTierPoint(venue, tierIndex, midAngleDeg, rowFrac, sector.customRadialDepth);
   const seatElevation = (tier.baseElevation || 1.0) + (row - 1) * riserHeight;
   const eyeElevation = seatElevation + (sightCfg.spectatorEyeHeight || 1.15);

@@ -393,15 +393,10 @@ class Renderer3D {
   }
 
   setSelection(sectorId, moduleId, floorBlockId) {
-    const changed = this.selectedSectorId !== sectorId ||
-                    this.selectedModuleId !== moduleId ||
-                    this.selectedFloorBlockId !== floorBlockId;
+    // 3D seat colors & geometry stay constant on selection — never block UI by rebuilding WebGL meshes!
     this.selectedSectorId = sectorId || null;
     this.selectedModuleId = moduleId || null;
     this.selectedFloorBlockId = floorBlockId || null;
-    if (changed && this.venue) {
-      this.rebuildSceneMeshes();
-    }
   }
 
   setZoom(zoom) {
@@ -959,10 +954,7 @@ class Renderer3D {
       sectors.forEach((sec) => {
         if (sec.isDeleted || sec.fillType === 'empty-void') return;
 
-        const activeIdx = activeSectors.indexOf(sec);
-        const isSelected = sec.id === this.selectedSectorId;
-        const isNearSelected = isSelected || (selectedIdxInTier !== -1 && Math.abs(activeIdx - selectedIdxInTier) <= 1);
-        const isVip = sec.fillType === 'vip-box';
+        const isVip = (sec.fillType || tier.defaultFillType) === 'vip-box';
 
         // Keep 3D matte seat & concrete colors unchanged when selected
         const panCol = isVip ? [0.72, 0.52, 0.18, 1.0] : seatColPair.pan;
@@ -1245,14 +1237,21 @@ class Renderer3D {
           }
         }
 
-        // 5. Fill EVERY SINGLE ROW with smooth-arc 3D Seats directly on evalTierPoint!
-        const stride = (isNearSelected || isVip) ? 1 : globalSeatStride;
+        // 5. Fill stand rows with smooth-arc 3D Seats (VIP boxes render ONLY the single frontmost row!)
+        const stride = isVip ? 1 : globalSeatStride;
         const rowAngles = this.buildSectorAngleList(sDeg, eDeg, cornerAngles, null, tierHasMorph, tierIndex);
         const margin = radialAisleWidth * 0.55;
         const stepUnitW = seatSpacing * stride;
+        const seatRowCount = isVip ? 1 : totalRows;
+        let vipFrontFrac = 0.20;
+        if (isVip) {
+          const vipMidEdge = evalTierPoint(this.venue, tierIndex, (sDeg + eDeg) / 2, 0, sec.customRadialDepth);
+          const vipDepth = Math.hypot(vipMidEdge.outX - vipMidEdge.inX, vipMidEdge.outZ - vipMidEdge.inZ);
+          vipFrontFrac = Math.max(0.08, Math.min(0.28, 0.9 / Math.max(1.5, vipDepth)));
+        }
 
-        for (let r = 1; r <= totalRows; r++) {
-          const rowFrac = totalRows > 1 ? (r - 0.5) / totalRows : 0.5;
+        for (let r = 1; r <= seatRowCount; r++) {
+          const rowFrac = isVip ? vipFrontFrac : (totalRows > 1 ? (r - 0.5) / totalRows : 0.5);
           const rowElev = isVip ? baseElev : (baseElev + (r - 1) * riserH);
 
           const rowPts = rowAngles.map((deg) => {
