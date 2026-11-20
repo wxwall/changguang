@@ -202,6 +202,7 @@ class Renderer2D {
           tierIndex,
           tierLevel: tier.level,
           tierName: tier.name,
+          isSolidWall: (sec.fillType || tier.defaultFillType) === 'solid-wall',
           polygon,
           bbox: { minX, maxX, minY, maxY },
           center: {
@@ -311,6 +312,9 @@ class Renderer2D {
       const item = this.hitPolygons[i];
       if (item.type === 'module' && this.viewMode !== 'sports') {
         continue;
+      }
+      if (item.isSolidWall) {
+        continue; // 实体山墙/机房不可选座
       }
       if (this.activeTierFilter !== 'all' && item.tierLevel !== this.activeTierFilter && item.tierLevel !== 0) {
         continue;
@@ -424,7 +428,12 @@ class Renderer2D {
     if (!infield) return;
 
     ctx.save();
-    this.traceRoundedRect(ctx, 0, 0, infield.width, infield.length, infield.cornerRadius);
+    if (infield.shape === 'ellipse') {
+      ctx.beginPath();
+      ctx.ellipse(0, 0, infield.width / 2, infield.length / 2, 0, 0, Math.PI * 2);
+    } else {
+      this.traceRoundedRect(ctx, 0, 0, infield.width, infield.length, infield.cornerRadius);
+    }
     if (infield.surfaceType === 'synthetic-track') {
       ctx.fillStyle = '#064E3B';
     } else if (infield.surfaceType === 'hardwood-court') {
@@ -546,6 +555,12 @@ class Renderer2D {
         ctx.lineTo(blk.width / 2 - 0.5, ry);
         ctx.stroke();
       }
+      this.drawRegionLabel(
+        ctx, s, 0, 0,
+        this.formatRegionLabel(blk.name),
+        isSelected,
+        -(blk.rotDeg || 0) * DEG2RAD
+      );
       ctx.restore();
     });
   }
@@ -655,6 +670,29 @@ class Renderer2D {
         ctx.strokeStyle = isSelected ? '#FFFFFF' : '#A7F3D0';
         ctx.lineWidth = (isSelected ? 2.0 : 0.9) / s;
         ctx.stroke();
+      } else if (item.isSolidWall) {
+        // 实体山墙 / 机房：纯色块 + 斜向纹理，不画座位
+        ctx.fillStyle = '#3F4A5A';
+        ctx.globalAlpha = isDimmed ? 0.25 : 0.95;
+        ctx.fill();
+        ctx.strokeStyle = '#94A3B8';
+        ctx.lineWidth = 0.9 / s;
+        ctx.stroke();
+        if (!isDimmed) {
+          ctx.save();
+          ctx.clip();
+          ctx.strokeStyle = 'rgba(148, 163, 184, 0.32)';
+          ctx.lineWidth = 0.8 / s;
+          const b = item.bbox;
+          const step = 3;
+          for (let d = b.minX - (b.maxY - b.minY); d < b.maxX; d += step) {
+            ctx.beginPath();
+            ctx.moveTo(d, b.minY);
+            ctx.lineTo(d + (b.maxY - b.minY), b.maxY);
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
       } else {
         const palette = TIER_COLORS[(item.tierLevel - 1) % TIER_COLORS.length];
         const isVip = item.sector.fillType === 'vip-box';
@@ -683,24 +721,36 @@ class Renderer2D {
           ctx.fillRect(-item.vomitory.w / 2, -item.vomitory.h / 2, item.vomitory.w, item.vomitory.h);
           ctx.restore();
         }
+      }
 
-        // Only draw concise label for the selected sector or when zoomed in >= 1.55x (counter-rotated to remain upright)
-        if (!isDimmed && (isSelected || this.scale >= 1.55)) {
-          const shortLabel = item.sector.name.replace(/.*\((.+)\)/, '$1').slice(0, 6);
-          ctx.save();
-          ctx.translate(item.center.x, item.center.y);
-          ctx.rotate(-Math.PI / 2);
-          ctx.fillStyle = '#FFFFFF';
-          const pxSize = Math.max(9, Math.min(13, 11)) / s;
-          ctx.font = `bold ${pxSize.toFixed(2)}px sans-serif`;
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(shortLabel, 0, 0);
-          ctx.restore();
-        }
+      if (!isDimmed) {
+        this.drawRegionLabel(ctx, s, item.center.x, item.center.y, this.regionLabel(item), isSelected);
       }
       ctx.restore();
     });
+  }
+
+  regionLabel(item) {
+    return this.formatRegionLabel(item.type === 'module' ? item.module.name : item.sector.name);
+  }
+
+  formatRegionLabel(raw) {
+    return (raw || '').split('·').pop().replace(/\s*\(.*\)\s*$/, '').trim().slice(0, 8);
+  }
+
+  drawRegionLabel(ctx, s, x, y, text, isSelected, extraRotRad) {
+    if (!text) return;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(-Math.PI / 2 + (extraRotRad || 0));
+    ctx.fillStyle = isSelected ? '#FFF1F4' : '#FFFFFF';
+    ctx.globalAlpha = 0.94;
+    const pxSize = 11 / s;
+    ctx.font = `bold ${pxSize.toFixed(2)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, 0, 0);
+    ctx.restore();
   }
 
   drawSightlineRay(ctx, s) {

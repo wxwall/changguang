@@ -1,7 +1,8 @@
-const { getAllVenues, getVenueById } = require('../../data/venues');
+const { loadAllStadiumProjects } = require('../../services/venue-service');
 const {
   calculateSeatSightline,
-  findDefaultEastFirstRowSelection
+  findDefaultEastFirstRowSelection,
+  normalizeVenueCoordinates
 } = require('../../utils/schema-geometry');
 const { Renderer2D } = require('../../utils/renderer-2d');
 const { Renderer3D } = require('../../utils/renderer-3d');
@@ -10,6 +11,7 @@ Page({
   data: {
     venues: [],
     currentVenue: null,
+    loadingVenues: true,
     is3DFullscreen: false,
     viewMode: 'concert', // 'concert' | 'sports'
     activeTierFilter: 'all',
@@ -43,22 +45,69 @@ Page({
   },
 
   onLoad() {
-    const rawVenues = getAllVenues();
-    const formattedVenues = rawVenues.map(v => ({
-      ...v,
-      shortLabel: v.name.split(' ')[0],
-      capLabel: `${v.code} · ${(v.engineeringSummary.totalCapacity / 1000).toFixed(1)}k座`
-    }));
+    this.loadVenuesData();
+  },
 
-    const initialVenue = formattedVenues[0];
-    this.activeSelection = findDefaultEastFirstRowSelection(initialVenue);
-    const sightline = calculateSeatSightline(initialVenue, this.activeSelection, 'concert');
+  async loadVenuesData() {
+    wx.showLoading({ title: '加载场馆数据...', mask: true });
+    this.setData({ loadingVenues: true });
 
-    this.setData({
-      venues: formattedVenues,
-      currentVenue: initialVenue,
-      sightline
-    });
+    try {
+      const venues = await loadAllStadiumProjects();
+      if (!venues || venues.length === 0) {
+        wx.showToast({ title: '数据库暂无场馆数据', icon: 'none', duration: 2500 });
+        this.setData({ loadingVenues: false });
+        return;
+      }
+
+      const savedVenueId = wx.getStorageSync('STADIACAD_LAST_VENUE');
+      let initialVenue = null;
+      if (savedVenueId) {
+        initialVenue = venues.find(v => v.id === savedVenueId || v._id === savedVenueId);
+      }
+      if (!initialVenue) {
+        initialVenue = venues[0];
+      }
+
+      this.activeSelection = findDefaultEastFirstRowSelection(initialVenue);
+      const sightline = calculateSeatSightline(initialVenue, this.activeSelection, this.data.viewMode);
+
+      this.setData({
+        venues,
+        currentVenue: initialVenue,
+        sightline,
+        cameraMode: 'bird',
+        loadingVenues: false
+      });
+
+      this.applyVenueToRenderers(initialVenue, sightline, 'bird');
+    } catch (err) {
+      console.error('从云数据库加载场馆失败:', err);
+      wx.showToast({
+        title: '加载失败: ' + (err.message || '网络或权限异常'),
+        icon: 'none',
+        duration: 3500
+      });
+      this.setData({ loadingVenues: false });
+    } finally {
+      wx.hideLoading();
+    }
+  },
+
+  applyVenueToRenderers(venue, sightline, cameraMode = 'bird') {
+    if (!venue) return;
+    if (this.renderer2d) {
+      this.renderer2d.setVenue(venue, this.data.viewMode);
+    }
+    if (this.renderer3d) {
+      this.renderer3d.setVenue(venue, this.data.viewMode, this.getSelectionIds());
+      if (cameraMode === 'seat' && sightline) {
+        this.renderer3d.flyToSeat(sightline);
+      } else {
+        this.renderer3d.setBirdEyeView();
+      }
+    }
+    this.applySelectionToRenderers();
   },
 
   onReady() {
@@ -94,8 +143,10 @@ Page({
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
         this.renderer2d = new Renderer2D(canvas, ctx, width, height, dpr);
-        this.renderer2d.setVenue(this.data.currentVenue, this.data.viewMode);
-        this.applySelectionToRenderers();
+        if (this.data.currentVenue) {
+          this.renderer2d.setVenue(this.data.currentVenue, this.data.viewMode);
+          this.applySelectionToRenderers();
+        }
       });
 
     // 2. Initialize 3D WebGL Stadium Canvas
@@ -115,9 +166,17 @@ Page({
         if (!gl) return;
 
         this.canvas3d = canvas;
+        this._canvas3dCss = { w: width, h: height };
         this.renderer3d = new Renderer3D(canvas, gl, width * dpr, height * dpr);
-        this.renderer3d.setVenue(this.data.currentVenue, this.data.viewMode, this.getSelectionIds());
-        this.applySelectionToRenderers();
+        if (this.data.currentVenue) {
+          this.renderer3d.setVenue(this.data.currentVenue, this.data.viewMode, this.getSelectionIds());
+          this.applySelectionToRenderers();
+          if (this.data.cameraMode === 'seat' && this.data.sightline) {
+            this.renderer3d.flyToSeat(this.data.sightline);
+          } else {
+            this.renderer3d.setBirdEyeView();
+          }
+        }
 
         const loop = () => {
           if (this.renderer3d) {
@@ -186,7 +245,7 @@ Page({
   // 切换场馆 Schema（默认选中东边第1排区域）
   onSelectVenue(e) {
     const venueId = e.currentTarget.dataset.id;
-    const venue = this.data.venues.find(v => v.id === venueId) || getVenueById(venueId);
+    const venue = this.data.venues.find(v => v.id === venueId || v._id === venueId);
     if (!venue) return;
 
     wx.setStorageSync('STADIACAD_LAST_VENUE', venue.id);
@@ -197,19 +256,12 @@ Page({
     this.setData({
       currentVenue: venue,
       activeTierFilter: 'all',
-      cameraMode: 'bird',
+      cameraMode: 'seat',
       zoomLevel: 1.0,
       sightline
     });
 
-    if (this.renderer2d) {
-      this.renderer2d.setVenue(venue, this.data.viewMode);
-    }
-    if (this.renderer3d) {
-      this.renderer3d.setVenue(venue, this.data.viewMode, this.getSelectionIds());
-      this.renderer3d.setBirdEyeView();
-    }
-    this.applySelectionToRenderers();
+    this.applyVenueToRenderers(venue, sightline);
   },
 
   // 3D 全屏 / 退出全屏切换
@@ -310,13 +362,22 @@ Page({
   },
 
   onTouchEnd2D() {
-    if (this._t2dMoved || !this._t2dStart || !this.renderer2d) return;
+    if (this._t2dMoved || !this._t2dStart || !this.renderer2d) {
+      this._t2dStart = null;
+      this._t2dLast = null;
+      return;
+    }
 
-    const hit = this.renderer2d.hitTest(this._t2dStart.x, this._t2dStart.y);
+    const start = this._t2dStart;
     this._t2dStart = null;
     this._t2dLast = null;
-    if (!hit) return;
 
+    const hit = this.renderer2d.hitTest(start.x, start.y);
+    if (hit) this.selectFromHit(hit);
+  },
+
+  // 2D / 3D 点选后统一的选中与进入座席视角逻辑
+  selectFromHit(hit) {
     if (hit.type === 'floor') {
       this.activeSelection = {
         isFloorBlock: true,
@@ -367,7 +428,10 @@ Page({
     if (!e.touches || e.touches.length === 0) return;
     if (e.touches.length === 1) {
       this._t3dLast = { x: e.touches[0].x, y: e.touches[0].y };
+      this._t3dStart = { x: e.touches[0].x, y: e.touches[0].y };
+      this._t3dMoved = false;
     } else if (e.touches.length >= 2) {
+      this._t3dMoved = true;
       const dx = e.touches[0].x - e.touches[1].x;
       const dy = e.touches[0].y - e.touches[1].y;
       this._t3dPinchDist = Math.hypot(dx, dy);
@@ -379,9 +443,13 @@ Page({
     if (e.touches.length === 1 && this._t3dLast) {
       const dx = e.touches[0].x - this._t3dLast.x;
       const dy = e.touches[0].y - this._t3dLast.y;
+      if (this._t3dStart && Math.hypot(e.touches[0].x - this._t3dStart.x, e.touches[0].y - this._t3dStart.y) > 7) {
+        this._t3dMoved = true;
+      }
       this.renderer3d.handleTouchDrag(dx, dy);
       this._t3dLast = { x: e.touches[0].x, y: e.touches[0].y };
     } else if (e.touches.length >= 2) {
+      this._t3dMoved = true;
       const dx = e.touches[0].x - e.touches[1].x;
       const dy = e.touches[0].y - e.touches[1].y;
       const dist = Math.hypot(dx, dy);
@@ -394,7 +462,18 @@ Page({
   },
 
   onTouchEnd3D() {
+    const start = this._t3dStart;
+    const moved = this._t3dMoved;
     this._t3dLast = null;
+    this._t3dStart = null;
+    this._t3dMoved = false;
+
+    if (moved || !start || !this.renderer3d || !this._canvas3dCss) return;
+    const { w, h } = this._canvas3dCss;
+    if (!w || !h) return;
+
+    const hit = this.renderer3d.pickAt(start.x / w, start.y / h);
+    if (hit) this.selectFromHit(hit);
   },
 
   // 返回 3D 鸟瞰视角
@@ -516,12 +595,12 @@ Page({
         this.setData({ schemaError: 'Schema 缺少核心字段 (infield 或 standTiers)' });
         return;
       }
-      const newVenue = {
+      const newVenue = normalizeVenueCoordinates({
         ...parsed,
         id: parsed.id || `custom-${Date.now()}`,
         shortLabel: (parsed.name || '自定义场馆').split(' ')[0],
         capLabel: `${parsed.code || 'CUSTOM'} · ${(((parsed.engineeringSummary && parsed.engineeringSummary.totalCapacity) || 50000) / 1000).toFixed(1)}k座`
-      };
+      });
 
       const updatedVenues = [...this.data.venues, newVenue];
       this.activeSelection = findDefaultEastFirstRowSelection(newVenue);
@@ -534,7 +613,7 @@ Page({
         sightline,
         showSchemaModal: false,
         schemaTextareaFocus: false,
-        cameraMode: 'bird',
+        cameraMode: 'seat',
         zoomLevel: 1.0
       }, () => {
         this.refreshCanvasSizes();
@@ -545,7 +624,7 @@ Page({
       }
       if (this.renderer3d) {
         this.renderer3d.setVenue(newVenue, this.data.viewMode, this.getSelectionIds());
-        this.renderer3d.setBirdEyeView();
+        this.renderer3d.flyToSeat(sightline);
       }
       this.applySelectionToRenderers();
     } catch (err) {

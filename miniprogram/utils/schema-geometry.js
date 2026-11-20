@@ -22,18 +22,33 @@ function rotateXZ(lx, lz, deg) {
 }
 
 /**
- * Evaluates a point on a rounded-rectangle perimeter AND its true outward unit normal
- * at angleDeg (polar ray from center).
+ * Evaluates a point on the infield perimeter AND its true outward unit normal
+ * at angleDeg (polar ray from center). Supports rounded-rect and ellipse infields.
  * Angle convention:
  *   0 deg = North (0, -1 in 3D/2D)
  *  90 deg = East  (+1, 0)
  * 180 deg = South (0, +1)
  * 270 deg = West  (-1, 0)
  */
-function evalInfieldPerimeterAndNormal(angleDeg, length, width, cornerRadius) {
+function evalInfieldPerimeterAndNormal(angleDeg, length, width, cornerRadius, shape) {
   const rad = angleDeg * DEG2RAD;
   const dx = Math.sin(rad);
   const dz = -Math.cos(rad);
+
+  if (shape === 'ellipse') {
+    // length is the north-south axis, width the east-west axis
+    const a = Math.max(1e-3, length / 2);
+    const b = Math.max(1e-3, width / 2);
+    const t = 1 / Math.sqrt((dx * dx) / (b * b) + (dz * dz) / (a * a));
+    const x = dx * t;
+    const z = dz * t;
+    let nx = x / (b * b);
+    let nz = z / (a * a);
+    const nLen = Math.hypot(nx, nz) || 1;
+    nx /= nLen;
+    nz /= nLen;
+    return { x, z, nx, nz, dist: t };
+  }
 
   const halfW = width / 2;
   const halfL = length / 2;
@@ -101,21 +116,23 @@ function evalInfieldPerimeterAndNormal(angleDeg, length, width, cornerRadius) {
 }
 
 /**
- * Evaluates the radial distance from (0,0) to a rounded-rectangle perimeter at angleDeg.
+ * Evaluates the radial distance from (0,0) to the infield perimeter at angleDeg.
  */
-function getRayRoundedRectDistance(angleDeg, length, width, cornerRadius) {
-  return evalInfieldPerimeterAndNormal(angleDeg, length, width, cornerRadius).dist;
+function getRayRoundedRectDistance(angleDeg, length, width, cornerRadius, shape) {
+  return evalInfieldPerimeterAndNormal(angleDeg, length, width, cornerRadius, shape).dist;
 }
 
 /**
- * Returns the 8 exact polar angles (sorted 0..360) where the infield rounded-rectangle
- * perimeter transitions between straight edges and corner arcs.
+ * Returns the polar angles (sorted 0..360) where the rounded-rectangle perimeter
+ * transitions between straight edges and corner arcs. Ellipse perimeters are
+ * curved everywhere, so they return no transition angles.
  * Injecting these angles into polygon/row polylines keeps straight walls completely flat
  * and seamless at corners.
  */
 function getInfieldCornerTransitionAngles(venue) {
   const infield = venue && venue.infield;
   if (!infield) return [];
+  if (infield.shape === 'ellipse') return [];
   const halfW = (infield.width || 60) / 2;
   const halfL = (infield.length || 100) / 2;
   const r = Math.min(infield.cornerRadius || 0, halfW, halfL);
@@ -158,21 +175,23 @@ function getInfieldCornerTransitionAngles(venue) {
  *   while transitioning outerMorph cleanly toward the concentric circle footprint.
  */
 function evalTierPoint(venue, tierIndex, angleDeg, rowFrac, customRadialDepth) {
-  const infield = venue.infield;
-  const tiers = venue.standTiers;
+  const v = venue || {};
+  const infield = v.infield || { length: 105, width: 68, cornerRadius: 15, shape: 'rounded-rect' };
+  const tiers = Array.isArray(v.standTiers) ? v.standTiers : [];
   const p0 = evalInfieldPerimeterAndNormal(
     angleDeg,
-    infield.length,
-    infield.width,
-    infield.cornerRadius
+    infield.length || 105,
+    infield.width || 68,
+    infield.cornerRadius || 15,
+    infield.shape || 'rounded-rect'
   );
 
-  const majorHalfRadius = Math.max(infield.length, infield.width) / 2;
+  const majorHalfRadius = Math.max(infield.length || 105, infield.width || 68) / 2;
 
   let cumulativeOffset = 0;
   let prevOuterMorph = 0;
   for (let i = 0; i < tierIndex; i++) {
-    const t = tiers[i];
+    const t = tiers[i] || {};
     cumulativeOffset += (t.innerOffset || 0) + (t.radialDepth || 20);
     if (t.morphMode === 'concentric-circle') {
       prevOuterMorph = t.concentricMorph || 0;
@@ -181,7 +200,7 @@ function evalTierPoint(venue, tierIndex, angleDeg, rowFrac, customRadialDepth) {
     }
   }
 
-  const tier = tiers[tierIndex];
+  const tier = tiers[tierIndex] || tiers[0] || {};
   const dIn = cumulativeOffset + (tier.innerOffset || 0);
   const horizontalDepth = customRadialDepth || tier.radialDepth || 20;
   const dOut = dIn + horizontalDepth;
@@ -333,6 +352,45 @@ function computeRunningTrackSpec(infield) {
 }
 
 /**
+ * Converts a STADIACAD-exported venue into the renderer's world frame.
+ * The export stores plan coordinates as X=infield long axis, Y=short axis,
+ * while the engine uses X=short axis, Z=long axis.
+ * Apply exactly once per venue at load time: worldX = y, worldZ = -x, rotationDeg += 90.
+ */
+function normalizeVenueCoordinates(venue) {
+  if (!venue) return venue;
+
+  const infield = venue.infield;
+  const srcStage = infield && infield.stageConfig;
+  let nextInfield = infield;
+
+  if (srcStage && (srcStage.x !== undefined || srcStage.y !== undefined || srcStage.z !== undefined)) {
+    const dx = Number(srcStage.x) || 0;
+    const dy = Number(srcStage.y !== undefined ? srcStage.y : srcStage.z) || 0;
+    const nextStage = Object.assign({}, srcStage, { x: dy, z: -dx });
+    delete nextStage.y;
+    nextInfield = Object.assign({}, infield, { stageConfig: nextStage });
+  }
+
+  const nextModules = (venue.infieldModules || []).map((mod) => {
+    const next = Object.assign({}, mod);
+    if (mod.x !== undefined || mod.y !== undefined) {
+      next.x = Number(mod.y) || 0;
+      next.y = -(Number(mod.x) || 0);
+    }
+    if (mod.rotationDeg !== undefined) {
+      next.rotationDeg = ((Number(mod.rotationDeg) || 0) + 90) % 360;
+    }
+    return next;
+  });
+
+  return Object.assign({}, venue, {
+    infield: nextInfield,
+    infieldModules: nextModules
+  });
+}
+
+/**
  * Computes the exact stage orientation, center, facing unit vector, FOH position,
  * and longitudinal/transverse infield bounds derived strictly from stageConfig.orientationDeg.
  * Convention: stageConfig.orientationDeg is the direction the stage FACES
@@ -354,12 +412,12 @@ function getStageTransform(venue) {
   const widM = infield.width || 60;
   const radM = infield.cornerRadius || 10;
 
-  const frontPerimeter = evalInfieldPerimeterAndNormal(oriDeg, lenM, widM, radM).dist;
-  const backPerimeter = evalInfieldPerimeterAndNormal(oriDeg + 180, lenM, widM, radM).dist;
+  const frontPerimeter = evalInfieldPerimeterAndNormal(oriDeg, lenM, widM, radM, infield.shape).dist;
+  const backPerimeter = evalInfieldPerimeterAndNormal(oriDeg + 180, lenM, widM, radM, infield.shape).dist;
   const alongHalf = Math.max(12, frontPerimeter - 3.0);
   const crossHalf = Math.max(
     10,
-    evalInfieldPerimeterAndNormal(oriDeg + 90, lenM, widM, radM).dist - 3.0
+    evalInfieldPerimeterAndNormal(oriDeg + 90, lenM, widM, radM, infield.shape).dist - 3.0
   );
 
   const sw = stage.width || 30;
@@ -543,6 +601,35 @@ function generateConcertInfieldBlocks(venue) {
   const usableHalfW = Math.max(10, st.crossHalf);
   const sd = stage.depth || 20;
 
+  // 收缩区块进深，直到四角落在内场周界内（椭圆内场尤其需要）
+  const fitBlocksToInfield = () => {
+    const a = (infield.length || 100) / 2;
+    const b = (infield.width || 60) / 2;
+    const isInside = (x, z) => {
+      if (infield.shape === 'ellipse') {
+        return (x * x) / (b * b) + (z * z) / (a * a) <= 1.0001;
+      }
+      const radius = Math.hypot(x, z);
+      const ang = ((Math.atan2(x, -z) * RAD2DEG) + 360) % 360;
+      const boundary = getRayRoundedRectDistance(ang, infield.length, infield.width, infield.cornerRadius, infield.shape);
+      return radius <= boundary + 0.01;
+    };
+    blocks.forEach((blk) => {
+      for (let iter = 0; iter < 24; iter++) {
+        const hw = blk.width / 2;
+        const hd = blk.depth / 2;
+        const allInside = [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]].every(([lx, lz]) => {
+          const rp = rotateXZ(lx, lz, blk.rotDeg || 0);
+          return isInside(blk.x + rp.x, blk.z + rp.z);
+        });
+        if (allInside) break;
+        blk.depth *= 0.94;
+        blk.rows = Math.max(3, Math.floor(blk.depth / 0.88));
+        if (blk.depth < 4) break;
+      }
+    });
+  };
+
   if (stage.type === 'center-stage') {
     const cw = stage.catwalkWidth || 3.2;
     const zStart = sd / 2 + 2.5;
@@ -582,6 +669,7 @@ function generateConcertInfieldBlocks(venue) {
         });
       });
     }
+    fitBlocksToInfield();
     return blocks;
   }
 
@@ -659,6 +747,7 @@ function generateConcertInfieldBlocks(venue) {
     }
   }
 
+  fitBlocksToInfield();
   return blocks;
 }
 
@@ -668,7 +757,9 @@ function generateConcertInfieldBlocks(venue) {
 function findDefaultEastFirstRowSelection(venue) {
   const tierIndex = 0;
   const tier = (venue.standTiers && venue.standTiers[tierIndex]) || { sectors: [] };
-  const activeSectors = (tier.sectors || []).filter(s => !s.isDeleted && s.fillType !== 'empty-void');
+  const activeSectors = (tier.sectors || []).filter(
+    s => !s.isDeleted && s.fillType !== 'empty-void' && s.fillType !== 'solid-wall'
+  );
 
   let bestSector = activeSectors[0];
   let bestDist = 999;
@@ -707,9 +798,10 @@ function findDefaultEastFirstRowSelection(venue) {
  * for any selected stand sector, infield module, or concert floor block.
  */
 function calculateSeatSightline(venue, selection, viewMode) {
-  const infield = venue.infield;
+  const v = venue || {};
+  const infield = v.infield || {};
   const stage = infield.stageConfig || {};
-  const sightCfg = venue.sightlineConfig || {
+  const sightCfg = v.sightlineConfig || {
     focalPointOffsetFromPitchEdge: 2,
     spectatorEyeHeight: 1.15,
     targetCValueMm: 90
@@ -805,8 +897,12 @@ function calculateSeatSightline(venue, selection, viewMode) {
 
   // Stand Tier Sector selection
   const tierIndex = selection ? (selection.tierIndex || 0) : 0;
-  const tier = venue.standTiers[tierIndex] || venue.standTiers[0];
-  const sector = (selection && selection.sector) || tier.sectors.find(s => !s.isDeleted && s.fillType !== 'empty-void') || tier.sectors[0];
+  const standTiers = (venue && Array.isArray(venue.standTiers)) ? venue.standTiers : [];
+  const tier = standTiers[tierIndex] || standTiers[0] || { sectors: [] };
+  const sectors = (tier && Array.isArray(tier.sectors)) ? tier.sectors : [];
+  const sector = (selection && selection.sector) || sectors.find(
+    s => !s.isDeleted && s.fillType !== 'empty-void' && s.fillType !== 'solid-wall'
+  ) || sectors[0] || { startAngleDeg: 0, endAngleDeg: 18, rows: 20, name: '1F-A' };
 
   const isVipBox = (sector.fillType || tier.defaultFillType) === 'vip-box';
   const totalRows = isVipBox ? 1 : (sector.rows || tier.defaultRows || 22);
@@ -897,6 +993,7 @@ module.exports = {
   getRowInwardNormal,
   polarToWorld3D,
   computeRunningTrackSpec,
+  normalizeVenueCoordinates,
   getStageTransform,
   computeVomitoryAngularBounds,
   generateConcertInfieldBlocks,
