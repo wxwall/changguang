@@ -14,8 +14,10 @@ const {
   getStageTransform,
   computeVomitoryAngularBounds,
   generateConcertInfieldBlocks,
+  getTierSaddleConfig,
   getEffectiveTierRows
 } = require('./schema-geometry');
+const { hexToSeat2D } = require('./seat-colors');
 
 const TIER_COLORS = [
   { base: '#1E3A8A', stroke: '#60A5FA', label: '#DBEAFE' }, // 1F Lower Bowl
@@ -48,6 +50,9 @@ class Renderer2D {
     // Cached hit-test polygons
     this.hitPolygons = [];
     this.floorPolygons = [];
+
+    // Custom per-tier seat color overrides { '1': '#...', '2': '#...', vip: '#...', floor: '#...' }
+    this.tierColorOverrides = {};
   }
 
   resize(width, height) {
@@ -82,6 +87,11 @@ class Renderer2D {
     this.selectedSectorId = sectorId || null;
     this.selectedModuleId = moduleId || null;
     this.selectedFloorBlockId = floorBlockId || null;
+    this.render();
+  }
+
+  setTierColorOverrides(overrides) {
+    this.tierColorOverrides = Object.assign({}, overrides || {});
     this.render();
   }
 
@@ -154,11 +164,12 @@ class Renderer2D {
         const slopeDeg = sec.slopeDeg || tier.defaultSlopeDeg || 28;
         const riserH = sec.riserHeight || (rowPitch * Math.tan(slopeDeg * DEG2RAD));
 
+        const tierSaddleEnabled = getTierSaddleConfig(tier, this.venue).enabled;
         sampleDegs.forEach((deg) => {
           const pt = evalTierPoint(this.venue, tierIndex, deg, 0, sec.customRadialDepth);
           innerPts.push({ x: pt.inX, y: pt.inZ });
           outerPts.push({ x: pt.outX, y: pt.outZ });
-          if (tier.saddleEnabled) {
+          if (tierSaddleEnabled) {
             sampleEffRows.push(getEffectiveTierRows(tier, rawSecRows, deg, riserH, this.venue));
           } else {
             sampleEffRows.push(rawSecRows);
@@ -572,7 +583,8 @@ class Renderer2D {
       ctx.translate(blk.x, blk.z);
       ctx.rotate((blk.rotDeg || 0) * DEG2RAD);
 
-      ctx.fillStyle = isSelected ? '#F43F5E' : (blk.color || '#3B82F6');
+      const floorHex = this.tierColorOverrides && this.tierColorOverrides.floor;
+      ctx.fillStyle = isSelected ? '#F43F5E' : (floorHex || blk.color || '#3B82F6');
       ctx.globalAlpha = isSelected ? 0.95 : 0.72;
       ctx.fillRect(-blk.width / 2, -blk.depth / 2, blk.width, blk.depth);
 
@@ -730,21 +742,30 @@ class Renderer2D {
           ctx.restore();
         }
       } else {
-        const palette = TIER_COLORS[(item.tierLevel - 1) % TIER_COLORS.length];
-        const isVip = item.sector.fillType === 'vip-box';
+        const defaultPalette = TIER_COLORS[(item.tierLevel - 1) % TIER_COLORS.length];
+        const tierObj = (this.venue && this.venue.standTiers && this.venue.standTiers[item.tierIndex]) || {};
+        const isVip = (item.sector.fillType || tierObj.defaultFillType) === 'vip-box';
+        const customHex = (this.tierColorOverrides && this.tierColorOverrides[String(item.tierLevel)]) ||
+                          (isVip && this.tierColorOverrides && this.tierColorOverrides.vip) ||
+                          null;
+        const customPalette = customHex ? hexToSeat2D(customHex) : null;
 
         if (isSelected) {
           ctx.fillStyle = '#F43F5E';
+        } else if (customPalette) {
+          ctx.fillStyle = customPalette.base;
         } else if (isVip) {
           ctx.fillStyle = '#B45309';
         } else {
-          ctx.fillStyle = palette.base;
+          ctx.fillStyle = defaultPalette.base;
         }
 
         ctx.globalAlpha = isDimmed ? 0.15 : (isSelected ? 0.95 : 0.88);
         ctx.fill();
 
-        ctx.strokeStyle = isSelected ? '#FFFFFF' : (isVip ? '#FBBF24' : palette.stroke);
+        ctx.strokeStyle = isSelected
+          ? '#FFFFFF'
+          : (customPalette ? customPalette.stroke : (isVip ? '#FBBF24' : defaultPalette.stroke));
         ctx.lineWidth = (isSelected ? 2.2 : 0.8) / s;
         ctx.stroke();
 

@@ -102,56 +102,108 @@
       </view>
 
       <view class="inspector-tools">
+        <view class="color-picker-btn {{showColorPicker ? 'active' : ''}}" bindtap="onToggleColorPicker">
+          <view class="color-btn-dot" style="background: {{activeTargetHex}};"></view>
+          <text>座椅配色</text>
+        </view>
         <!-- 演唱会舞美 / 标准赛场 切换（已移至底部控制面板） -->
         <view class="mode-pill" bindtap="onToggleViewMode">
           <view class="mode-dot {{viewMode === 'concert' ? 'concert' : 'sports'}}"></view>
-          <text>{{viewMode === 'concert' ? '演唱会舞美' : '标准赛场'}}</text>
+          <text>{{viewMode === 'concert' ? '演唱会' : '标准赛场'}}</text>
         </view>
-        <view class="schema-import-btn" bindtap="onOpenSchemaModal">自定义Schema</view>
+        <view class="schema-import-btn" bindtap="onOpenSchemaModal">Schema</view>
       </view>
     </view>
 
-    <!-- 实时排数拖动预览 (精确联动 3D 仰角、视距与 C-Value) -->
-    <view class="row-slider-wrap">
-      <text class="slider-label">排数微调 (1-{{sightline.maxRows}}排)</text>
-      <slider
-        class="row-slider"
-        min="1"
-        max="{{sightline.maxRows}}"
-        value="{{sightline.row}}"
-        disabled="{{sightline.maxRows <= 1}}"
-        activeColor="#F43F5E"
-        backgroundColor="#1E293B"
-        block-size="16"
-        bindchanging="onRowChanging"
-        bindchange="onRowChange"
-      />
-      <text class="slider-val">第 {{sightline.row}} 排</text>
+    <!-- 固定楼层座椅配色选择器（实时同步 3D 座椅与 2D 分区，不遮挡原生 Canvas） -->
+    <view wx:if="{{showColorPicker}}" class="color-picker-panel">
+      <scroll-view class="color-target-bar" scroll-x="true" enable-flex="true">
+        <view
+          wx:for="{{colorTargets}}"
+          wx:key="key"
+          class="color-target-chip {{activeColorTarget === item.key ? 'active' : ''}}"
+          data-key="{{item.key}}"
+          bindtap="onSelectColorTarget"
+        >
+          <view class="target-color-dot" style="background: {{item.hex}};"></view>
+          <text class="target-label">{{item.label}}</text>
+        </view>
+      </scroll-view>
+
+      <scroll-view class="color-swatch-bar" scroll-x="true" enable-flex="true">
+        <view
+          wx:for="{{seatColorSwatches}}"
+          wx:key="hex"
+          class="swatch-item {{activeTargetHex === item.hex ? 'active' : ''}}"
+          data-hex="{{item.hex}}"
+          bindtap="onPickSeatColor"
+        >
+          <view class="swatch-chip" style="background: {{item.hex}};"></view>
+          <text class="swatch-name">{{item.name}}</text>
+        </view>
+      </scroll-view>
+
+      <view class="color-preset-row">
+        <scroll-view class="preset-scroll" scroll-x="true" enable-flex="true">
+          <view
+            wx:for="{{seatThemePresets}}"
+            wx:key="id"
+            class="preset-chip {{activeThemePreset === item.id ? 'active' : ''}}"
+            data-id="{{item.id}}"
+            bindtap="onApplyColorPreset"
+          >{{item.name}}</view>
+        </scroll-view>
+        <view class="color-action-group">
+          <view class="color-reset-btn" bindtap="onResetSeatColors">重置</view>
+          <view class="color-done-btn" bindtap="onToggleColorPicker">完成</view>
+        </view>
+      </view>
     </view>
 
-    <!-- 四维工程视野指标卡 -->
-    <view class="metrics-grid">
-      <view class="metric-box">
-        <text class="metric-label">舞台/球场视距</text>
-        <text class="metric-value">{{sightline.distanceM}}m</text>
+    <!-- 默认状态：排数滑块 + 四维视野指标 -->
+    <block wx:else>
+      <!-- 实时排数拖动预览 (精确联动 3D 仰角、视距与 C-Value) -->
+      <view class="row-slider-wrap">
+        <text class="slider-label">排数微调 (1-{{sightline.maxRows}}排)</text>
+        <slider
+          class="row-slider"
+          min="1"
+          max="{{sightline.maxRows}}"
+          value="{{sightline.row}}"
+          disabled="{{sightline.maxRows <= 1}}"
+          activeColor="#F43F5E"
+          backgroundColor="#1E293B"
+          block-size="16"
+          bindchanging="onRowChanging"
+          bindchange="onRowChange"
+        />
+        <text class="slider-val">第 {{sightline.row}} 排</text>
       </view>
-      <view class="metric-box">
-        <text class="metric-label">人眼视线标高</text>
-        <text class="metric-value">{{sightline.elevationM}}m</text>
-      </view>
-      <view class="metric-box">
-        <text class="metric-label">垂直俯仰角</text>
-        <text class="metric-value">{{sightline.verticalAngleDeg}}°</text>
-      </view>
-      <view class="metric-box">
-        <text class="metric-label">C-Value 视线净高</text>
-        <text class="metric-value highlight">{{sightline.cValueMm}}mm</text>
-      </view>
-    </view>
 
-    <view class="inspector-footer">
-      <text class="footer-spec">坡度 {{sightline.slopeDeg}}° · 排距 {{sightline.rowPitch}}m · {{sightline.guardrailMaterial}} · {{sightline.cValueStatus}}</text>
-    </view>
+      <!-- 四维工程视野指标卡 -->
+      <view class="metrics-grid">
+        <view class="metric-box">
+          <text class="metric-label">舞台/球场视距</text>
+          <text class="metric-value">{{sightline.distanceM}}m</text>
+        </view>
+        <view class="metric-box">
+          <text class="metric-label">人眼视线标高</text>
+          <text class="metric-value">{{sightline.elevationM}}m</text>
+        </view>
+        <view class="metric-box">
+          <text class="metric-label">垂直俯仰角</text>
+          <text class="metric-value">{{sightline.verticalAngleDeg}}°</text>
+        </view>
+        <view class="metric-box">
+          <text class="metric-label">C-Value 视线净高</text>
+          <text class="metric-value highlight">{{sightline.cValueMm}}mm</text>
+        </view>
+      </view>
+
+      <view class="inspector-footer">
+        <text class="footer-spec">坡度 {{sightline.slopeDeg}}° · 排距 {{sightline.rowPitch}}m · {{sightline.guardrailMaterial}} · {{sightline.cValueStatus}}</text>
+      </view>
+    </block>
   </view>
 
   <!-- 动态粘贴/导入新场馆 Schema 弹窗（原生 Canvas 已移出屏幕，彻底解决模拟器无法弹出输入框的问题） -->

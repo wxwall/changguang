@@ -6,6 +6,13 @@ const {
 } = require('../../utils/schema-geometry');
 const { Renderer2D } = require('../../utils/renderer-2d');
 const { Renderer3D } = require('../../utils/renderer-3d');
+const {
+  SEAT_COLOR_SWATCHES,
+  SEAT_THEME_PRESETS,
+  getDefaultHexForTarget
+} = require('../../utils/seat-colors');
+
+const SEAT_COLORS_STORAGE_KEY = 'STADIACAD_SEAT_COLORS';
 
 Page({
   data: {
@@ -41,7 +48,14 @@ Page({
     showSchemaModal: false,
     schemaTextareaFocus: false,
     customSchemaText: '',
-    schemaError: ''
+    schemaError: '',
+    showColorPicker: false,
+    seatColorSwatches: SEAT_COLOR_SWATCHES,
+    seatThemePresets: SEAT_THEME_PRESETS,
+    colorTargets: [],
+    activeColorTarget: '1',
+    activeTargetHex: '#2B5EB8',
+    activeThemePreset: 'default'
   },
 
   onLoad() {
@@ -71,13 +85,15 @@ Page({
 
       this.activeSelection = findDefaultEastFirstRowSelection(initialVenue);
       const sightline = calculateSeatSightline(initialVenue, this.activeSelection, this.data.viewMode);
+      const colorState = this.buildColorPickerState(initialVenue);
 
       this.setData({
         venues,
         currentVenue: initialVenue,
         sightline,
         cameraMode: 'bird',
-        loadingVenues: false
+        loadingVenues: false,
+        ...colorState
       });
 
       this.applyVenueToRenderers(initialVenue, sightline, 'bird');
@@ -96,10 +112,13 @@ Page({
 
   applyVenueToRenderers(venue, sightline, cameraMode = 'bird') {
     if (!venue) return;
+    const overrides = this.getSavedVenueColors(venue.id);
     if (this.renderer2d) {
+      this.renderer2d.tierColorOverrides = Object.assign({}, overrides);
       this.renderer2d.setVenue(venue, this.data.viewMode);
     }
     if (this.renderer3d) {
+      this.renderer3d.tierColorOverrides = Object.assign({}, overrides);
       this.renderer3d.setVenue(venue, this.data.viewMode, this.getSelectionIds());
       if (cameraMode === 'seat' && sightline) {
         this.renderer3d.flyToSeat(sightline);
@@ -144,6 +163,7 @@ Page({
 
         this.renderer2d = new Renderer2D(canvas, ctx, width, height, dpr);
         if (this.data.currentVenue) {
+          this.renderer2d.tierColorOverrides = Object.assign({}, this.getSavedVenueColors(this.data.currentVenue.id));
           this.renderer2d.setVenue(this.data.currentVenue, this.data.viewMode);
           this.applySelectionToRenderers();
         }
@@ -169,6 +189,7 @@ Page({
         this._canvas3dCss = { w: width, h: height };
         this.renderer3d = new Renderer3D(canvas, gl, width * dpr, height * dpr);
         if (this.data.currentVenue) {
+          this.renderer3d.tierColorOverrides = Object.assign({}, this.getSavedVenueColors(this.data.currentVenue.id));
           this.renderer3d.setVenue(this.data.currentVenue, this.data.viewMode, this.getSelectionIds());
           this.applySelectionToRenderers();
           if (this.data.cameraMode === 'seat' && this.data.sightline) {
@@ -252,16 +273,145 @@ Page({
 
     this.activeSelection = findDefaultEastFirstRowSelection(venue);
     const sightline = calculateSeatSightline(venue, this.activeSelection, this.data.viewMode);
+    const colorState = this.buildColorPickerState(venue);
 
     this.setData({
       currentVenue: venue,
       activeTierFilter: 'all',
       cameraMode: 'seat',
       zoomLevel: 1.0,
-      sightline
+      sightline,
+      ...colorState
     });
 
     this.applyVenueToRenderers(venue, sightline);
+  },
+
+  // === 场馆固定楼层座椅配色选择器逻辑 ===
+  getAllSavedColorsMap() {
+    try {
+      const saved = wx.getStorageSync(SEAT_COLORS_STORAGE_KEY);
+      return (saved && typeof saved === 'object') ? saved : {};
+    } catch (e) {
+      return {};
+    }
+  },
+
+  getSavedVenueColors(venueId) {
+    if (!venueId) return {};
+    const all = this.getAllSavedColorsMap();
+    const map = all[venueId];
+    return (map && typeof map === 'object') ? Object.assign({}, map) : {};
+  },
+
+  saveVenueColors(venueId, overrides) {
+    if (!venueId) return;
+    try {
+      const all = this.getAllSavedColorsMap();
+      if (!overrides || Object.keys(overrides).length === 0) {
+        delete all[venueId];
+      } else {
+        all[venueId] = Object.assign({}, overrides);
+      }
+      wx.setStorageSync(SEAT_COLORS_STORAGE_KEY, all);
+    } catch (e) {
+      console.warn('保存座椅配色失败:', e);
+    }
+  },
+
+  buildColorPickerState(venue, preferredTarget, overridesIn, presetIdIn) {
+    if (!venue) {
+      return { colorTargets: [], activeColorTarget: '1', activeTargetHex: '#2B5EB8', activeThemePreset: 'default' };
+    }
+    const overrides = overridesIn !== undefined ? overridesIn : this.getSavedVenueColors(venue.id);
+    const tiers = venue.standTiers || [];
+    const targets = tiers.map((tier) => {
+      const key = String(tier.level);
+      const activeSecs = (tier.sectors || []).filter(s => !s.isDeleted && s.fillType !== 'empty-void');
+      const vipCount = activeSecs.filter(s => (s.fillType || tier.defaultFillType) === 'vip-box').length;
+      const isVipTier = activeSecs.length > 0 && vipCount >= activeSecs.length * 0.5;
+      const hex = overrides[key] || (isVipTier && overrides.vip) || getDefaultHexForTarget(key, isVipTier);
+      return {
+        key,
+        label: isVipTier ? `${tier.level}F VIP` : `${tier.level}F 看台`,
+        isVipTier,
+        hex
+      };
+    });
+
+    targets.push({
+      key: 'floor',
+      label: '内场座席',
+      isVipTier: false,
+      hex: overrides.floor || getDefaultHexForTarget('floor', false)
+    });
+
+    const activeKey = (preferredTarget && targets.some(t => t.key === preferredTarget))
+      ? preferredTarget
+      : (targets[0] ? targets[0].key : '1');
+    const activeItem = targets.find(t => t.key === activeKey) || targets[0];
+    const presetId = presetIdIn !== undefined
+      ? presetIdIn
+      : (Object.keys(overrides).length === 0 ? 'default' : 'custom');
+
+    return {
+      colorTargets: targets,
+      activeColorTarget: activeKey,
+      activeTargetHex: activeItem ? activeItem.hex : '#2B5EB8',
+      activeThemePreset: presetId
+    };
+  },
+
+  applySeatColorsLive(overrides, presetId) {
+    const venue = this.data.currentVenue;
+    if (!venue) return;
+    this.saveVenueColors(venue.id, overrides);
+    const colorState = this.buildColorPickerState(venue, this.data.activeColorTarget, overrides, presetId);
+    this.setData(colorState);
+    if (this.renderer2d) {
+      this.renderer2d.setTierColorOverrides(overrides);
+    }
+    if (this.renderer3d) {
+      this.renderer3d.setTierColorOverrides(overrides);
+    }
+  },
+
+  onToggleColorPicker() {
+    this.setData({
+      showColorPicker: !this.data.showColorPicker
+    }, () => {
+      this.refreshCanvasSizes();
+    });
+  },
+
+  onSelectColorTarget(e) {
+    const key = e.currentTarget.dataset.key;
+    const target = (this.data.colorTargets || []).find(t => t.key === key);
+    if (!target) return;
+    this.setData({
+      activeColorTarget: key,
+      activeTargetHex: target.hex
+    });
+  },
+
+  onPickSeatColor(e) {
+    const hex = e.currentTarget.dataset.hex;
+    const venue = this.data.currentVenue;
+    if (!hex || !venue) return;
+    const overrides = this.getSavedVenueColors(venue.id);
+    overrides[this.data.activeColorTarget] = hex;
+    this.applySeatColorsLive(overrides, 'custom');
+  },
+
+  onApplyColorPreset(e) {
+    const presetId = e.currentTarget.dataset.id;
+    const preset = SEAT_THEME_PRESETS.find(p => p.id === presetId);
+    if (!preset) return;
+    this.applySeatColorsLive(Object.assign({}, preset.colors), preset.id);
+  },
+
+  onResetSeatColors() {
+    this.applySeatColorsLive({}, 'default');
   },
 
   // 3D 全屏 / 退出全屏切换
@@ -605,6 +755,7 @@ Page({
       const updatedVenues = [...this.data.venues, newVenue];
       this.activeSelection = findDefaultEastFirstRowSelection(newVenue);
       const sightline = calculateSeatSightline(newVenue, this.activeSelection, this.data.viewMode);
+      const colorState = this.buildColorPickerState(newVenue, null, {}, 'default');
 
       this.setData({
         venues: updatedVenues,
@@ -614,15 +765,18 @@ Page({
         showSchemaModal: false,
         schemaTextareaFocus: false,
         cameraMode: 'seat',
-        zoomLevel: 1.0
+        zoomLevel: 1.0,
+        ...colorState
       }, () => {
         this.refreshCanvasSizes();
       });
 
       if (this.renderer2d) {
+        this.renderer2d.tierColorOverrides = {};
         this.renderer2d.setVenue(newVenue, this.data.viewMode);
       }
       if (this.renderer3d) {
+        this.renderer3d.tierColorOverrides = {};
         this.renderer3d.setVenue(newVenue, this.data.viewMode, this.getSelectionIds());
         this.renderer3d.flyToSeat(sightline);
       }

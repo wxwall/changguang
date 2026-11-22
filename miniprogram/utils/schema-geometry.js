@@ -203,7 +203,8 @@ function evalTierPoint(venue, tierIndex, angleDeg, rowFrac, customRadialDepth) {
   const tier = tiers[tierIndex] || tiers[0] || {};
   const dIn = cumulativeOffset + (tier.innerOffset || 0);
 
-  const isSaddle = tier.saddleEnabled === true;
+  const saddleCfg = getTierSaddleConfig(tier, v);
+  const isSaddle = saddleCfg.enabled;
   let horizontalDepth = customRadialDepth || tier.radialDepth || 20;
   if (isSaddle && !customRadialDepth) {
     const rowPitch = tier.defaultRowPitch || 0.85;
@@ -876,25 +877,44 @@ function getTierSaddleConfig(tier, venue) {
     }
   }
 
-  // 4. 鸟巢标准三层高区马鞍形看台官方高差设计规范兜底 (两侧长边高 13.8m 落差，从 38 排向下扣减至 14 排，完美契合 CAD 原图)
+  // 4. 大型体育场（含鸟巢 3F）马鞍形看台深落差规范：
+  //    两侧长边保持满排高耸轮廓，两端球门大幅顺滑跌落至 3 排（落差约为整层总升高的 94%，~20m 跨度）
   const isBirdNest = venue && (
     venue.code === 'BJ-NST-2008-01' ||
     String(venue.id || '').indexOf('bird-nest') >= 0 ||
     String(venue.name || '').indexOf('鸟巢') >= 0
   );
-  if (isBirdNest && tier.level === 3) {
-    if (!enabled && enabledRaw === undefined) {
-      enabled = true;
-    }
-    // 若原先为旧占位值 <= 8.5m 或未定义，升级为准确 CAD 标高落差 13.8m
-    if (amplitude <= 8.51) {
-      amplitude = 13.8;
+  if (isBirdNest && tier.level === 3 && !enabled && enabledRaw === undefined) {
+    enabled = true;
+  }
+
+  const maxRows = tier.defaultRows || 38;
+  const rowPitch = tier.defaultRowPitch || 0.85;
+  const slopeDeg = tier.defaultSlopeDeg || 34;
+  const riserH = tier.defaultRiserHeight || (rowPitch * Math.tan(slopeDeg * DEG2RAD));
+  const tierFullRise = Math.max(0, (maxRows - 1) * riserH);
+  const infieldMaxDim = venue && venue.infield
+    ? Math.max(venue.infield.length || 0, venue.infield.width || 0)
+    : 0;
+  const isLargeStadium = isBirdNest || infieldMaxDim >= 150 || maxRows >= 28;
+
+  if (enabled && isLargeStadium && tierFullRise > 8) {
+    // 若配置落差偏小（例如旧版 8.5m / 13.8m），自动放大至大球场深马鞍落差（约整层总升高的 94%）
+    const targetDeepAmp = Number((tierFullRise * 0.94).toFixed(2));
+    if (amplitude < targetDeepAmp) {
+      amplitude = targetDeepAmp;
     }
   }
 
-  const minRows = tier.saddleMinRows !== undefined ? Number(tier.saddleMinRows) :
-                  tier.minRows !== undefined ? Number(tier.minRows) :
-                  (isBirdNest && tier.level === 3 ? 14 : undefined);
+  const rawMinRows = tier.saddleMinRows !== undefined ? Number(tier.saddleMinRows) :
+                     tier.minRows !== undefined ? Number(tier.minRows) : undefined;
+  let minRows = rawMinRows;
+  if (enabled && isLargeStadium) {
+    // 大球场波谷最低排数压低至 3 排（若历史数据写入了 >= 8 的旧保守值如 14 排，也统一收至 3 排以呈现大落差）
+    if (minRows === undefined || !Number.isFinite(minRows) || minRows >= 8) {
+      minRows = 3;
+    }
+  }
 
   return {
     enabled: enabled && amplitude > 0,

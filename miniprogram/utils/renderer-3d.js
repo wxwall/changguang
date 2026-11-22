@@ -31,6 +31,7 @@ const {
   getSaddleOffset,
   getEffectiveTierRows
 } = require('./schema-geometry');
+const { hexToSeat3D } = require('./seat-colors');
 
 const Mat4 = {
   create() {
@@ -266,6 +267,38 @@ class MeshBuilder {
   }
 
   /**
+   * Adds a plush architectural VIP executive leather armchair with thick cushion,
+   * tall winged backrest, champagne-gold headrest piping, and dual upholstered armrests.
+   */
+  addVipSeat3D(cx, cy, cz, seatWidth, seatDepth, fx, fz, panColor, backColor) {
+    const rx = -fz;
+    const rz = fx;
+    const rotY = Math.atan2(fx, fz);
+    const armW = Math.min(0.11, seatWidth * 0.16);
+    const innerW = Math.max(0.32, seatWidth - armW * 2.1);
+    const armOffset = innerW * 0.5 + armW * 0.45;
+    const armColor = [
+      Math.max(0.05, backColor[0] * 0.78),
+      Math.max(0.05, backColor[1] * 0.78),
+      Math.max(0.05, backColor[2] * 0.78),
+      1.0
+    ];
+    const goldPiping = [0.88, 0.72, 0.38, 1.0];
+
+    // Dark-bronze pedestal base
+    this.addBox(cx, cy + 0.14, cz, innerW * 0.76, 0.28, seatDepth * 0.68, [0.16, 0.14, 0.13, 1.0], rotY);
+    // Thick plush contoured leather cushion
+    this.addBox(cx + fx * 0.04, cy + 0.34, cz + fz * 0.04, innerW, 0.16, seatDepth * 0.88, panColor, rotY);
+    // Tall executive backrest
+    this.addBox(cx - fx * (seatDepth * 0.36), cy + 0.66, cz - fz * (seatDepth * 0.36), innerW * 1.02, 0.56, 0.14, backColor, rotY);
+    // Champagne-gold headrest accent bar
+    this.addBox(cx - fx * (seatDepth * 0.35), cy + 0.96, cz - fz * (seatDepth * 0.35), innerW * 0.88, 0.06, 0.15, goldPiping, rotY);
+    // Dual upholstered armrests (left & right)
+    this.addBox(cx - rx * armOffset - fx * 0.02, cy + 0.48, cz - rz * armOffset - fz * 0.02, armW, 0.28, seatDepth * 0.84, armColor, rotY);
+    this.addBox(cx + rx * armOffset - fx * 0.02, cy + 0.48, cz + rz * armOffset - fz * 0.02, armW, 0.28, seatDepth * 0.84, armColor, rotY);
+  }
+
+  /**
    * Adds a crisp 3D volumetric bar/handrail between two 3D endpoints p1 and p2.
    * Visible from every viewing angle (unlike flat single-sided quads).
    */
@@ -339,6 +372,8 @@ class Renderer3D {
     this.alphaBuffers = null;
     this.beamBuffers = null;
 
+    this.tierColorOverrides = {};
+
     this.startTime = Date.now();
     this.initGL();
   }
@@ -406,6 +441,13 @@ class Renderer3D {
     this.selectedSectorId = sectorId || null;
     this.selectedModuleId = moduleId || null;
     this.selectedFloorBlockId = floorBlockId || null;
+  }
+
+  setTierColorOverrides(overrides) {
+    this.tierColorOverrides = Object.assign({}, overrides || {});
+    if (this.venue && this.gl) {
+      this.rebuildSceneMeshes();
+    }
   }
 
   setZoom(zoom) {
@@ -798,8 +840,8 @@ class Renderer3D {
     }
 
     // 4. Stand Tiers: Stepped concrete rows, row-by-row 3D seats, radial stairs + handrails,
-    //    carved vomitory tunnels, VIP skybox rooms, front guardrails
-    this.buildStandTiersMesh(solid, alpha);
+    //    carved vomitory tunnels, architectural VIP luxury suites, front guardrails
+    this.buildStandTiersMesh(solid, alpha, screens);
 
     // 5. Architectural Thick Roof Canopy Ring (zero Z-fighting!)
     this.buildStadiumCanopyRim(solid);
@@ -1136,9 +1178,12 @@ class Renderer3D {
   buildConcertInfieldSeatsMesh(solid) {
     const blocks = generateConcertInfieldBlocks(this.venue);
     blocks.forEach((blk) => {
-      // Matte fabric seat & subtle dark-slate floor mat
-      const panCol = [0.18, 0.42, 0.76, 1.0];
-      const backCol = [0.14, 0.34, 0.64, 1.0];
+      // Matte fabric seat (supports user color picker 'floor' override) & subtle dark-slate floor mat
+      const floorOverride = this.tierColorOverrides && this.tierColorOverrides.floor
+        ? hexToSeat3D(this.tierColorOverrides.floor)
+        : null;
+      const panCol = floorOverride ? floorOverride.pan : [0.18, 0.42, 0.76, 1.0];
+      const backCol = floorOverride ? floorOverride.back : [0.14, 0.34, 0.64, 1.0];
       const railCol = [0.58, 0.64, 0.72, 1.0];
       const rotDeg = blk.rotDeg || 0;
       const rotYRad = -rotDeg * DEG2RAD;
@@ -1194,7 +1239,7 @@ class Renderer3D {
     });
   }
 
-  buildStandTiersMesh(solid, alpha) {
+  buildStandTiersMesh(solid, alpha, screens) {
     const tiers = this.venue.standTiers || [];
     const showGuardrails = !(this.venue.gridSystem && this.venue.gridSystem.showGuardrails === false);
     const showVomitories = !(this.venue.gridSystem && this.venue.gridSystem.showVomitories === false);
@@ -1211,7 +1256,10 @@ class Renderer3D {
     ];
     const concreteStepCol = [0.15, 0.18, 0.24, 1.0];
     const concreteRiserCol = [0.13, 0.16, 0.21, 1.0];
-    const vipFloorCol = [0.22, 0.19, 0.16, 1.0];
+    const vipFloorCol = [0.22, 0.17, 0.13, 1.0];
+    const vipCarpetCol = [0.30, 0.13, 0.15, 1.0];
+    const vipGoldTrimCol = [0.86, 0.70, 0.38, 1.0];
+    const vipFasciaDarkCol = [0.14, 0.16, 0.21, 1.0];
     const stairStepCol = [0.24, 0.28, 0.35, 1.0];
     const handrailCol = [0.68, 0.73, 0.80, 1.0];
 
@@ -1237,7 +1285,10 @@ class Renderer3D {
 
     let prevTierMorphed = false;
     tiers.forEach((tier, tierIndex) => {
-      const seatColPair = tierSeatColors[(tier.level - 1) % tierSeatColors.length];
+      const defaultPair = tierSeatColors[(tier.level - 1) % tierSeatColors.length];
+      const tierOverrideHex = this.tierColorOverrides && this.tierColorOverrides[String(tier.level)];
+      const seatColPair = (tierOverrideHex && hexToSeat3D(tierOverrideHex)) || defaultPair;
+      const tierSaddleEnabled = getTierSaddleConfig(tier, this.venue).enabled;
       const sectors = tier.sectors || [];
       const activeSectors = sectors.filter(s => !s.isDeleted && s.fillType !== 'empty-void');
       const selectedIdxInTier = activeSectors.findIndex(s => s.id === this.selectedSectorId);
@@ -1250,9 +1301,14 @@ class Renderer3D {
 
         const isVip = (sec.fillType || tier.defaultFillType) === 'vip-box';
 
-        // Keep 3D matte seat & concrete colors unchanged when selected
-        const panCol = isVip ? [0.72, 0.52, 0.18, 1.0] : seatColPair.pan;
-        const backCol = isVip ? [0.58, 0.41, 0.14, 1.0] : seatColPair.back;
+        // Per-floor custom color picker support (VIP checks its floor key first, then global 'vip' key)
+        const vipOverrideHex = tierOverrideHex || (this.tierColorOverrides && this.tierColorOverrides.vip);
+        const vipPair = (vipOverrideHex && hexToSeat3D(vipOverrideHex)) || {
+          pan: [0.72, 0.50, 0.20, 1.0],
+          back: [0.56, 0.38, 0.15, 1.0]
+        };
+        const panCol = isVip ? vipPair.pan : seatColPair.pan;
+        const backCol = isVip ? vipPair.back : seatColPair.back;
 
         const sDeg = sec.startAngleDeg;
         const eDeg = sec.endAngleDeg;
@@ -1368,8 +1424,9 @@ class Renderer3D {
           const isUpperBridgeStrip = upperTierFrontVoms.some(w => midStripDeg > w.start && midStripDeg < w.end);
 
           if (isVip) {
-            // Flat VIP skybox platform deck at baseElev (NO stepped risers!)
-            const deckBot = Math.max(0, baseElev - 0.55);
+            // Refined VIP Suite Balcony Deck: dark-walnut hardwood + luxury lounge carpet runner + sculpted champagne-gold fascia
+            const deckBot = Math.max(0, baseElev - 0.62);
+            const goldBandBot = baseElev - 0.16;
             solid.addQuad(
               { x: pt1.inX, y: baseElev, z: pt1.inZ },
               { x: pt1.outX, y: baseElev, z: pt1.outZ },
@@ -1378,7 +1435,14 @@ class Renderer3D {
               vipFloorCol,
               { x: 0, y: 1, z: 0 }
             );
-            // Underside soffit & front fascia lip
+            // Inset luxury lounge carpet runner behind the front seating apron (rowFrac 0.34 -> 0.92)
+            const c1_a = { x: pt1.inX + (pt1.outX - pt1.inX) * 0.34, y: baseElev + 0.015, z: pt1.inZ + (pt1.outZ - pt1.inZ) * 0.34 };
+            const c1_b = { x: pt1.inX + (pt1.outX - pt1.inX) * 0.92, y: baseElev + 0.015, z: pt1.inZ + (pt1.outZ - pt1.inZ) * 0.92 };
+            const c2_b = { x: pt2.inX + (pt2.outX - pt2.inX) * 0.92, y: baseElev + 0.015, z: pt2.inZ + (pt2.outZ - pt2.inZ) * 0.92 };
+            const c2_a = { x: pt2.inX + (pt2.outX - pt2.inX) * 0.34, y: baseElev + 0.015, z: pt2.inZ + (pt2.outZ - pt2.inZ) * 0.34 };
+            solid.addQuad(c1_a, c1_b, c2_b, c2_a, vipCarpetCol, { x: 0, y: 1, z: 0 });
+
+            // Underside soffit
             solid.addQuad(
               { x: pt1.outX, y: deckBot, z: pt1.outZ },
               { x: pt1.inX, y: deckBot, z: pt1.inZ },
@@ -1387,13 +1451,34 @@ class Renderer3D {
               concreteRiserCol,
               { x: 0, y: -1, z: 0 }
             );
+            // Sculpted two-tone front balcony fascia: architectural slate lower band + champagne-gold upper molding
             solid.addQuad(
               { x: pt1.inX, y: deckBot, z: pt1.inZ },
-              { x: pt1.inX, y: baseElev, z: pt1.inZ },
-              { x: pt2.inX, y: baseElev, z: pt2.inZ },
+              { x: pt1.inX, y: goldBandBot, z: pt1.inZ },
+              { x: pt2.inX, y: goldBandBot, z: pt2.inZ },
               { x: pt2.inX, y: deckBot, z: pt2.inZ },
-              concreteStepCol
+              vipFasciaDarkCol
             );
+            solid.addQuad(
+              { x: pt1.inX, y: goldBandBot, z: pt1.inZ },
+              { x: pt1.inX, y: baseElev + 0.04, z: pt1.inZ },
+              { x: pt2.inX, y: baseElev + 0.04, z: pt2.inZ },
+              { x: pt2.inX, y: goldBandBot, z: pt2.inZ },
+              vipGoldTrimCol
+            );
+            // Subtle warm architectural under-lip accent strip (glows warmly in concert & sports modes)
+            if (screens) {
+              const glowOff = 0.03;
+              const n1x = -pt1.nx * glowOff, n1z = -pt1.nz * glowOff;
+              const n2x = -pt2.nx * glowOff, n2z = -pt2.nz * glowOff;
+              screens.addQuad(
+                { x: pt1.inX + n1x, y: goldBandBot - 0.06, z: pt1.inZ + n1z },
+                { x: pt1.inX + n1x, y: goldBandBot, z: pt1.inZ + n1z },
+                { x: pt2.inX + n2x, y: goldBandBot, z: pt2.inZ + n2z },
+                { x: pt2.inX + n2x, y: goldBandBot - 0.06, z: pt2.inZ + n2z },
+                [1.0, 0.86, 0.56, 1.0]
+              );
+            }
           } else {
             // Exact row-by-row concrete treads & risers matching seat elevations 1:1
             // Saddle offset dynamically deduces rows downwards from highest points (e.g. 38 rows at peaks -> ~24 rows at valleys)
@@ -1535,19 +1620,35 @@ class Renderer3D {
           // Single top horizontal bar ONLY + vertical posts/pickets (+ glass/concrete infill)
           // Uses flat baseElev so the lower ring is completely continuous and never detached
           if (showGuardrails && guard.frontRailEnabled !== false && !(isVomStrip && isFrontConnected)) {
-            const frontH = guard.frontRailHeight || 1.1;
+            const frontH = isVip ? Math.min(1.08, guard.frontRailHeight || 1.05) : (guard.frontRailHeight || 1.1);
             const f1_bot = { x: pt1.inX, y: baseElev, z: pt1.inZ };
             const f2_bot = { x: pt2.inX, y: baseElev, z: pt2.inZ };
             const g1_top = { x: pt1.inX, y: baseElev + frontH, z: pt1.inZ };
             const g2_top = { x: pt2.inX, y: baseElev + frontH, z: pt2.inZ };
 
             // Single volumetric 3D top horizontal handrail + vertical stanchion post
-            solid.addBeam3D(g1_top, g2_top, 0.11, 0.11, secRailCol);
+            solid.addBeam3D(g1_top, g2_top, isVip ? 0.09 : 0.11, isVip ? 0.09 : 0.11, secRailCol);
             if (a === 0 || a % 2 === 0) {
-              solid.addBox(f1_bot.x, baseElev + frontH / 2, f1_bot.z, 0.09, frontH, 0.09, secRailCol, 0);
+              solid.addBox(f1_bot.x, baseElev + frontH / 2, f1_bot.z, isVip ? 0.07 : 0.09, frontH, isVip ? 0.07 : 0.09, secRailCol, 0);
             }
 
-            if (guard.material === 'tempered-glass' && tier.level > 1) {
+            if (isVip) {
+              // Frameless smoked tempered glass balcony balustrade + slim champagne-gold shoe channel
+              alpha.addQuad(
+                { x: pt1.inX, y: baseElev + 0.08, z: pt1.inZ },
+                g1_top,
+                g2_top,
+                { x: pt2.inX, y: baseElev + 0.08, z: pt2.inZ },
+                [0.64, 0.78, 0.90, 0.30]
+              );
+              solid.addQuad(
+                f1_bot,
+                { x: pt1.inX, y: baseElev + 0.08, z: pt1.inZ },
+                { x: pt2.inX, y: baseElev + 0.08, z: pt2.inZ },
+                f2_bot,
+                vipGoldTrimCol
+              );
+            } else if (guard.material === 'tempered-glass' && tier.level > 1) {
               alpha.addQuad(f1_bot, g1_top, g2_top, f2_bot, [0.50, 0.84, 1.0, 0.34]);
             } else if (guard.material === 'concrete-parapet' && tier.level > 1) {
               solid.addQuad(f1_bot, g1_top, g2_top, f2_bot, [0.42, 0.48, 0.58, 1.0]);
@@ -1566,15 +1667,46 @@ class Renderer3D {
             }
           }
 
-          // VIP Skybox back enclosure ONLY (ordinary stands have NO dark outer rear wall)
+          // VIP Skybox Luxury Rear Lounge Wall (warm backlit hospitality facade + dark-bronze framing + warm cove wash)
           const skipRearForPassThrough = (isVomStrip && vomEndRow >= totalRows) || isUpperBridgeStrip;
           if (isVip && guard.rearWallEnabled !== false && !skipRearForPassThrough) {
-            const rearH = Math.max(2.6, guard.rearWallHeight || 2.8);
-            const rw1_b = { x: pt1.outX, y: baseElev, z: pt1.outZ };
-            const rw2_b = { x: pt2.outX, y: baseElev, z: pt2.outZ };
-            const rw2_t = { x: pt2.outX, y: baseElev + rearH, z: pt2.outZ };
-            const rw1_t = { x: pt1.outX, y: baseElev + rearH, z: pt1.outZ };
-            solid.addQuad(rw1_b, rw1_t, rw2_t, rw2_b, [0.24, 0.21, 0.19, 1.0]);
+            const rearH = Math.max(2.85, guard.rearWallHeight || 2.85);
+            const wainscotY = baseElev + 0.85;
+            const coveBotY = baseElev + rearH - 0.38;
+            // Lower dark-walnut acoustic wainscot panel
+            solid.addQuad(
+              { x: pt1.outX, y: baseElev, z: pt1.outZ },
+              { x: pt1.outX, y: wainscotY, z: pt1.outZ },
+              { x: pt2.outX, y: wainscotY, z: pt2.outZ },
+              { x: pt2.outX, y: baseElev, z: pt2.outZ },
+              [0.20, 0.15, 0.11, 1.0]
+            );
+            // Mid warm-lit hospitality lounge glass backdrop
+            solid.addQuad(
+              { x: pt1.outX, y: wainscotY, z: pt1.outZ },
+              { x: pt1.outX, y: coveBotY, z: pt1.outZ },
+              { x: pt2.outX, y: coveBotY, z: pt2.outZ },
+              { x: pt2.outX, y: wainscotY, z: pt2.outZ },
+              [0.36, 0.28, 0.19, 1.0]
+            );
+            // Upper backlit warm-gold interior hospitality frieze
+            if (screens) {
+              screens.addQuad(
+                { x: pt1.outX, y: coveBotY, z: pt1.outZ },
+                { x: pt1.outX, y: baseElev + rearH - 0.14, z: pt1.outZ },
+                { x: pt2.outX, y: baseElev + rearH - 0.14, z: pt2.outZ },
+                { x: pt2.outX, y: coveBotY, z: pt2.outZ },
+                [0.95, 0.80, 0.50, 1.0]
+              );
+            }
+            // Top dark-bronze cornice trim
+            solid.addQuad(
+              { x: pt1.outX, y: baseElev + rearH - 0.14, z: pt1.outZ },
+              { x: pt1.outX, y: baseElev + rearH, z: pt1.outZ },
+              { x: pt2.outX, y: baseElev + rearH, z: pt2.outZ },
+              { x: pt2.outX, y: baseElev + rearH - 0.14, z: pt2.outZ },
+              [0.16, 0.14, 0.13, 1.0]
+            );
           }
         }
 
@@ -1652,58 +1784,33 @@ class Renderer3D {
           }
         }
 
-        // 4. VIP Skybox Suites Partitions & Overhead Lounge Canopy
-        if (isVip && sec.vipBoxRooms > 0) {
-          const rooms = sec.vipBoxRooms;
-          for (let rm = 0; rm <= rooms; rm++) {
-            const rDeg = sDeg + (rm / rooms) * angularSpan;
-            const ptR = evalTierPoint(this.venue, tierIndex, rDeg, 0, sec.customRadialDepth);
-            const dxR = ptR.outX - ptR.inX;
-            const dzR = ptR.outZ - ptR.inZ;
-            const depthR = Math.hypot(dxR, dzR);
-            const rotR = Math.atan2(dxR, dzR);
-            solid.addBox(
-              (ptR.inX + ptR.outX) / 2,
-              baseElev + 1.4,
-              (ptR.inZ + ptR.outZ) / 2,
-              0.22,
-              2.8,
-              depthR,
-              [0.34, 0.28, 0.20, 1.0],
-              rotR
-            );
-          }
-          const vipAngles = this.buildSectorAngleList(sDeg, eDeg, cornerAngles, null, tierHasMorph, tierIndex);
-          const canopyY = baseElev + 2.8;
-          for (let va = 0; va < vipAngles.length - 1; va++) {
-            const pt1 = evalTierPoint(this.venue, tierIndex, vipAngles[va], 0, sec.customRadialDepth);
-            const pt2 = evalTierPoint(this.venue, tierIndex, vipAngles[va + 1], 0, sec.customRadialDepth);
-            const d1 = Math.hypot(pt1.outX - pt1.inX, pt1.outZ - pt1.inZ) || 1;
-            const d2 = Math.hypot(pt2.outX - pt2.inX, pt2.outZ - pt2.inZ) || 1;
-            const lip1 = Math.min(0.4, d1 * 0.15) / d1;
-            const lip2 = Math.min(0.4, d2 * 0.15) / d2;
-            solid.addQuad(
-              { x: pt1.inX + (pt1.outX - pt1.inX) * lip1, y: canopyY, z: pt1.inZ + (pt1.outZ - pt1.inZ) * lip1 },
-              { x: pt1.outX, y: canopyY, z: pt1.outZ },
-              { x: pt2.outX, y: canopyY, z: pt2.outZ },
-              { x: pt2.inX + (pt2.outX - pt2.inX) * lip2, y: canopyY, z: pt2.inZ + (pt2.outZ - pt2.inZ) * lip2 },
-              [0.45, 0.34, 0.18, 1.0],
-              { x: 0, y: -1, z: 0 }
-            );
-          }
+        // 4. Refined Architectural VIP Luxury Suites (half-walnut/half-glass dividers, coffered ceiling, warm cove lighting & lounge furnishings)
+        if (isVip) {
+          this.buildVipSuiteDetails(
+            solid,
+            alpha,
+            screens,
+            sec,
+            tierIndex,
+            sDeg,
+            eDeg,
+            baseElev,
+            cornerAngles,
+            tierHasMorph
+          );
         }
 
-        // 5. Fill stand rows with smooth-arc 3D Seats (VIP boxes render ONLY the single frontmost row!)
+        // 5. Fill stand rows with smooth-arc 3D Seats (VIP boxes render ONLY the single frontmost row of plush armchairs!)
         const stride = isVip ? 1 : globalSeatStride;
         const rowAngles = this.buildSectorAngleList(sDeg, eDeg, cornerAngles, null, tierHasMorph, tierIndex);
-        const margin = radialAisleWidth * 0.55;
-        const stepUnitW = seatSpacing * stride;
+        const margin = isVip ? 0.55 : (radialAisleWidth * 0.55);
+        const stepUnitW = isVip ? Math.max(0.72, seatSpacing * 1.25) : (seatSpacing * stride);
         const seatRowCount = isVip ? 1 : rawMaxRows;
         let vipFrontFrac = 0.20;
         if (isVip) {
           const vipMidEdge = evalTierPoint(this.venue, tierIndex, (sDeg + eDeg) / 2, 0, sec.customRadialDepth);
           const vipDepth = Math.hypot(vipMidEdge.outX - vipMidEdge.inX, vipMidEdge.outZ - vipMidEdge.inZ);
-          vipFrontFrac = Math.max(0.08, Math.min(0.28, 0.9 / Math.max(1.5, vipDepth)));
+          vipFrontFrac = Math.max(0.08, Math.min(0.28, 0.92 / Math.max(1.5, vipDepth)));
         }
 
         for (let r = 1; r <= seatRowCount; r++) {
@@ -1712,7 +1819,7 @@ class Renderer3D {
           // Build row arc points only where row r actually exists
           const rowPts = [];
           for (let deg of rowAngles) {
-            const effRows = isVip ? 1 : (tier.saddleEnabled ? getEffectiveTierRows(tier, rawMaxRows, deg, riserH, this.venue) : totalRows);
+            const effRows = isVip ? 1 : (tierSaddleEnabled ? getEffectiveTierRows(tier, rawMaxRows, deg, riserH, this.venue) : totalRows);
             if (r <= effRows) {
               const rowFrac = isVip ? vipFrontFrac : (effRows > 1 ? (r - 0.5) / effRows : 0.5);
               const p = evalTierPoint(this.venue, tierIndex, deg, rowFrac, sec.customRadialDepth);
@@ -1743,7 +1850,7 @@ class Renderer3D {
             const pB = rowPts[segIdx + 1];
             const seatDeg = pA.deg + (pB.deg - pA.deg) * localT;
 
-            const effRowsAtSeat = isVip ? 1 : (tier.saddleEnabled ? getEffectiveTierRows(tier, rawMaxRows, seatDeg, riserH, this.venue) : totalRows);
+            const effRowsAtSeat = isVip ? 1 : (tierSaddleEnabled ? getEffectiveTierRows(tier, rawMaxRows, seatDeg, riserH, this.venue) : totalRows);
             if (r > effRowsAtSeat) {
               continue;
             }
@@ -1770,22 +1877,211 @@ class Renderer3D {
             const seatDepthM = stride > 1 ? Math.min(0.62, rowPitch * 0.74) : Math.min(0.50, rowPitch * 0.60);
             const seatRowElev = isVip ? baseElev : (baseElev + (r - 1) * riserH);
 
-            solid.addSeat3D(
-              exactPt.x,
-              seatRowElev,
-              exactPt.z,
-              stepUnitW * seatWFactor,
-              seatDepthM,
-              fx,
-              fz,
-              panCol,
-              backCol
-            );
+            if (isVip) {
+              solid.addVipSeat3D(
+                exactPt.x,
+                seatRowElev,
+                exactPt.z,
+                Math.min(0.68, stepUnitW * 0.88),
+                0.58,
+                fx,
+                fz,
+                panCol,
+                backCol
+              );
+            } else {
+              solid.addSeat3D(
+                exactPt.x,
+                seatRowElev,
+                exactPt.z,
+                stepUnitW * seatWFactor,
+                seatDepthM,
+                fx,
+                fz,
+                panCol,
+                backCol
+              );
+            }
           }
         }
       });
       prevTierMorphed = tierSelfMorphed;
     });
+  }
+
+  /**
+   * Builds luxury architectural VIP suite details:
+   * - Half-walnut acoustic wall + smoked-glass front balcony privacy partitions with champagne-gold mullions
+   * - Thick coffered ceiling canopy with gold fascia beam + glowing warm cove light strip
+   * - Interior hospitality credenza / marble bar counter, cocktail tables & rear lounge sofa
+   */
+  buildVipSuiteDetails(solid, alpha, screens, sec, tierIndex, sDeg, eDeg, baseElev, cornerAngles, tierHasMorph) {
+    const angularSpan = eDeg - sDeg;
+    const pStart = evalTierPoint(this.venue, tierIndex, sDeg, 0, sec.customRadialDepth);
+    const pEnd = evalTierPoint(this.venue, tierIndex, eDeg, 0, sec.customRadialDepth);
+    const approxChord = Math.hypot(pEnd.inX - pStart.inX, pEnd.inZ - pStart.inZ);
+    const rooms = (sec.vipBoxRooms && sec.vipBoxRooms > 0)
+      ? sec.vipBoxRooms
+      : Math.max(1, Math.min(6, Math.round(approxChord / 7.5)));
+
+    const suiteH = 2.85;
+    const walnutCol = [0.24, 0.17, 0.12, 1.0];
+    const goldCol = [0.88, 0.72, 0.38, 1.0];
+    const marbleCol = [0.82, 0.80, 0.76, 1.0];
+    const sofaCol = [0.36, 0.24, 0.18, 1.0];
+    const soffitCol = [0.58, 0.49, 0.36, 1.0];
+    const roofTopCol = [0.16, 0.18, 0.24, 1.0];
+    const warmCoveCol = [1.0, 0.89, 0.64, 1.0];
+
+    // 1. Half-Walnut / Half-Smoked-Glass Suite Partition Walls with Champagne-Gold Mullions
+    for (let rm = 0; rm <= rooms; rm++) {
+      const rDeg = sDeg + (rm / rooms) * angularSpan;
+      const ptR = evalTierPoint(this.venue, tierIndex, rDeg, 0, sec.customRadialDepth);
+      const dxR = ptR.outX - ptR.inX;
+      const dzR = ptR.outZ - ptR.inZ;
+      const depthR = Math.hypot(dxR, dzR);
+      if (depthR < 0.8) continue;
+      const rotR = Math.atan2(dxR, dzR);
+
+      // Rear solid walnut acoustic suite divider (40% -> 100% depth, full height)
+      const splitFrac = 0.38;
+      const rearLen = depthR * (1 - splitFrac);
+      const rearMidFrac = (splitFrac + 1) * 0.5;
+      solid.addBox(
+        ptR.inX + dxR * rearMidFrac,
+        baseElev + suiteH * 0.5,
+        ptR.inZ + dzR * rearMidFrac,
+        0.18,
+        suiteH,
+        rearLen,
+        walnutCol,
+        rotR
+      );
+
+      // Champagne-gold structural mullion pillar at balcony transition
+      const pSplitX = ptR.inX + dxR * splitFrac;
+      const pSplitZ = ptR.inZ + dzR * splitFrac;
+      solid.addBox(pSplitX, baseElev + suiteH * 0.5, pSplitZ, 0.12, suiteH, 0.14, goldCol, rotR);
+
+      // Front balcony stepped low walnut credenza + smoked glass privacy panel (3% -> 38% depth)
+      const frontLen = depthR * (splitFrac - 0.03);
+      const frontMidFrac = (0.03 + splitFrac) * 0.5;
+      solid.addBox(
+        ptR.inX + dxR * frontMidFrac,
+        baseElev + 0.56,
+        ptR.inZ + dzR * frontMidFrac,
+        0.14,
+        1.12,
+        frontLen,
+        walnutCol,
+        rotR
+      );
+      if (alpha) {
+        const g1 = { x: ptR.inX + dxR * 0.04, y: baseElev + 1.12, z: ptR.inZ + dzR * 0.04 };
+        const g2 = { x: ptR.inX + dxR * splitFrac, y: baseElev + 1.12, z: ptR.inZ + dzR * splitFrac };
+        const g3 = { x: g2.x, y: baseElev + 2.25, z: g2.z };
+        const g4 = { x: g1.x, y: baseElev + 2.25, z: g1.z };
+        alpha.addQuad(g1, g2, g3, g4, [0.72, 0.80, 0.88, 0.28]);
+        solid.addBeam3D(g4, g3, 0.06, 0.06, goldCol);
+      }
+    }
+
+    // 2. Interior Luxury Hospitality Furnishings (per suite room, behind front armchair row)
+    for (let rm = 0; rm < rooms; rm++) {
+      const midDeg = sDeg + ((rm + 0.5) / rooms) * angularSpan;
+      const pA = evalTierPoint(this.venue, tierIndex, sDeg + (rm / rooms) * angularSpan, 0.55, sec.customRadialDepth);
+      const pB = evalTierPoint(this.venue, tierIndex, sDeg + ((rm + 1) / rooms) * angularSpan, 0.55, sec.customRadialDepth);
+      const roomW = Math.hypot(pB.x - pA.x, pB.z - pA.z);
+      const ptMid = evalTierPoint(this.venue, tierIndex, midDeg, 0, sec.customRadialDepth);
+      const dxM = ptMid.outX - ptMid.inX;
+      const dzM = ptMid.outZ - ptMid.inZ;
+      const depthM = Math.hypot(dxM, dzM);
+      if (depthM < 2.4 || roomW < 2.2) continue;
+
+      const rotM = Math.atan2(-dxM, -dzM);
+      const barW = Math.min(roomW * 0.58, 3.4);
+
+      // Sleek walnut & cream-marble hospitality bar counter behind front armchairs
+      const barFrac = 0.54;
+      const bx = ptMid.inX + dxM * barFrac;
+      const bz = ptMid.inZ + dzM * barFrac;
+      solid.addBox(bx, baseElev + 0.48, bz, barW, 0.94, 0.56, walnutCol, rotM);
+      solid.addBox(bx, baseElev + 0.98, bz, barW + 0.08, 0.07, 0.64, marbleCol, rotM);
+
+      // Plush rear lounge sofa + low marble coffee table when suite has comfortable lounge depth
+      if (depthM >= 3.4) {
+        const sofaFrac = 0.84;
+        const sx = ptMid.inX + dxM * sofaFrac;
+        const sz = ptMid.inZ + dzM * sofaFrac;
+        const sofaW = Math.min(roomW * 0.62, 3.6);
+        solid.addBox(sx, baseElev + 0.28, sz, sofaW, 0.44, 0.78, sofaCol, rotM);
+        const dirLen = depthM || 1;
+        const outNx = dxM / dirLen;
+        const outNz = dzM / dirLen;
+        solid.addBox(sx + outNx * 0.30, baseElev + 0.62, sz + outNz * 0.30, sofaW, 0.42, 0.20, sofaCol, rotM);
+      }
+    }
+
+    // 3. Thick Coffered Overhead Canopy, Champagne-Gold Front Fascia & Glowing Warm Ceiling Cove Strip
+    const vipAngles = this.buildSectorAngleList(sDeg, eDeg, cornerAngles, null, tierHasMorph, tierIndex);
+    const canopyY = baseElev + suiteH;
+    const roofTopY = canopyY + 0.34;
+    for (let va = 0; va < vipAngles.length - 1; va++) {
+      const pt1 = evalTierPoint(this.venue, tierIndex, vipAngles[va], 0, sec.customRadialDepth);
+      const pt2 = evalTierPoint(this.venue, tierIndex, vipAngles[va + 1], 0, sec.customRadialDepth);
+      const d1 = Math.hypot(pt1.outX - pt1.inX, pt1.outZ - pt1.inZ) || 1;
+      const d2 = Math.hypot(pt2.outX - pt2.inX, pt2.outZ - pt2.inZ) || 1;
+      const lip1 = Math.min(0.32, d1 * 0.10) / d1;
+      const lip2 = Math.min(0.32, d2 * 0.10) / d2;
+
+      const f1x = pt1.inX + (pt1.outX - pt1.inX) * lip1;
+      const f1z = pt1.inZ + (pt1.outZ - pt1.inZ) * lip1;
+      const f2x = pt2.inX + (pt2.outX - pt2.inX) * lip2;
+      const f2z = pt2.inZ + (pt2.outZ - pt2.inZ) * lip2;
+
+      // Warm coffered acoustic soffit ceiling
+      solid.addQuad(
+        { x: f1x, y: canopyY, z: f1z },
+        { x: pt1.outX, y: canopyY, z: pt1.outZ },
+        { x: pt2.outX, y: canopyY, z: pt2.outZ },
+        { x: f2x, y: canopyY, z: f2z },
+        soffitCol,
+        { x: 0, y: -1, z: 0 }
+      );
+      // Charcoal exterior canopy roof slab
+      solid.addQuad(
+        { x: pt1.outX, y: roofTopY, z: pt1.outZ },
+        { x: f1x, y: roofTopY, z: f1z },
+        { x: f2x, y: roofTopY, z: f2z },
+        { x: pt2.outX, y: roofTopY, z: pt2.outZ },
+        roofTopCol,
+        { x: 0, y: 1, z: 0 }
+      );
+      // Champagne-gold sculpted front canopy fascia beam
+      solid.addQuad(
+        { x: f1x, y: canopyY, z: f1z },
+        { x: f1x, y: roofTopY, z: f1z },
+        { x: f2x, y: roofTopY, z: f2z },
+        { x: f2x, y: canopyY, z: f2z },
+        goldCol
+      );
+
+      // Continuous recessed warm LED cove lighting strip tucked inside ceiling soffit
+      if (screens) {
+        const coveIn1 = Math.min(0.55, d1 * 0.20) / d1;
+        const coveOut1 = Math.min(0.82, d1 * 0.30) / d1;
+        const coveIn2 = Math.min(0.55, d2 * 0.20) / d2;
+        const coveOut2 = Math.min(0.82, d2 * 0.30) / d2;
+        screens.addQuad(
+          { x: pt1.inX + (pt1.outX - pt1.inX) * coveIn1, y: canopyY - 0.03, z: pt1.inZ + (pt1.outZ - pt1.inZ) * coveIn1 },
+          { x: pt1.inX + (pt1.outX - pt1.inX) * coveOut1, y: canopyY - 0.03, z: pt1.inZ + (pt1.outZ - pt1.inZ) * coveOut1 },
+          { x: pt2.inX + (pt2.outX - pt2.inX) * coveOut2, y: canopyY - 0.03, z: pt2.inZ + (pt2.outZ - pt2.inZ) * coveOut2 },
+          { x: pt2.inX + (pt2.outX - pt2.inX) * coveIn2, y: canopyY - 0.03, z: pt2.inZ + (pt2.outZ - pt2.inZ) * coveIn2 },
+          warmCoveCol,
+          { x: 0, y: -1, z: 0 }
+        );
+      }
+    }
   }
 
   buildVomitoryRecess(solid, sec, tierIndex, vomStartDeg, vomEndDeg, vomStartRow, vomEndRow, totalRows, baseElev, riserH, handrailCol, isFrontConnected) {
@@ -2078,18 +2374,23 @@ class Renderer3D {
       const xIn2 = pt2.outX - nx2 * 14, zIn2 = pt2.outZ - nz2 * 14;
       const xOut2 = pt2.outX + nx2 * 5, zOut2 = pt2.outZ + nz2 * 5;
 
-      let saddle1 = 0, saddle2 = 0;
       const canopyDrop = getTierSaddleDrop(lastTier, this.venue);
+      let yBot1 = maxElev;
+      let yBot2 = maxElev;
       if (canopyDrop > 0) {
-        saddle1 = getSaddleOffset(lastTier, deg1, this.venue);
-        saddle2 = getSaddleOffset(lastTier, deg2, this.venue);
+        // Closely hug the dramatic saddle bowl contour from low end valleys (~23m) up to towering long-side peaks (~43m)
+        const lastRows = lastTier.defaultRows || 38;
+        const lastPitch = lastTier.defaultRowPitch || 0.85;
+        const lastSlope = lastTier.defaultSlopeDeg || 34;
+        const lastRiserH = lastTier.defaultRiserHeight || (lastPitch * Math.tan(lastSlope * DEG2RAD));
+        const effRows1 = getEffectiveTierRows(lastTier, lastRows, deg1, lastRiserH, this.venue);
+        const effRows2 = getEffectiveTierRows(lastTier, lastRows, deg2, lastRiserH, this.venue);
+        yBot1 = (lastTier.baseElevation || 14) + Math.max(0, effRows1 - 1) * lastRiserH + 3.6;
+        yBot2 = (lastTier.baseElevation || 14) + Math.max(0, effRows2 - 1) * lastRiserH + 3.6;
       } else if (isBirdNest) {
-        saddle1 = Math.sin(deg1 * DEG2RAD) * Math.sin(deg1 * DEG2RAD) * 8.5;
-        saddle2 = Math.sin(deg2 * DEG2RAD) * Math.sin(deg2 * DEG2RAD) * 8.5;
+        yBot1 = maxElev + Math.sin(deg1 * DEG2RAD) * Math.sin(deg1 * DEG2RAD) * 18.0;
+        yBot2 = maxElev + Math.sin(deg2 * DEG2RAD) * Math.sin(deg2 * DEG2RAD) * 18.0;
       }
-
-      const yBot1 = maxElev + saddle1;
-      const yBot2 = maxElev + saddle2;
       const yTop1 = yBot1 + thickness;
       const yTop2 = yBot2 + thickness;
 
@@ -2518,8 +2819,8 @@ class Renderer3D {
     gl.depthMask(true);
     this.drawBufferGroup(this.solidBuffers, false);
 
-    // 1b. Self-luminous 100%-lit flowing aurora concert LED screens
-    if (this.viewMode === 'concert') {
+    // 1b. Self-luminous elements (VIP suite warm cove lighting + 100%-lit aurora concert LED screens)
+    if (this.screenBuffers && this.screenBuffers.count > 0) {
       this.drawBufferGroup(this.screenBuffers, true);
     }
 
