@@ -3,7 +3,7 @@
  * 集合名称: stadiumProjects
  */
 
-const { normalizeVenueCoordinates } = require('../utils/schema-geometry');
+const { normalizeVenueCoordinates, getTierSaddleConfig, getTierSaddleDrop } = require('../utils/schema-geometry');
 
 const MAX_PAGE_LIMIT = 20;
 
@@ -186,58 +186,161 @@ function ensureCloudInit() {
 }
 
 /**
+ * 尝试从本地内置数据中加载场馆（作为离线或云端异常兜底）
+ */
+function getLocalFallbackVenues() {
+  try {
+    const localMod = require('../data/venues');
+    const list = (localMod && typeof localMod.getAllVenues === 'function' ? localMod.getAllVenues() : (localMod && localMod.VENUES)) || [];
+    if (Array.isArray(list) && list.length > 0) {
+      console.log('[DEBUG-stadium-cloud] 从本地内置数据兜底加载到场馆数:', list.length);
+      return list.map(v => extractVenueDoc(v)).filter(Boolean);
+    }
+  } catch (e) {
+    // 若本地 venues 被 packOptions 忽略或不存在，则静默忽略
+  }
+  return [];
+}
+
+/**
+ * 安全拉取单条文档（防止单次网络包体积超出小程序端 1MB 限制）
+ */
+async function fetchSingleDocSafe(collection, skipIndex) {
+  try {
+    const res = await collection.skip(skipIndex).limit(1).get();
+    if (res && Array.isArray(res.data) && res.data.length > 0) {
+      return res.data[0];
+    }
+  } catch (err) {
+    console.warn(`[DEBUG-stadium-cloud] 无法直接拉取索引 ${skipIndex} 文档:`, err && (err.errMsg || err.message));
+    // 若因单条文档内部包含大量冗余历史字段导致超过 1MB，尝试排除已知无关大字段
+    try {
+      const resFallback = await collection.skip(skipIndex).limit(1).field({
+        history: false,
+        snapshots: false,
+        versions: false,
+        rawCad: false,
+        cadFile: false,
+        previewImage: false
+      }).get();
+      if (resFallback && Array.isArray(resFallback.data) && resFallback.data.length > 0) {
+        return resFallback.data[0];
+      }
+    } catch (fallbackErr) {
+      console.warn(`[DEBUG-stadium-cloud] 索引 ${skipIndex} 文档排除大字段后仍超限或失败，跳过该文档`);
+    }
+  }
+  return null;
+}
+
+/**
+ * 并发控制拉取全部单条文档（默认最大并发数 4，避免触发网络并发或请求风暴）
+ */
+async function fetchAllDocsWithConcurrency(collection, totalCount, concurrency = 4) {
+  const docs = new Array(totalCount);
+  let currentIndex = 0;
+
+  async function worker() {
+    while (currentIndex < totalCount) {
+      const idx = currentIndex++;
+      const doc = await fetchSingleDocSafe(collection, idx);
+      docs[idx] = doc;
+    }
+  }
+
+  const workers = [];
+  const workerCount = Math.min(concurrency, totalCount);
+  for (let i = 0; i < workerCount; i++) {
+    workers.push(worker());
+  }
+
+  await Promise.all(workers);
+  return docs.filter(Boolean);
+}
+
+/**
  * 从云数据库集合 stadiumProjects 加载所有场馆数据
- * 自动处理分页逻辑（小程序端单次最多 20 条）
+ * 采用单文档安全分批 + 并发池策略，彻底杜绝微信 -602001 response size exceeded 1MB 报错
  */
 async function loadAllStadiumProjects() {
-  ensureCloudInit();
+  try {
+    ensureCloudInit();
 
-  const db = wx.cloud.database();
-  const collection = db.collection('stadiumProjects');
+    const db = wx.cloud.database();
+    const collection = db.collection('stadiumProjects');
 
-  // 1. 首批获取前 20 条数据
-  const firstBatchRes = await collection.limit(MAX_PAGE_LIMIT).get();
-  let rawDocs = (firstBatchRes && firstBatchRes.data) || [];
+    let rawDocs = [];
 
-  console.log('[DEBUG-stadium-cloud] 首批拉取到文档数:', rawDocs.length);
-  if (rawDocs.length > 0) {
-    console.log('[DEBUG-stadium-cloud] 首个文档 _id:', rawDocs[0]._id, 'keys:', Object.keys(rawDocs[0]));
-  }
-
-  // 2. 若首批正好满 20 条，说明可能存在后续分页，尝试 count() 并发拉取后续数据
-  if (rawDocs.length === MAX_PAGE_LIMIT) {
+    // 1. 优先通过 count() 获取集合总数（count 仅返回数字，绝不会超 1MB）
+    let total = null;
     try {
       const countRes = await collection.count();
-      const total = countRes && countRes.total ? countRes.total : 0;
-      if (total > MAX_PAGE_LIMIT) {
-        const batchTimes = Math.ceil(total / MAX_PAGE_LIMIT);
-        const tasks = [];
-        for (let i = 1; i < batchTimes; i++) {
-          tasks.push(collection.skip(i * MAX_PAGE_LIMIT).limit(MAX_PAGE_LIMIT).get());
-        }
-        const restBatches = await Promise.all(tasks);
-        for (const batch of restBatches) {
-          if (batch && Array.isArray(batch.data)) {
-            rawDocs = rawDocs.concat(batch.data);
-          }
-        }
+      if (countRes && typeof countRes.total === 'number') {
+        total = countRes.total;
+        console.log('[DEBUG-stadium-cloud] 云数据库 stadiumProjects 总文档数:', total);
       }
     } catch (countErr) {
-      console.warn('[DEBUG-stadium-cloud] 获取总数或分页失败，将仅使用已获取的数据:', countErr);
+      console.warn('[DEBUG-stadium-cloud] 获取文档总数失败，将采用游标探测模式:', countErr);
     }
-  }
 
-  // 3. 规范化并清洗文档
-  const venues = [];
-  for (const doc of rawDocs) {
-    const formatted = extractVenueDoc(doc);
-    if (formatted) {
-      venues.push(formatted);
+    if (total !== null) {
+      if (total > 0) {
+        // 使用单条分批 + 并发控制拉取，彻底规避多文档累计超出 1MB 的问题
+        rawDocs = await fetchAllDocsWithConcurrency(collection, total, 4);
+      }
+    } else {
+      // 若 count() 权限受限，采用逐条游标探测（最多拉取 50 条）
+      const maxProbes = 50;
+      for (let i = 0; i < maxProbes; i++) {
+        const doc = await fetchSingleDocSafe(collection, i);
+        if (!doc) {
+          // 连续探测若未返回数据则结束
+          break;
+        }
+        rawDocs.push(doc);
+      }
     }
-  }
 
-  console.log('[DEBUG-stadium-cloud] 规范化完成，有效场馆数:', venues.length);
-  return venues;
+    console.log('[DEBUG-stadium-cloud] 成功拉取到云文档数:', rawDocs.length);
+
+    // 2. 规范化并清洗文档
+    const venues = [];
+    for (const doc of rawDocs) {
+      const formatted = extractVenueDoc(doc);
+      if (formatted) {
+        venues.push(formatted);
+        const isBn = formatted.code === 'BJ-NST-2008-01' ||
+          String(formatted.id || '').indexOf('bird-nest') >= 0 ||
+          String(formatted.name || '').indexOf('鸟巢') >= 0;
+        if (isBn) {
+          console.log('[DEBUG-stadium-cloud] 已匹配鸟巢体育馆数据:', formatted.name);
+          (formatted.standTiers || []).forEach((t, i) => {
+            const cfg = getTierSaddleConfig(t, formatted);
+            console.log(`[DEBUG-stadium-cloud] 鸟巢看台 [${i + 1}F - ${t.name || t.id}] baseElevation: ${t.baseElevation}m, saddleEnabled: ${cfg.enabled}, saddleAmplitude: ${cfg.amplitude}m, saddleInvert: ${cfg.invert} (${cfg.invert ? '两端球门高' : '两侧长边高'})`);
+          });
+        }
+      }
+    }
+
+    // 3. 若云端未能成功解析出任何有效场馆，尝试本地内置数据兜底
+    if (venues.length === 0) {
+      console.warn('[DEBUG-stadium-cloud] 云数据库无有效场馆，尝试回退本地数据');
+      const fallback = getLocalFallbackVenues();
+      if (fallback.length > 0) {
+        return fallback;
+      }
+    }
+
+    console.log('[DEBUG-stadium-cloud] 规范化完成，有效场馆数:', venues.length);
+    return venues;
+  } catch (topErr) {
+    console.error('[DEBUG-stadium-cloud] 云数据库查询异常，执行降级保护:', topErr);
+    const fallback = getLocalFallbackVenues();
+    if (fallback.length > 0) {
+      return fallback;
+    }
+    throw topErr;
+  }
 }
 
 module.exports = {

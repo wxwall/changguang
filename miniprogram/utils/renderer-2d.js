@@ -13,7 +13,8 @@ const {
   computeRunningTrackSpec,
   getStageTransform,
   computeVomitoryAngularBounds,
-  generateConcertInfieldBlocks
+  generateConcertInfieldBlocks,
+  getEffectiveTierRows
 } = require('./schema-geometry');
 
 const TIER_COLORS = [
@@ -146,11 +147,45 @@ class Renderer2D {
 
         const innerPts = [];
         const outerPts = [];
+        const sampleEffRows = [];
+        const isSolidWall = (sec.fillType || tier.defaultFillType) === 'solid-wall';
+        const rawSecRows = sec.rows || tier.defaultRows || 22;
+        const rowPitch = sec.rowPitch || tier.defaultRowPitch || 0.85;
+        const slopeDeg = sec.slopeDeg || tier.defaultSlopeDeg || 28;
+        const riserH = sec.riserHeight || (rowPitch * Math.tan(slopeDeg * DEG2RAD));
+
         sampleDegs.forEach((deg) => {
           const pt = evalTierPoint(this.venue, tierIndex, deg, 0, sec.customRadialDepth);
           innerPts.push({ x: pt.inX, y: pt.inZ });
           outerPts.push({ x: pt.outX, y: pt.outZ });
+          if (tier.saddleEnabled) {
+            sampleEffRows.push(getEffectiveTierRows(tier, rawSecRows, deg, riserH, this.venue));
+          } else {
+            sampleEffRows.push(rawSecRows);
+          }
         });
+
+        // 2D Seating Row Arc lines: CAD-style concentric row arcs reflecting true row count & saddle drop
+        const rowLines = [];
+        if (!isSolidWall && tier.level > 0) {
+          const maxRowsInSec = Math.max(...sampleEffRows);
+          for (let r = 1; r < maxRowsInSec; r++) {
+            const arcPts = [];
+            for (let d = 0; d < sampleDegs.length; d++) {
+              const rowsAtD = sampleEffRows[d];
+              if (r < rowsAtD) {
+                const f = r / rowsAtD;
+                arcPts.push({
+                  x: innerPts[d].x + (outerPts[d].x - innerPts[d].x) * f,
+                  y: innerPts[d].y + (outerPts[d].y - innerPts[d].y) * f
+                });
+              }
+            }
+            if (arcPts.length >= 2) {
+              rowLines.push(arcPts);
+            }
+          }
+        }
 
         const polygon = [...innerPts, ...outerPts.reverse()];
         const midDeg = (sDeg + eDeg) / 2;
@@ -202,8 +237,9 @@ class Renderer2D {
           tierIndex,
           tierLevel: tier.level,
           tierName: tier.name,
-          isSolidWall: (sec.fillType || tier.defaultFillType) === 'solid-wall',
+          isSolidWall,
           polygon,
+          rowLines,
           bbox: { minX, maxX, minY, maxY },
           center: {
             x: midPt.x,
@@ -711,6 +747,22 @@ class Renderer2D {
         ctx.strokeStyle = isSelected ? '#FFFFFF' : (isVip ? '#FBBF24' : palette.stroke);
         ctx.lineWidth = (isSelected ? 2.2 : 0.8) / s;
         ctx.stroke();
+
+        // CAD-style seating row arcs: clearly reflects the true row count and saddle drop
+        if (!item.isSolidWall && item.rowLines && item.rowLines.length > 0 && !isDimmed) {
+          ctx.save();
+          ctx.strokeStyle = isSelected ? 'rgba(255, 255, 255, 0.45)' : 'rgba(255, 255, 255, 0.18)';
+          ctx.lineWidth = 0.5 / s;
+          item.rowLines.forEach((line) => {
+            ctx.beginPath();
+            line.forEach((p, idx) => {
+              if (idx === 0) ctx.moveTo(p.x, p.y);
+              else ctx.lineTo(p.x, p.y);
+            });
+            ctx.stroke();
+          });
+          ctx.restore();
+        }
 
         // Vomitory portal indicator (highlight open front-connected exits in emerald/teal)
         if (showVomitories && item.vomitory && !isDimmed) {

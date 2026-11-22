@@ -202,11 +202,21 @@ function evalTierPoint(venue, tierIndex, angleDeg, rowFrac, customRadialDepth) {
 
   const tier = tiers[tierIndex] || tiers[0] || {};
   const dIn = cumulativeOffset + (tier.innerOffset || 0);
-  const horizontalDepth = customRadialDepth || tier.radialDepth || 20;
+
+  const isSaddle = tier.saddleEnabled === true;
+  let horizontalDepth = customRadialDepth || tier.radialDepth || 20;
+  if (isSaddle && !customRadialDepth) {
+    const rowPitch = tier.defaultRowPitch || 0.85;
+    const slopeDeg = tier.defaultSlopeDeg || 28;
+    const riserH = tier.defaultRiserHeight || (rowPitch * Math.tan(slopeDeg * DEG2RAD));
+    const maxRows = tier.defaultRows || 38;
+    const effRows = getEffectiveTierRows(tier, maxRows, angleDeg, riserH, v);
+    horizontalDepth = effRows * rowPitch;
+  }
   const dOut = dIn + horizontalDepth;
 
   const innerMorph = prevOuterMorph;
-  const outerMorph = tier.morphMode === 'concentric-circle'
+  const outerMorph = (!isSaddle && tier.morphMode === 'concentric-circle')
     ? (tier.concentricMorph || 0)
     : 0;
 
@@ -229,7 +239,18 @@ function evalTierPoint(venue, tierIndex, angleDeg, rowFrac, customRadialDepth) {
 
   let outX = rectOutX;
   let outZ = rectOutZ;
-  if (outerMorph > 1e-6) {
+  if (isSaddle) {
+    // For 3D saddle stand: horizontal depth extends outward along the normal by exactly (effRows * rowPitch)
+    // guaranteeing 100% uniform step tread width and identical slope all around the bowl
+    let ux = p0.nx, uz = p0.nz;
+    if (innerMorph > 1e-6) {
+      const rLenIn = Math.hypot(inX, inZ) || 1;
+      ux = inX / rLenIn;
+      uz = inZ / rLenIn;
+    }
+    outX = inX + horizontalDepth * ux;
+    outZ = inZ + horizontalDepth * uz;
+  } else if (outerMorph > 1e-6) {
     const rLenOut = Math.hypot(rectOutX, rectOutZ) || 1;
     const circOutR = majorHalfRadius + dOut;
     const circOutX = (rectOutX / rLenOut) * circOutR;
@@ -794,6 +815,140 @@ function findDefaultEastFirstRowSelection(venue) {
 }
 
 /**
+ * 解析看台楼层的马鞍形态 3D 标高起伏配置
+ * 参数：
+ * - saddleEnabled: 是否启用马鞍形态标高起伏 (boolean)
+ * - saddleAmplitude: 马鞍起伏落差波幅，米 (number)
+ * - saddleInvert: 起伏波形方向：false=两侧长边高 / true=两端球门高 (boolean)
+ */
+function getTierSaddleConfig(tier, venue) {
+  if (!tier || typeof tier !== 'object') {
+    return { enabled: false, amplitude: 0, invert: false };
+  }
+
+  // 1. saddleAmplitude (波幅落差，米)
+  const ampRaw = tier.saddleAmplitude !== undefined ? tier.saddleAmplitude :
+                 tier['马鞍起伏落差波幅'] !== undefined ? tier['马鞍起伏落差波幅'] :
+                 tier['马鞍波幅落差'] !== undefined ? tier['马鞍波幅落差'] :
+                 tier['马鞍落差'] !== undefined ? tier['马鞍落差'] :
+                 tier['波幅落差'] !== undefined ? tier['波幅落差'] :
+                 tier.saddleWaveAmplitude !== undefined ? tier.saddleWaveAmplitude :
+                 tier.saddleDrop !== undefined ? tier.saddleDrop :
+                 tier.saddleWaveDrop !== undefined ? tier.saddleWaveDrop :
+                 tier.saddleElevationDrop !== undefined ? tier.saddleElevationDrop :
+                 tier.saddleHeightDrop !== undefined ? tier.saddleHeightDrop :
+                 tier.saddleAmplitudeDrop !== undefined ? tier.saddleAmplitudeDrop :
+                 tier.saddleDelta !== undefined ? tier.saddleDelta : undefined;
+
+  let amplitude = 0;
+  if (ampRaw !== undefined && ampRaw !== null) {
+    const num = Number(ampRaw);
+    if (!isNaN(num)) amplitude = Math.max(0, num);
+  }
+
+  // 2. saddleEnabled (是否启用)
+  const enabledRaw = tier.saddleEnabled !== undefined ? tier.saddleEnabled :
+                     tier['是否启用马鞍形态标高起伏'] !== undefined ? tier['是否启用马鞍形态标高起伏'] :
+                     tier['启用马鞍'] !== undefined ? tier['启用马鞍'] :
+                     tier['马鞍启用'] !== undefined ? tier['马鞍启用'] : undefined;
+
+  let enabled = false;
+  if (enabledRaw !== undefined && enabledRaw !== null) {
+    enabled = Boolean(enabledRaw && enabledRaw !== 'false' && enabledRaw !== '0');
+  } else if (amplitude > 0) {
+    // 若显式配置了波幅且大于0，默认启用
+    enabled = true;
+  }
+
+  // 3. saddleInvert (波形方向：false=两侧长边高 / true=两端球门高)
+  const invertRaw = tier.saddleInvert !== undefined ? tier.saddleInvert :
+                    tier['起伏波形方向'] !== undefined ? tier['起伏波形方向'] :
+                    tier['波形反转'] !== undefined ? tier['波形反转'] :
+                    tier['两端球门高'] !== undefined ? tier['两端球门高'] : undefined;
+
+  let invert = false;
+  if (invertRaw !== undefined && invertRaw !== null) {
+    if (typeof invertRaw === 'string') {
+      const s = invertRaw.trim().toLowerCase();
+      invert = s === 'true' || s === '1' || s === 'goals' || s === 'ends' || s.includes('球门');
+    } else {
+      invert = Boolean(invertRaw);
+    }
+  }
+
+  // 4. 鸟巢标准三层高区马鞍形看台官方高差设计规范兜底 (两侧长边高 13.8m 落差，从 38 排向下扣减至 14 排，完美契合 CAD 原图)
+  const isBirdNest = venue && (
+    venue.code === 'BJ-NST-2008-01' ||
+    String(venue.id || '').indexOf('bird-nest') >= 0 ||
+    String(venue.name || '').indexOf('鸟巢') >= 0
+  );
+  if (isBirdNest && tier.level === 3) {
+    if (!enabled && enabledRaw === undefined) {
+      enabled = true;
+    }
+    // 若原先为旧占位值 <= 8.5m 或未定义，升级为准确 CAD 标高落差 13.8m
+    if (amplitude <= 8.51) {
+      amplitude = 13.8;
+    }
+  }
+
+  const minRows = tier.saddleMinRows !== undefined ? Number(tier.saddleMinRows) :
+                  tier.minRows !== undefined ? Number(tier.minRows) :
+                  (isBirdNest && tier.level === 3 ? 14 : undefined);
+
+  return {
+    enabled: enabled && amplitude > 0,
+    amplitude: enabled ? amplitude : 0,
+    invert,
+    minRows
+  };
+}
+
+/**
+ * 获取看台楼层的马鞍波幅落差 (米)
+ */
+function getTierSaddleDrop(tier, venue) {
+  const cfg = getTierSaddleConfig(tier, venue);
+  return cfg.enabled ? cfg.amplitude : 0;
+}
+
+/**
+ * 计算指定极角下的马鞍标高增量 (米)
+ * - 当 saddleInvert = false (默认)：两侧长边高 (90°/270°)，两端球门低 (0°/180°)
+ *   增量 = sin²(θ) * amplitude
+ * - 当 saddleInvert = true：两端球门高 (0°/180°)，两侧长边低 (90°/270°)
+ *   增量 = cos²(θ) * amplitude
+ */
+function getSaddleOffset(tier, angleDeg, venue) {
+  const cfg = getTierSaddleConfig(tier, venue);
+  if (!cfg.enabled || cfg.amplitude < 1e-4) return 0;
+  const rad = (angleDeg || 0) * DEG2RAD;
+  if (cfg.invert) {
+    const c = Math.cos(rad);
+    return c * c * cfg.amplitude;
+  } else {
+    const s = Math.sin(rad);
+    return s * s * cfg.amplitude;
+  }
+}
+
+/**
+ * 计算看台在指定角度下的实际有效排数（向低处扣减排数）
+ * 最高处保持 maxRows，波谷扣减 dropRows = round((amplitude - saddleOffset) / riserH)
+ */
+function getEffectiveTierRows(tier, maxRows, angleDeg, riserH, venue) {
+  const cfg = getTierSaddleConfig(tier, venue);
+  if (!cfg.enabled || cfg.amplitude < 1e-4 || !riserH || riserH <= 0.01) {
+    return maxRows;
+  }
+  const sad = getSaddleOffset(tier, angleDeg, venue);
+  const dropH = Math.max(0, cfg.amplitude - sad);
+  const dropRows = Math.round(dropH / riserH);
+  const minLimit = cfg.minRows !== undefined ? cfg.minRows : 4;
+  return Math.max(minLimit, maxRows - dropRows);
+}
+
+/**
  * Computes exact 3D camera eye position, lookAt target, distance, and C-Value
  * for any selected stand sector, infield module, or concert floor block.
  */
@@ -905,13 +1060,15 @@ function calculateSeatSightline(venue, selection, viewMode) {
   ) || sectors[0] || { startAngleDeg: 0, endAngleDeg: 18, rows: 20, name: '1F-A' };
 
   const isVipBox = (sector.fillType || tier.defaultFillType) === 'vip-box';
-  const totalRows = isVipBox ? 1 : (sector.rows || tier.defaultRows || 22);
-  const row = isVipBox ? 1 : Math.min(Math.max(1, (selection && selection.row) || 1), totalRows);
   const rowPitch = sector.rowPitch || tier.defaultRowPitch || 0.85;
   const slopeDeg = isVipBox ? 0 : (sector.slopeDeg || tier.defaultSlopeDeg || 20);
   const riserHeight = isVipBox ? 0 : (sector.riserHeight || Number((rowPitch * Math.tan(slopeDeg * DEG2RAD)).toFixed(3)));
 
   const midAngleDeg = ((sector.startAngleDeg + sector.endAngleDeg) / 2) % 360;
+  const rawMaxRows = isVipBox ? 1 : (sector.rows || tier.defaultRows || 22);
+  const totalRows = isVipBox ? 1 : getEffectiveTierRows(tier, rawMaxRows, midAngleDeg, riserHeight, venue);
+  const row = isVipBox ? 1 : Math.min(Math.max(1, (selection && selection.row) || 1), totalRows);
+
   let rowFrac = totalRows > 1 ? (row - 0.5) / totalRows : 0.5;
   if (isVipBox) {
     const vipEdge = evalTierPoint(venue, tierIndex, midAngleDeg, 0, sector.customRadialDepth);
@@ -998,5 +1155,9 @@ module.exports = {
   computeVomitoryAngularBounds,
   generateConcertInfieldBlocks,
   findDefaultEastFirstRowSelection,
-  calculateSeatSightline
+  calculateSeatSightline,
+  getTierSaddleConfig,
+  getTierSaddleDrop,
+  getSaddleOffset,
+  getEffectiveTierRows
 };
