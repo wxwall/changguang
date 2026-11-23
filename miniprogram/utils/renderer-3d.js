@@ -570,13 +570,22 @@ class Renderer3D {
     dx /= dl; dy /= dl; dz /= dl;
 
     const tiers = this.venue.standTiers || [];
-    const tierMetas = tiers.map((tier) => {
-      const rows = tier.defaultRows || 22;
-      const rowPitch = tier.defaultRowPitch || 0.85;
+    const tierMetas = tiers.map((tier, ti) => {
+      const isConc = isConcentricMorphTier(tier);
+      const rowPitch = Math.max(0.4, tier.defaultRowPitch || 0.85);
       const slope = tier.defaultSlopeDeg || 20;
       const base = tier.baseElevation || 1.0;
-      return { base, top: base + Math.max(0, rows - 1) * rowPitch * Math.tan(slope * DEG2RAD) };
+      const riserH = tier.defaultRiserHeight || (rowPitch * Math.tan(slope * DEG2RAD));
+      const maxRows = isConc
+        ? Math.max(
+          tier.defaultRows || 22,
+          getTierRowsAtAngle(this.venue, ti, tier, null, 0),
+          getTierRowsAtAngle(this.venue, ti, tier, null, 90)
+        )
+        : (tier.defaultRows || 22);
+      return { base, top: base + Math.max(0, maxRows - 1) * riserH };
     });
+    const maxPickY = Math.max(85, ...tierMetas.map(m => m.top + 8));
     let prevT = 0;
     let prevDelta = null;
     for (let t = 3; t < 900; t += 0.5) {
@@ -584,7 +593,7 @@ class Renderer3D {
       const py = eye.y + dy * t;
       const pz = eye.z + dz * t;
       if (py < -2) break;
-      if (py > 70) { prevDelta = null; prevT = t; continue; }
+      if (py > maxPickY) { prevDelta = null; prevT = t; continue; }
 
       const info = this.tierAtPoint(px, py, pz, tiers, tierMetas);
       if (!info) { prevDelta = null; prevT = t; continue; }
@@ -699,13 +708,22 @@ class Renderer3D {
       if (!sector) continue;
 
       const isVip = (sector.fillType || tier.defaultFillType) === 'vip-box';
-      const rawMaxRows = isVip ? 1 : (sector.rows || tier.defaultRows || 22);
-      const rowPitch = sector.rowPitch || tier.defaultRowPitch || 0.85;
+      const isConc = !isVip && isConcentricMorphTier(tier);
+      const rowPitch = Math.max(0.4, sector.rowPitch || tier.defaultRowPitch || 0.85);
       const slopeDeg = isVip ? 0 : (sector.slopeDeg || tier.defaultSlopeDeg || 20);
       const riserH = isVip ? 0 : (sector.riserHeight || rowPitch * Math.tan(slopeDeg * DEG2RAD));
-      const totalRows = isVip ? 1 : getEffectiveTierRows(tier, rawMaxRows, proj.theta, riserH, this.venue);
+      const totalRows = isVip ? 1 : getTierRowsAtAngle(this.venue, ti, tier, sector, proj.theta);
 
-      const rawRow = Math.max(1, Math.round(proj.frac * rawMaxRows + 0.5));
+      let rawRow;
+      if (isVip) {
+        rawRow = 1;
+      } else if (isConc) {
+        const edgePt = evalTierPoint(this.venue, ti, proj.theta, 0, proj.customRadialDepth);
+        const depthM = Math.max(0.5, Math.hypot(edgePt.outX - edgePt.inX, edgePt.outZ - edgePt.inZ));
+        rawRow = Math.max(1, Math.round((proj.frac * depthM) / rowPitch + 0.5));
+      } else {
+        rawRow = Math.max(1, Math.round(proj.frac * totalRows + 0.5));
+      }
       if (rawRow > totalRows + 1) continue;
       const row = Math.min(totalRows, rawRow);
       const treadY = (tier.baseElevation || 1.0) + (row - 1) * riserH;
@@ -748,14 +766,26 @@ class Renderer3D {
     const fill = sector.fillType || tier.defaultFillType;
     if (fill === 'solid-wall') return null;
 
-    const isVip = (sector.fillType || tier.defaultFillType) === 'vip-box';
-    const totalRows = isVip ? 1 : (sector.rows || tier.defaultRows || 22);
+    const isVip = fill === 'vip-box';
+    const isConc = !isVip && isConcentricMorphTier(tier);
+    const totalRows = isVip ? 1 : getTierRowsAtAngle(this.venue, tierIndex, tier, sector, proj.theta);
+    let estimatedRow = 1;
+    if (!isVip) {
+      if (isConc) {
+        const rowPitch = Math.max(0.4, sector.rowPitch || tier.defaultRowPitch || 0.85);
+        const edgePt = evalTierPoint(this.venue, tierIndex, proj.theta, 0, proj.customRadialDepth);
+        const depthM = Math.max(0.5, Math.hypot(edgePt.outX - edgePt.inX, edgePt.outZ - edgePt.inZ));
+        estimatedRow = Math.max(1, Math.min(totalRows, Math.round((proj.frac * depthM) / rowPitch + 0.5)));
+      } else {
+        estimatedRow = Math.max(1, Math.min(totalRows, Math.round(proj.frac * totalRows)));
+      }
+    }
     return {
       type: 'sector',
       tierIndex,
       sector,
       tierLevel: tier.level,
-      estimatedRow: Math.max(1, Math.min(totalRows, Math.round(proj.frac * totalRows)))
+      estimatedRow
     };
   }
 

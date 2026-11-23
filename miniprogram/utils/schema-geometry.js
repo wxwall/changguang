@@ -218,34 +218,25 @@ function evalTierPoint(venue, tierIndex, angleDeg, rowFrac, customRadialDepth) {
     infield.shape || 'rounded-rect'
   );
 
-  const minorHalfRadius = Math.min(infield.length || 105, infield.width || 68) / 2;
+  const majorHalfRadius = Math.max(infield.length || 105, infield.width || 68) / 2;
 
   let cumulativeOffset = 0;
   let prevOuterMorph = 0;
-  let prevCircOutR = 0;
   for (let i = 0; i < tierIndex; i++) {
     const t = tiers[i] || {};
-    const tDIn = cumulativeOffset + (t.innerOffset || 0);
-    const tDOut = tDIn + (t.radialDepth || 20);
+    cumulativeOffset += (t.innerOffset || 0) + (t.radialDepth || 20);
     if (isConcentricMorphTier(t)) {
-      const tMaxRectInR = computeMaxInfieldOffsetRadius(infield, tDIn);
-      const tCircInR = prevOuterMorph > 1e-6 ? (prevCircOutR + (t.innerOffset || 0)) : tMaxRectInR;
-      const tMaxInR = prevOuterMorph > 1e-6
-        ? Math.max(tMaxRectInR * (1 - prevOuterMorph) + tCircInR * prevOuterMorph, tCircInR)
-        : tMaxRectInR;
-      const tMinEnd = Math.max(2.2, (t.defaultRowPitch || 0.85) * 3);
-      prevCircOutR = Math.max(tMaxInR + tMinEnd, minorHalfRadius + tDOut);
       prevOuterMorph = Math.max(0, Math.min(1, t.concentricMorph || 0));
     } else {
       prevOuterMorph = 0;
-      prevCircOutR = 0;
     }
-    cumulativeOffset = tDOut;
   }
 
   const tier = tiers[tierIndex] || tiers[0] || {};
   const dIn = cumulativeOffset + (tier.innerOffset || 0);
-  const horizontalDepth = customRadialDepth || tier.radialDepth || 20;
+  const horizontalDepth = customRadialDepth !== undefined && customRadialDepth !== null
+    ? Number(customRadialDepth)
+    : (tier.radialDepth !== undefined && tier.radialDepth !== null ? Number(tier.radialDepth) : 20);
   const dOut = dIn + horizontalDepth;
 
   const innerMorph = prevOuterMorph;
@@ -259,13 +250,11 @@ function evalTierPoint(venue, tierIndex, angleDeg, rowFrac, customRadialDepth) {
   const rectOutX = p0.x + dOut * p0.nx;
   const rectOutZ = p0.z + dOut * p0.nz;
 
-  const maxRectInR = computeMaxInfieldOffsetRadius(infield, dIn);
-  const circInR = innerMorph > 1e-6 ? (prevCircOutR + (tier.innerOffset || 0)) : maxRectInR;
-
   let inX = rectInX;
   let inZ = rectInZ;
   if (innerMorph > 1e-6) {
     const rLenIn = Math.hypot(rectInX, rectInZ) || 1;
+    const circInR = majorHalfRadius + dIn;
     const circInX = (rectInX / rLenIn) * circInR;
     const circInZ = (rectInZ / rLenIn) * circInR;
     inX = rectInX * (1 - innerMorph) + circInX * innerMorph;
@@ -276,20 +265,18 @@ function evalTierPoint(venue, tierIndex, angleDeg, rowFrac, customRadialDepth) {
   let outZ = rectOutZ;
   if (outerMorph > 1e-6) {
     const rLenOut = Math.hypot(rectOutX, rectOutZ) || 1;
-    const maxInR = innerMorph > 1e-6
-      ? Math.max(maxRectInR * (1 - innerMorph) + circInR * innerMorph, circInR)
-      : maxRectInR;
-    const minEndDepth = Math.max(2.2, (tier.defaultRowPitch || 0.85) * 3);
-    const circOutR = Math.max(maxInR + minEndDepth, minorHalfRadius + dOut);
+    // Exact STADIACAD concentric-circle outer radius: expands 1:1 with radialDepth (dOut = dIn + horizontalDepth)
+    const circOutR = majorHalfRadius + dOut;
     const circOutX = (rectOutX / rLenOut) * circOutR;
     const circOutZ = (rectOutZ / rLenOut) * circOutR;
     outX = rectOutX * (1 - outerMorph) + circOutX * outerMorph;
     outZ = rectOutZ * (1 - outerMorph) + circOutZ * outerMorph;
 
-    // Defensive non-inversion guard for extreme custom aspect ratios
+    // Defensive non-inversion guard for sharp corners with very small radialDepth
+    const minGuard = Math.max(1.2, Math.min(horizontalDepth * 0.5, (tier.defaultRowPitch || 0.85) * 2));
     const projOut = (outX - inX) * p0.nx + (outZ - inZ) * p0.nz;
-    if (projOut < minEndDepth * 0.5) {
-      const push = minEndDepth * 0.5 - projOut;
+    if (projOut < minGuard) {
+      const push = minGuard - projOut;
       outX += p0.nx * push;
       outZ += p0.nz * push;
     }
