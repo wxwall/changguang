@@ -13,9 +13,7 @@ const {
   computeRunningTrackSpec,
   getStageTransform,
   computeVomitoryAngularBounds,
-  generateConcertInfieldBlocks,
-  getTierSaddleConfig,
-  getEffectiveTierRows
+  generateConcertInfieldBlocks
 } = require('./schema-geometry');
 const { hexToSeat2D } = require('./seat-colors');
 
@@ -157,40 +155,26 @@ class Renderer2D {
 
         const innerPts = [];
         const outerPts = [];
-        const sampleEffRows = [];
         const isSolidWall = (sec.fillType || tier.defaultFillType) === 'solid-wall';
         const rawSecRows = sec.rows || tier.defaultRows || 22;
-        const rowPitch = sec.rowPitch || tier.defaultRowPitch || 0.85;
-        const slopeDeg = sec.slopeDeg || tier.defaultSlopeDeg || 28;
-        const riserH = sec.riserHeight || (rowPitch * Math.tan(slopeDeg * DEG2RAD));
 
-        const tierSaddleEnabled = getTierSaddleConfig(tier, this.venue).enabled;
         sampleDegs.forEach((deg) => {
           const pt = evalTierPoint(this.venue, tierIndex, deg, 0, sec.customRadialDepth);
           innerPts.push({ x: pt.inX, y: pt.inZ });
           outerPts.push({ x: pt.outX, y: pt.outZ });
-          if (tierSaddleEnabled) {
-            sampleEffRows.push(getEffectiveTierRows(tier, rawSecRows, deg, riserH, this.venue));
-          } else {
-            sampleEffRows.push(rawSecRows);
-          }
         });
 
-        // 2D Seating Row Arc lines: CAD-style concentric row arcs reflecting true row count & saddle drop
+        // 2D Seating Row Arc lines: CAD-style concentric row arcs following true tier morph contour
         const rowLines = [];
         if (!isSolidWall && tier.level > 0) {
-          const maxRowsInSec = Math.max(...sampleEffRows);
-          for (let r = 1; r < maxRowsInSec; r++) {
+          for (let r = 1; r < rawSecRows; r++) {
+            const f = r / rawSecRows;
             const arcPts = [];
             for (let d = 0; d < sampleDegs.length; d++) {
-              const rowsAtD = sampleEffRows[d];
-              if (r < rowsAtD) {
-                const f = r / rowsAtD;
-                arcPts.push({
-                  x: innerPts[d].x + (outerPts[d].x - innerPts[d].x) * f,
-                  y: innerPts[d].y + (outerPts[d].y - innerPts[d].y) * f
-                });
-              }
+              arcPts.push({
+                x: innerPts[d].x + (outerPts[d].x - innerPts[d].x) * f,
+                y: innerPts[d].y + (outerPts[d].y - innerPts[d].y) * f
+              });
             }
             if (arcPts.length >= 2) {
               rowLines.push(arcPts);

@@ -202,22 +202,11 @@ function evalTierPoint(venue, tierIndex, angleDeg, rowFrac, customRadialDepth) {
 
   const tier = tiers[tierIndex] || tiers[0] || {};
   const dIn = cumulativeOffset + (tier.innerOffset || 0);
-
-  const saddleCfg = getTierSaddleConfig(tier, v);
-  const isSaddle = saddleCfg.enabled;
-  let horizontalDepth = customRadialDepth || tier.radialDepth || 20;
-  if (isSaddle && !customRadialDepth) {
-    const rowPitch = tier.defaultRowPitch || 0.85;
-    const slopeDeg = tier.defaultSlopeDeg || 28;
-    const riserH = tier.defaultRiserHeight || (rowPitch * Math.tan(slopeDeg * DEG2RAD));
-    const maxRows = tier.defaultRows || 38;
-    const effRows = getEffectiveTierRows(tier, maxRows, angleDeg, riserH, v);
-    horizontalDepth = effRows * rowPitch;
-  }
+  const horizontalDepth = customRadialDepth || tier.radialDepth || 20;
   const dOut = dIn + horizontalDepth;
 
   const innerMorph = prevOuterMorph;
-  const outerMorph = (!isSaddle && tier.morphMode === 'concentric-circle')
+  const outerMorph = tier.morphMode === 'concentric-circle'
     ? (tier.concentricMorph || 0)
     : 0;
 
@@ -240,18 +229,7 @@ function evalTierPoint(venue, tierIndex, angleDeg, rowFrac, customRadialDepth) {
 
   let outX = rectOutX;
   let outZ = rectOutZ;
-  if (isSaddle) {
-    // For 3D saddle stand: horizontal depth extends outward along the normal by exactly (effRows * rowPitch)
-    // guaranteeing 100% uniform step tread width and identical slope all around the bowl
-    let ux = p0.nx, uz = p0.nz;
-    if (innerMorph > 1e-6) {
-      const rLenIn = Math.hypot(inX, inZ) || 1;
-      ux = inX / rLenIn;
-      uz = inZ / rLenIn;
-    }
-    outX = inX + horizontalDepth * ux;
-    outZ = inZ + horizontalDepth * uz;
-  } else if (outerMorph > 1e-6) {
+  if (outerMorph > 1e-6) {
     const rLenOut = Math.hypot(rectOutX, rectOutZ) || 1;
     const circOutR = majorHalfRadius + dOut;
     const circOutX = (rectOutX / rLenOut) * circOutR;
@@ -816,156 +794,23 @@ function findDefaultEastFirstRowSelection(venue) {
 }
 
 /**
- * 解析看台楼层的马鞍形态 3D 标高起伏配置
- * 参数：
- * - saddleEnabled: 是否启用马鞍形态标高起伏 (boolean)
- * - saddleAmplitude: 马鞍起伏落差波幅，米 (number)
- * - saddleInvert: 起伏波形方向：false=两侧长边高 / true=两端球门高 (boolean)
+ * 3D 马鞍形态设定已移除（避免与看台 morphMode / concentricMorph 同心圆融合度参数冲突）。
+ * 保留兼容导出函数，恒返回禁用状态 / 原始排数。
  */
-function getTierSaddleConfig(tier, venue) {
-  if (!tier || typeof tier !== 'object') {
-    return { enabled: false, amplitude: 0, invert: false };
-  }
-
-  // 1. saddleAmplitude (波幅落差，米)
-  const ampRaw = tier.saddleAmplitude !== undefined ? tier.saddleAmplitude :
-                 tier['马鞍起伏落差波幅'] !== undefined ? tier['马鞍起伏落差波幅'] :
-                 tier['马鞍波幅落差'] !== undefined ? tier['马鞍波幅落差'] :
-                 tier['马鞍落差'] !== undefined ? tier['马鞍落差'] :
-                 tier['波幅落差'] !== undefined ? tier['波幅落差'] :
-                 tier.saddleWaveAmplitude !== undefined ? tier.saddleWaveAmplitude :
-                 tier.saddleDrop !== undefined ? tier.saddleDrop :
-                 tier.saddleWaveDrop !== undefined ? tier.saddleWaveDrop :
-                 tier.saddleElevationDrop !== undefined ? tier.saddleElevationDrop :
-                 tier.saddleHeightDrop !== undefined ? tier.saddleHeightDrop :
-                 tier.saddleAmplitudeDrop !== undefined ? tier.saddleAmplitudeDrop :
-                 tier.saddleDelta !== undefined ? tier.saddleDelta : undefined;
-
-  let amplitude = 0;
-  if (ampRaw !== undefined && ampRaw !== null) {
-    const num = Number(ampRaw);
-    if (!isNaN(num)) amplitude = Math.max(0, num);
-  }
-
-  // 2. saddleEnabled (是否启用)
-  const enabledRaw = tier.saddleEnabled !== undefined ? tier.saddleEnabled :
-                     tier['是否启用马鞍形态标高起伏'] !== undefined ? tier['是否启用马鞍形态标高起伏'] :
-                     tier['启用马鞍'] !== undefined ? tier['启用马鞍'] :
-                     tier['马鞍启用'] !== undefined ? tier['马鞍启用'] : undefined;
-
-  let enabled = false;
-  if (enabledRaw !== undefined && enabledRaw !== null) {
-    enabled = Boolean(enabledRaw && enabledRaw !== 'false' && enabledRaw !== '0');
-  } else if (amplitude > 0) {
-    // 若显式配置了波幅且大于0，默认启用
-    enabled = true;
-  }
-
-  // 3. saddleInvert (波形方向：false=两侧长边高 / true=两端球门高)
-  const invertRaw = tier.saddleInvert !== undefined ? tier.saddleInvert :
-                    tier['起伏波形方向'] !== undefined ? tier['起伏波形方向'] :
-                    tier['波形反转'] !== undefined ? tier['波形反转'] :
-                    tier['两端球门高'] !== undefined ? tier['两端球门高'] : undefined;
-
-  let invert = false;
-  if (invertRaw !== undefined && invertRaw !== null) {
-    if (typeof invertRaw === 'string') {
-      const s = invertRaw.trim().toLowerCase();
-      invert = s === 'true' || s === '1' || s === 'goals' || s === 'ends' || s.includes('球门');
-    } else {
-      invert = Boolean(invertRaw);
-    }
-  }
-
-  // 4. 大型体育场（含鸟巢 3F）马鞍形看台深落差规范：
-  //    两侧长边保持满排高耸轮廓，两端球门大幅顺滑跌落至 3 排（落差约为整层总升高的 94%，~20m 跨度）
-  const isBirdNest = venue && (
-    venue.code === 'BJ-NST-2008-01' ||
-    String(venue.id || '').indexOf('bird-nest') >= 0 ||
-    String(venue.name || '').indexOf('鸟巢') >= 0
-  );
-  if (isBirdNest && tier.level === 3 && !enabled && enabledRaw === undefined) {
-    enabled = true;
-  }
-
-  const maxRows = tier.defaultRows || 38;
-  const rowPitch = tier.defaultRowPitch || 0.85;
-  const slopeDeg = tier.defaultSlopeDeg || 34;
-  const riserH = tier.defaultRiserHeight || (rowPitch * Math.tan(slopeDeg * DEG2RAD));
-  const tierFullRise = Math.max(0, (maxRows - 1) * riserH);
-  const infieldMaxDim = venue && venue.infield
-    ? Math.max(venue.infield.length || 0, venue.infield.width || 0)
-    : 0;
-  const isLargeStadium = isBirdNest || infieldMaxDim >= 150 || maxRows >= 28;
-
-  if (enabled && isLargeStadium && tierFullRise > 8) {
-    // 若配置落差偏小（例如旧版 8.5m / 13.8m），自动放大至大球场深马鞍落差（约整层总升高的 94%）
-    const targetDeepAmp = Number((tierFullRise * 0.94).toFixed(2));
-    if (amplitude < targetDeepAmp) {
-      amplitude = targetDeepAmp;
-    }
-  }
-
-  const rawMinRows = tier.saddleMinRows !== undefined ? Number(tier.saddleMinRows) :
-                     tier.minRows !== undefined ? Number(tier.minRows) : undefined;
-  let minRows = rawMinRows;
-  if (enabled && isLargeStadium) {
-    // 大球场波谷最低排数压低至 3 排（若历史数据写入了 >= 8 的旧保守值如 14 排，也统一收至 3 排以呈现大落差）
-    if (minRows === undefined || !Number.isFinite(minRows) || minRows >= 8) {
-      minRows = 3;
-    }
-  }
-
-  return {
-    enabled: enabled && amplitude > 0,
-    amplitude: enabled ? amplitude : 0,
-    invert,
-    minRows
-  };
+function getTierSaddleConfig() {
+  return { enabled: false, amplitude: 0, invert: false, minRows: undefined };
 }
 
-/**
- * 获取看台楼层的马鞍波幅落差 (米)
- */
-function getTierSaddleDrop(tier, venue) {
-  const cfg = getTierSaddleConfig(tier, venue);
-  return cfg.enabled ? cfg.amplitude : 0;
+function getTierSaddleDrop() {
+  return 0;
 }
 
-/**
- * 计算指定极角下的马鞍标高增量 (米)
- * - 当 saddleInvert = false (默认)：两侧长边高 (90°/270°)，两端球门低 (0°/180°)
- *   增量 = sin²(θ) * amplitude
- * - 当 saddleInvert = true：两端球门高 (0°/180°)，两侧长边低 (90°/270°)
- *   增量 = cos²(θ) * amplitude
- */
-function getSaddleOffset(tier, angleDeg, venue) {
-  const cfg = getTierSaddleConfig(tier, venue);
-  if (!cfg.enabled || cfg.amplitude < 1e-4) return 0;
-  const rad = (angleDeg || 0) * DEG2RAD;
-  if (cfg.invert) {
-    const c = Math.cos(rad);
-    return c * c * cfg.amplitude;
-  } else {
-    const s = Math.sin(rad);
-    return s * s * cfg.amplitude;
-  }
+function getSaddleOffset() {
+  return 0;
 }
 
-/**
- * 计算看台在指定角度下的实际有效排数（向低处扣减排数）
- * 最高处保持 maxRows，波谷扣减 dropRows = round((amplitude - saddleOffset) / riserH)
- */
-function getEffectiveTierRows(tier, maxRows, angleDeg, riserH, venue) {
-  const cfg = getTierSaddleConfig(tier, venue);
-  if (!cfg.enabled || cfg.amplitude < 1e-4 || !riserH || riserH <= 0.01) {
-    return maxRows;
-  }
-  const sad = getSaddleOffset(tier, angleDeg, venue);
-  const dropH = Math.max(0, cfg.amplitude - sad);
-  const dropRows = Math.round(dropH / riserH);
-  const minLimit = cfg.minRows !== undefined ? cfg.minRows : 4;
-  return Math.max(minLimit, maxRows - dropRows);
+function getEffectiveTierRows(tier, maxRows) {
+  return maxRows;
 }
 
 /**

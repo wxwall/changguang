@@ -25,11 +25,7 @@ const {
   computeRunningTrackSpec,
   getStageTransform,
   computeVomitoryAngularBounds,
-  generateConcertInfieldBlocks,
-  getTierSaddleConfig,
-  getTierSaddleDrop,
-  getSaddleOffset,
-  getEffectiveTierRows
+  generateConcertInfieldBlocks
 } = require('./schema-geometry');
 const { hexToSeat3D } = require('./seat-colors');
 
@@ -888,18 +884,17 @@ class Renderer3D {
     const shellCol = [0.10, 0.13, 0.19, 1.0];
 
     const lastRiserH = lastTier.defaultRiserHeight || (lastPitch * Math.tan(lastSlope * DEG2RAD));
+    const topWallY = (lastTier.baseElevation || 14) + Math.max(0, lastRows - 1) * lastRiserH + 1.2;
 
     for (let i = 0; i < ringAngles.length - 1; i++) {
       const deg1 = ringAngles[i];
       const deg2 = ringAngles[i + 1];
 
-      const rows1 = getEffectiveTierRows(lastTier, lastRows, deg1, lastRiserH, this.venue);
-      const rows2 = getEffectiveTierRows(lastTier, lastRows, deg2, lastRiserH, this.venue);
       const pt1 = evalTierPoint(this.venue, lastTierIdx, deg1, 1);
       const pt2 = evalTierPoint(this.venue, lastTierIdx, deg2, 1);
 
-      const topWallY1 = (lastTier.baseElevation || 14) + (rows1 - 1) * lastRiserH + 1.2;
-      const topWallY2 = (lastTier.baseElevation || 14) + (rows2 - 1) * lastRiserH + 1.2;
+      const topWallY1 = topWallY;
+      const topWallY2 = topWallY;
 
       const pad = 1.5;
       const rLen1 = Math.hypot(pt1.x, pt1.z) || 1;
@@ -1288,7 +1283,6 @@ class Renderer3D {
       const defaultPair = tierSeatColors[(tier.level - 1) % tierSeatColors.length];
       const tierOverrideHex = this.tierColorOverrides && this.tierColorOverrides[String(tier.level)];
       const seatColPair = (tierOverrideHex && hexToSeat3D(tierOverrideHex)) || defaultPair;
-      const tierSaddleEnabled = getTierSaddleConfig(tier, this.venue).enabled;
       const sectors = tier.sectors || [];
       const activeSectors = sectors.filter(s => !s.isDeleted && s.fillType !== 'empty-void');
       const selectedIdxInTier = activeSectors.findIndex(s => s.id === this.selectedSectorId);
@@ -1480,138 +1474,75 @@ class Renderer3D {
               );
             }
           } else {
-            // Exact row-by-row concrete treads & risers matching seat elevations 1:1
-            // Saddle offset dynamically deduces rows downwards from highest points (e.g. 38 rows at peaks -> ~24 rows at valleys)
-            const rawMaxRows = sec.rows || tier.defaultRows || 22;
-            const rows1 = getEffectiveTierRows(tier, rawMaxRows, deg1, riserH, this.venue);
-            const rows2 = getEffectiveTierRows(tier, rawMaxRows, deg2, riserH, this.venue);
-            const maxStripRows = Math.max(rows1, rows2);
-
-            for (let rb = 0; rb < maxStripRows; rb++) {
+            // Exact uniform row-by-row concrete treads & risers matching seat elevations 1:1
+            for (let rb = 0; rb < totalRows; rb++) {
               const rowNum = rb + 1;
               if (isVomStrip && vomEndRow >= vomStartRow && rowNum >= vomStartRow && rowNum <= vomEndRow) {
                 continue; // Leave recessed opening for Vomitory cutout!
               }
-              const in1 = rb < rows1;
-              const in2 = rb < rows2;
 
-              const f0_1 = in1 ? (rb / rows1) : 1;
-              const f1_1 = in1 ? ((rb + 1) / rows1) : 1;
-              const f0_2 = in2 ? (rb / rows2) : 1;
-              const f1_2 = in2 ? ((rb + 1) / rows2) : 1;
+              const f0 = rb / totalRows;
+              const f1 = (rb + 1) / totalRows;
 
-              const x1_in = pt1.inX + (pt1.outX - pt1.inX) * f0_1;
-              const z1_in = pt1.inZ + (pt1.outZ - pt1.inZ) * f0_1;
-              const x1_out = pt1.inX + (pt1.outX - pt1.inX) * f1_1;
-              const z1_out = pt1.inZ + (pt1.outZ - pt1.inZ) * f1_1;
+              const x1_in = pt1.inX + (pt1.outX - pt1.inX) * f0;
+              const z1_in = pt1.inZ + (pt1.outZ - pt1.inZ) * f0;
+              const x1_out = pt1.inX + (pt1.outX - pt1.inX) * f1;
+              const z1_out = pt1.inZ + (pt1.outZ - pt1.inZ) * f1;
 
-              const x2_in = pt2.inX + (pt2.outX - pt2.inX) * f0_2;
-              const z2_in = pt2.inZ + (pt2.outZ - pt2.inZ) * f0_2;
-              const x2_out = pt2.inX + (pt2.outX - pt2.inX) * f1_2;
-              const z2_out = pt2.inZ + (pt2.outZ - pt2.inZ) * f1_2;
+              const x2_in = pt2.inX + (pt2.outX - pt2.inX) * f0;
+              const z2_in = pt2.inZ + (pt2.outZ - pt2.inZ) * f0;
+              const x2_out = pt2.inX + (pt2.outX - pt2.inX) * f1;
+              const z2_out = pt2.inZ + (pt2.outZ - pt2.inZ) * f1;
 
               const treadY = baseElev + rb * riserH;
               const riserBot = rb === 0
                 ? (tier.level === 1 ? 0 : Math.max(0, baseElev - 1.1))
                 : (baseElev + (rb - 1) * riserH);
 
-              if (in1 && in2) {
-                // Full quadrilateral step across deg1 -> deg2
-                if (!(rb === 0 && isVomStrip && isFrontConnected)) {
-                  solid.addQuad(
-                    { x: x1_in, y: riserBot, z: z1_in },
-                    { x: x1_in, y: treadY, z: z1_in },
-                    { x: x2_in, y: treadY, z: z2_in },
-                    { x: x2_in, y: riserBot, z: z2_in },
-                    rb === 0 && tier.level === 1 ? [0.28, 0.33, 0.42, 1.0] : concreteRiserCol
-                  );
-                }
-
+              if (!(rb === 0 && isVomStrip && isFrontConnected)) {
                 solid.addQuad(
+                  { x: x1_in, y: riserBot, z: z1_in },
                   { x: x1_in, y: treadY, z: z1_in },
-                  { x: x1_out, y: treadY, z: z1_out },
-                  { x: x2_out, y: treadY, z: z2_out },
                   { x: x2_in, y: treadY, z: z2_in },
-                  concreteStepCol,
-                  { x: 0, y: 1, z: 0 }
-                );
-              } else if (in1 && !in2) {
-                // Tapering step (deg1 has row, deg2 does not): triangle tread + closing back riser
-                if (!(rb === 0 && isVomStrip && isFrontConnected)) {
-                  solid.addTriangle(
-                    { x: x1_in, y: riserBot, z: z1_in },
-                    { x: x1_in, y: treadY, z: z1_in },
-                    { x: x2_in, y: treadY, z: z2_in },
-                    concreteRiserCol
-                  );
-                }
-                solid.addTriangle(
-                  { x: x1_in, y: treadY, z: z1_in },
-                  { x: x1_out, y: treadY, z: z1_out },
-                  { x: x2_in, y: treadY, z: z2_in },
-                  concreteStepCol
-                );
-                // Back bevel / lateral seal
-                solid.addTriangle(
-                  { x: x1_out, y: treadY, z: z1_out },
-                  { x: x2_in, y: treadY, z: z2_in },
-                  { x: x1_out, y: riserBot, z: z1_out },
-                  concreteRiserCol
-                );
-              } else if (!in1 && in2) {
-                // Tapering step (deg2 has row, deg1 does not)
-                if (!(rb === 0 && isVomStrip && isFrontConnected)) {
-                  solid.addTriangle(
-                    { x: x1_in, y: treadY, z: z1_in },
-                    { x: x2_in, y: treadY, z: z2_in },
-                    { x: x2_in, y: riserBot, z: z2_in },
-                    concreteRiserCol
-                  );
-                }
-                solid.addTriangle(
-                  { x: x1_in, y: treadY, z: z1_in },
-                  { x: x2_out, y: treadY, z: z2_out },
-                  { x: x2_in, y: treadY, z: z2_in },
-                  concreteStepCol
-                );
-                // Back bevel / lateral seal
-                solid.addTriangle(
-                  { x: x1_in, y: treadY, z: z1_in },
-                  { x: x2_out, y: treadY, z: z2_out },
-                  { x: x2_out, y: riserBot, z: z2_out },
-                  concreteRiserCol
+                  { x: x2_in, y: riserBot, z: z2_in },
+                  rb === 0 && tier.level === 1 ? [0.28, 0.33, 0.42, 1.0] : concreteRiserCol
                 );
               }
 
+              solid.addQuad(
+                { x: x1_in, y: treadY, z: z1_in },
+                { x: x1_out, y: treadY, z: z1_out },
+                { x: x2_out, y: treadY, z: z2_out },
+                { x: x2_in, y: treadY, z: z2_in },
+                concreteStepCol,
+                { x: 0, y: 1, z: 0 }
+              );
             }
 
             // Continuously seal the top rear perimeter of the stand across deg1 -> deg2
             const xTop1 = pt1.outX;
             const zTop1 = pt1.outZ;
-            const yTop1 = baseElev + (rows1 - 1) * riserH;
-
             const xTop2 = pt2.outX;
             const zTop2 = pt2.outZ;
-            const yTop2 = baseElev + (rows2 - 1) * riserH;
 
             solid.addQuad(
-              { x: xTop1, y: yTop1, z: zTop1 },
-              { x: xTop2, y: yTop2, z: zTop2 },
-              { x: xTop2, y: Math.max(0, yTop2 - 1.2), z: zTop2 },
-              { x: xTop1, y: Math.max(0, yTop1 - 1.2), z: zTop1 },
+              { x: xTop1, y: topElev, z: zTop1 },
+              { x: xTop2, y: topElev, z: zTop2 },
+              { x: xTop2, y: Math.max(0, topElev - 1.2), z: zTop2 },
+              { x: xTop1, y: Math.max(0, topElev - 1.2), z: zTop1 },
               concreteRiserCol
             );
 
-            // Top Rear Guardrail / Balustrade along the saddle contour rim
+            // Top Rear Guardrail / Balustrade along the stand top rim
             if (showGuardrails && guard.rearWallEnabled !== false) {
               const rearH = guard.rearWallHeight || 1.2;
               solid.addBeam3D(
-                { x: xTop1, y: yTop1 + rearH, z: zTop1 },
-                { x: xTop2, y: yTop2 + rearH, z: zTop2 },
+                { x: xTop1, y: topElev + rearH, z: zTop1 },
+                { x: xTop2, y: topElev + rearH, z: zTop2 },
                 0.10, 0.10, secRailCol
               );
               if (a % 2 === 0) {
-                solid.addBox(xTop1, yTop1 + rearH / 2, zTop1, 0.08, rearH, 0.08, secRailCol, 0);
+                solid.addBox(xTop1, topElev + rearH / 2, zTop1, 0.08, rearH, 0.08, secRailCol, 0);
               }
             }
           }
@@ -1713,8 +1644,7 @@ class Renderer3D {
         // 2. Radial Stair Aisle & Volumetric Inter-Stand Handrail strictly along 90° perpendicular cut
         if (!isVip && showGuardrails && guard.aisleHandrailEnabled !== false) {
           const ptEdge = evalTierPoint(this.venue, tierIndex, sDeg, 0, sec.customRadialDepth);
-          const rawMaxRows = sec.rows || tier.defaultRows || 22;
-          const edgeRows = getEffectiveTierRows(tier, rawMaxRows, sDeg, riserH, this.venue);
+          const edgeRows = totalRows;
           const ptEdgeTop = { x: ptEdge.outX, z: ptEdge.outZ };
 
           const dxE = ptEdgeTop.x - ptEdge.inX;
@@ -1763,10 +1693,8 @@ class Renderer3D {
 
         // 3. Recessed 3D Vomitory Tunnel Cutout (with complete 3D railings)
         if (hasVom && vomStartDeg > sDeg + 0.1 && vomEndDeg < eDeg - 0.1) {
-          const vomMidDeg = (vomStartDeg + vomEndDeg) / 2;
-          const effRowsAtVom = getEffectiveTierRows(tier, totalRows, vomMidDeg, riserH, this.venue);
-          if (vomStartRow < effRowsAtVom) {
-            const actualEndRow = Math.min(effRowsAtVom, vomEndRow);
+          if (vomStartRow < totalRows) {
+            const actualEndRow = Math.min(totalRows, vomEndRow);
             this.buildVomitoryRecess(
               solid,
               sec,
@@ -1814,18 +1742,11 @@ class Renderer3D {
         }
 
         for (let r = 1; r <= seatRowCount; r++) {
-          const rowElev = isVip ? baseElev : (baseElev + (r - 1) * riserH);
-
-          // Build row arc points only where row r actually exists
-          const rowPts = [];
-          for (let deg of rowAngles) {
-            const effRows = isVip ? 1 : (tierSaddleEnabled ? getEffectiveTierRows(tier, rawMaxRows, deg, riserH, this.venue) : totalRows);
-            if (r <= effRows) {
-              const rowFrac = isVip ? vipFrontFrac : (effRows > 1 ? (r - 0.5) / effRows : 0.5);
-              const p = evalTierPoint(this.venue, tierIndex, deg, rowFrac, sec.customRadialDepth);
-              rowPts.push({ deg, x: p.x, z: p.z });
-            }
-          }
+          const rowFrac = isVip ? vipFrontFrac : (totalRows > 1 ? (r - 0.5) / totalRows : 0.5);
+          const rowPts = rowAngles.map((deg) => {
+            const p = evalTierPoint(this.venue, tierIndex, deg, rowFrac, sec.customRadialDepth);
+            return { deg, x: p.x, z: p.z };
+          });
           if (rowPts.length < 2) continue;
 
           const cumLen = [0];
@@ -1850,25 +1771,19 @@ class Renderer3D {
             const pB = rowPts[segIdx + 1];
             const seatDeg = pA.deg + (pB.deg - pA.deg) * localT;
 
-            const effRowsAtSeat = isVip ? 1 : (tierSaddleEnabled ? getEffectiveTierRows(tier, rawMaxRows, seatDeg, riserH, this.venue) : totalRows);
-            if (r > effRowsAtSeat) {
-              continue;
-            }
-
             // Skip seats inside carved Vomitory opening
             if (hasVom && vomEndRow >= vomStartRow && r >= vomStartRow && r <= vomEndRow && seatDeg >= vomStartDeg && seatDeg <= vomEndDeg) {
               continue;
             }
 
             // Evaluate exact position on true smooth curve + exact radial inward normal
-            const seatRowFrac = isVip ? vipFrontFrac : (effRowsAtSeat > 1 ? (r - 0.5) / effRowsAtSeat : 0.5);
-            const exactPt = evalTierPoint(this.venue, tierIndex, seatDeg, seatRowFrac, sec.customRadialDepth);
+            const exactPt = evalTierPoint(this.venue, tierIndex, seatDeg, rowFrac, sec.customRadialDepth);
             let fx, fz;
             if (!tierHasMorph && ((Math.abs(exactPt.nx) > 0.999 && Math.abs(exactPt.nz) < 1e-3) || (Math.abs(exactPt.nz) > 0.999 && Math.abs(exactPt.nx) < 1e-3))) {
               fx = -exactPt.nx;
               fz = -exactPt.nz;
             } else {
-              const inward = getRowInwardNormal(this.venue, tierIndex, seatDeg, seatRowFrac, sec.customRadialDepth);
+              const inward = getRowInwardNormal(this.venue, tierIndex, seatDeg, rowFrac, sec.customRadialDepth);
               fx = inward.x;
               fz = inward.z;
             }
@@ -2374,23 +2289,13 @@ class Renderer3D {
       const xIn2 = pt2.outX - nx2 * 14, zIn2 = pt2.outZ - nz2 * 14;
       const xOut2 = pt2.outX + nx2 * 5, zOut2 = pt2.outZ + nz2 * 5;
 
-      const canopyDrop = getTierSaddleDrop(lastTier, this.venue);
-      let yBot1 = maxElev;
-      let yBot2 = maxElev;
-      if (canopyDrop > 0) {
-        // Closely hug the dramatic saddle bowl contour from low end valleys (~23m) up to towering long-side peaks (~43m)
-        const lastRows = lastTier.defaultRows || 38;
-        const lastPitch = lastTier.defaultRowPitch || 0.85;
-        const lastSlope = lastTier.defaultSlopeDeg || 34;
-        const lastRiserH = lastTier.defaultRiserHeight || (lastPitch * Math.tan(lastSlope * DEG2RAD));
-        const effRows1 = getEffectiveTierRows(lastTier, lastRows, deg1, lastRiserH, this.venue);
-        const effRows2 = getEffectiveTierRows(lastTier, lastRows, deg2, lastRiserH, this.venue);
-        yBot1 = (lastTier.baseElevation || 14) + Math.max(0, effRows1 - 1) * lastRiserH + 3.6;
-        yBot2 = (lastTier.baseElevation || 14) + Math.max(0, effRows2 - 1) * lastRiserH + 3.6;
-      } else if (isBirdNest) {
-        yBot1 = maxElev + Math.sin(deg1 * DEG2RAD) * Math.sin(deg1 * DEG2RAD) * 18.0;
-        yBot2 = maxElev + Math.sin(deg2 * DEG2RAD) * Math.sin(deg2 * DEG2RAD) * 18.0;
-      }
+      const lastRows = lastTier.defaultRows || 22;
+      const lastPitch = lastTier.defaultRowPitch || 0.85;
+      const lastSlope = lastTier.defaultSlopeDeg || 24;
+      const lastRiserH = lastTier.defaultRiserHeight || (lastPitch * Math.tan(lastSlope * DEG2RAD));
+      const topBowl = (lastTier.baseElevation || 14) + Math.max(0, lastRows - 1) * lastRiserH;
+      const yBot1 = Math.max(maxElev, topBowl + 3.5);
+      const yBot2 = yBot1;
       const yTop1 = yBot1 + thickness;
       const yTop2 = yBot2 + thickness;
 

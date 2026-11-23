@@ -3,7 +3,7 @@
  * 集合名称: stadiumProjects
  */
 
-const { normalizeVenueCoordinates, getTierSaddleConfig, getTierSaddleDrop } = require('../utils/schema-geometry');
+const { normalizeVenueCoordinates } = require('../utils/schema-geometry');
 
 const MAX_PAGE_LIMIT = 20;
 
@@ -315,8 +315,7 @@ async function loadAllStadiumProjects() {
         if (isBn) {
           console.log('[DEBUG-stadium-cloud] 已匹配鸟巢体育馆数据:', formatted.name);
           (formatted.standTiers || []).forEach((t, i) => {
-            const cfg = getTierSaddleConfig(t, formatted);
-            console.log(`[DEBUG-stadium-cloud] 鸟巢看台 [${i + 1}F - ${t.name || t.id}] baseElevation: ${t.baseElevation}m, saddleEnabled: ${cfg.enabled}, saddleAmplitude: ${cfg.amplitude}m, saddleInvert: ${cfg.invert} (${cfg.invert ? '两端球门高' : '两侧长边高'})`);
+            console.log(`[DEBUG-stadium-cloud] 鸟巢看台 [${i + 1}F - ${t.name || t.id}] baseElevation: ${t.baseElevation}m, morphMode: ${t.morphMode || 'infield-shape'}, concentricMorph: ${t.concentricMorph || 0}`);
           });
         }
       }
