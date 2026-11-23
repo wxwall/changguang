@@ -510,8 +510,11 @@ function getStageTransform(venue) {
       cz = Number(stage.z !== undefined ? stage.z : stage.y) || 0;
     }
     const localCenter = rotateXZ(cx, cz, -rotFromSouthDeg);
-    const maxCat = Math.max(2, alongHalf - sd / 2 - 1.5);
-    const maxCatX = Math.max(2, crossHalf - sw / 2 - 1.5);
+    const rawCat = (stage.catwalkLength !== undefined && stage.catwalkLength !== null)
+      ? Math.max(0, Number(stage.catwalkLength))
+      : 10;
+    const maxCat = Math.max(0, alongHalf - sd / 2 - 1.5);
+    const maxCatX = Math.max(0, crossHalf - sw / 2 - 1.5);
     return {
       type: 'center-stage',
       orientationDeg: oriDeg,
@@ -525,8 +528,8 @@ function getStageTransform(venue) {
       centerX: cx,
       centerZ: cz,
       targetY: sh + 1.6,
-      catwalkLength: Math.min(stage.catwalkLength || 10, maxCat),
-      catwalkLengthX: Math.min(stage.catwalkLength || 10, maxCatX),
+      catwalkLength: Math.min(rawCat, maxCat),
+      catwalkLengthX: Math.min(rawCat, maxCatX),
       fohLocalZ: localCenter.z + Math.min(stage.fohDistance || 18, Math.max(4, alongHalf - 3))
     };
   }
@@ -559,8 +562,11 @@ function getStageTransform(venue) {
 
   const stageFrontLocalZ = stageLocalZ + sd / 2;
 
-  const maxCatwalk = Math.max(4, alongHalf - stageFrontLocalZ - 2.0);
-  const catwalkLength = Math.min(stage.catwalkLength || 18, maxCatwalk);
+  const rawEndCat = (stage.catwalkLength !== undefined && stage.catwalkLength !== null)
+    ? Math.max(0, Number(stage.catwalkLength))
+    : 18;
+  const maxCatwalk = Math.max(0, alongHalf - stageFrontLocalZ - 2.0);
+  const catwalkLength = Math.min(rawEndCat, maxCatwalk);
 
   const fohD = stage.fohDepth || 5;
   const maxFohDist = Math.max(catwalkLength + 4, alongHalf - stageFrontLocalZ - fohD / 2 - 1.5);
@@ -674,9 +680,58 @@ function generateConcertInfieldBlocks(venue) {
   if (!infield || !stage) return [];
 
   const st = getStageTransform(venue);
+
+  // Strictly use schema-defined infieldModules whenever present (supports center-stage 4-sided & end-stage layouts)
+  const schemaModules = Array.isArray(venue.infieldModules) ? venue.infieldModules : [];
+  if (schemaModules.length > 0) {
+    return schemaModules.map((mod, idx) => {
+      const bx = Number(mod.x) || 0;
+      const bz = Number(mod.z !== undefined ? mod.z : mod.y) || 0;
+      const bw = Math.max(1, Number(mod.width) || 20);
+      const bd = Math.max(1, Number(mod.depth) || 10);
+      const rotDeg = Number(mod.rotationDeg) || 0;
+      const rowPitch = Math.max(0.45, Number(mod.rowPitch) || 0.88);
+      const rows = Math.max(1, Number(mod.rows) || Math.floor(bd / rowPitch));
+      const seatSpacing = Math.max(0.4, Number(mod.seatSpacing) || 0.52);
+      const baseElevation = Number(mod.baseElevation) || 0;
+      const slopeDeg = Number(mod.slopeDeg) || 0;
+
+      // Determine exact stage-facing direction along the block's local Z axis
+      const uZ = rotateXZ(0, 1, rotDeg);
+      const toStageX = st.centerX - bx;
+      const toStageZ = st.centerZ - bz;
+      const dot = toStageX * uZ.x + toStageZ * uZ.z;
+      const localFacingZ = dot >= 0 ? 1 : -1;
+      const facingX = uZ.x * localFacingZ;
+      const facingZ = uZ.z * localFacingZ;
+
+      return {
+        id: mod.id || ('infield-mod-' + idx),
+        name: mod.name || ('内场区 ' + (idx + 1)),
+        x: bx,
+        z: bz,
+        width: bw,
+        depth: bd,
+        rows,
+        rowPitch,
+        seatSpacing,
+        baseElevation,
+        slopeDeg,
+        aisleWidth: Number(mod.aisleWidth) || 1.6,
+        rotDeg,
+        localFacingZ,
+        facingX,
+        facingZ,
+        color: mod.color || '#10B981',
+        fromSchema: true
+      };
+    });
+  }
+
   const blocks = [];
   const halfL = st.alongHalf;
   const usableHalfW = Math.max(10, st.crossHalf);
+  const sw = stage.width || 30;
   const sd = stage.depth || 20;
 
   // 收缩区块进深，直到四角落在内场周界内（椭圆内场尤其需要）
@@ -709,6 +764,57 @@ function generateConcertInfieldBlocks(venue) {
   };
 
   if (stage.type === 'center-stage') {
+    const hasCatwalk = (st.catwalkLength || 0) > 0.5;
+    if (!hasCatwalk) {
+      // Four-sided cross layout facing each side of the center stage
+      const gap = 3.5;
+      const depthAlong = Math.max(0, halfL - sd / 2 - gap - 2.0);
+      const depthCross = Math.max(0, usableHalfW - sw / 2 - gap - 2.0);
+      const stX = st.stageLocalX || 0;
+      const stZ = st.stageLocalZ || 0;
+
+      if (depthAlong > 3.5) {
+        const rowsA = Math.max(3, Math.floor(depthAlong / 0.88));
+        const bwA = Math.min(sw + 6, usableHalfW * 1.4);
+        const czOff = sd / 2 + gap + depthAlong / 2;
+        [
+          { id: 'floor-front', name: '四面台·正面观众席 A区', lx: 0, lz: czOff, rotOff: 0, lfZ: -1, col: '#10B981' },
+          { id: 'floor-back', name: '四面台·背面观众席 B区', lx: 0, lz: -czOff, rotOff: 0, lfZ: 1, col: '#06B6D4' }
+        ].forEach((sp) => {
+          const wp = rotateXZ(stX + sp.lx, stZ + sp.lz, st.rotFromSouthDeg);
+          const fv = rotateXZ(0, sp.lfZ, st.rotFromSouthDeg);
+          blocks.push({
+            id: sp.id, name: sp.name, x: wp.x, z: wp.z, width: bwA, depth: depthAlong,
+            rows: rowsA, rowPitch: 0.88, seatSpacing: 0.52,
+            rotDeg: st.rotFromSouthDeg + sp.rotOff, localFacingZ: sp.lfZ,
+            facingX: fv.x, facingZ: fv.z, color: sp.col
+          });
+        });
+      }
+      if (depthCross > 3.5) {
+        const rowsC = Math.max(3, Math.floor(depthCross / 0.88));
+        const bwC = Math.min(sd + 4, halfL * 1.2);
+        const cxOff = sw / 2 + gap + depthCross / 2;
+        [
+          { id: 'floor-left', name: '四面台·左侧观众席 C区', lx: cxOff, lz: 0, rotOff: 90, lfZ: 1, col: '#10B981' },
+          { id: 'floor-right', name: '四面台·右侧观众席 D区', lx: -cxOff, lz: 0, rotOff: 270, lfZ: 1, col: '#06B6D4' }
+        ].forEach((sp) => {
+          const wp = rotateXZ(stX + sp.lx, stZ + sp.lz, st.rotFromSouthDeg);
+          const uZ = rotateXZ(0, 1, st.rotFromSouthDeg + sp.rotOff);
+          const dot = (st.centerX - wp.x) * uZ.x + (st.centerZ - wp.z) * uZ.z;
+          const lfZ = dot >= 0 ? 1 : -1;
+          blocks.push({
+            id: sp.id, name: sp.name, x: wp.x, z: wp.z, width: bwC, depth: depthCross,
+            rows: rowsC, rowPitch: 0.88, seatSpacing: 0.52,
+            rotDeg: st.rotFromSouthDeg + sp.rotOff, localFacingZ: lfZ,
+            facingX: uZ.x * lfZ, facingZ: uZ.z * lfZ, color: sp.col
+          });
+        });
+      }
+      fitBlocksToInfield();
+      return blocks;
+    }
+
     const cw = stage.catwalkWidth || 3.2;
     const zStart = sd / 2 + 2.5;
     const zEnd = halfL - 1.5;
@@ -930,7 +1036,11 @@ function calculateSeatSightline(venue, selection, viewMode) {
     const offset = rotateXZ(0, dirSign * localZ, blk.rotDeg || 0);
     const eyeX = blk.x + offset.x;
     const eyeZ = blk.z + offset.z;
-    const eyeY = sightCfg.spectatorEyeHeight || 1.15;
+    const rowPitch = blk.rowPitch || 0.88;
+    const slopeDeg = blk.slopeDeg || 0;
+    const baseElev = blk.baseElevation || 0;
+    const floorElev = baseElev + (rowIdx - 1) * Math.sin(slopeDeg * DEG2RAD) * rowPitch;
+    const eyeY = floorElev + (sightCfg.spectatorEyeHeight || 1.15);
 
     const dx = targetX - eyeX;
     const dy = targetY - eyeY;
@@ -951,10 +1061,10 @@ function calculateSeatSightline(venue, selection, viewMode) {
       sectorId: blk.id,
       sectorName: blk.name,
       tierLevel: 0,
-      tierName: '内场平地坐席区',
+      tierName: slopeDeg > 0 ? '内场阶梯坐席区' : '内场平地坐席区',
       fillType: 'infield-floor',
-      slopeDeg: 0,
-      rowPitch: blk.rowPitch || 0.88,
+      slopeDeg,
+      rowPitch,
       guardrailMaterial: '内场防爆铁马围栏'
     };
   }
