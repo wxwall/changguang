@@ -174,6 +174,38 @@ function getInfieldCornerTransitionAngles(venue) {
  * - Concentric-circle morph tiers (e.g. Bird's Nest 3F) anchor innerMorph to prevOuterMorph
  *   while transitioning outerMorph cleanly toward the concentric circle footprint.
  */
+/**
+ * Computes the maximum radial distance from (0,0) to the parallel-offset infield contour at offset d.
+ * For rounded-rect infields, the corner diagonal is slightly farther from (0,0) than the straight end center,
+ * so using this exact maximum guarantees a concentric-circle outer rim never inverts inside the inner edge.
+ */
+function computeMaxInfieldOffsetRadius(infield, offsetD) {
+  const L = (infield && infield.length) || 105;
+  const W = (infield && infield.width) || 68;
+  const shape = (infield && infield.shape) || 'rounded-rect';
+  const majorHalf = Math.max(L, W) / 2;
+  const minorHalf = Math.min(L, W) / 2;
+  const d = offsetD || 0;
+
+  if (shape === 'ellipse') {
+    return majorHalf + d;
+  }
+  const cR = Math.min((infield && infield.cornerRadius) || 15, minorHalf);
+  const hx = Math.max(0, minorHalf - cR);
+  const hz = Math.max(0, majorHalf - cR);
+  return Math.hypot(hx, hz) + cR + d;
+}
+
+/**
+ * Returns true if a stand tier uses concentric-circle morphing with a non-zero morph factor.
+ * Such tiers keep constant physical rowPitch and constant slopeDeg around 360°, so as the outer
+ * edge morphs toward a concentric circle, radial depth and row count naturally sweep from low at
+ * the short ends to tall along the two long sides.
+ */
+function isConcentricMorphTier(tier) {
+  return Boolean(tier && tier.morphMode === 'concentric-circle' && (tier.concentricMorph || 0) > 1e-4);
+}
+
 function evalTierPoint(venue, tierIndex, angleDeg, rowFrac, customRadialDepth) {
   const v = venue || {};
   const infield = v.infield || { length: 105, width: 68, cornerRadius: 15, shape: 'rounded-rect' };
@@ -186,18 +218,29 @@ function evalTierPoint(venue, tierIndex, angleDeg, rowFrac, customRadialDepth) {
     infield.shape || 'rounded-rect'
   );
 
-  const majorHalfRadius = Math.max(infield.length || 105, infield.width || 68) / 2;
+  const minorHalfRadius = Math.min(infield.length || 105, infield.width || 68) / 2;
 
   let cumulativeOffset = 0;
   let prevOuterMorph = 0;
+  let prevCircOutR = 0;
   for (let i = 0; i < tierIndex; i++) {
     const t = tiers[i] || {};
-    cumulativeOffset += (t.innerOffset || 0) + (t.radialDepth || 20);
-    if (t.morphMode === 'concentric-circle') {
-      prevOuterMorph = t.concentricMorph || 0;
+    const tDIn = cumulativeOffset + (t.innerOffset || 0);
+    const tDOut = tDIn + (t.radialDepth || 20);
+    if (isConcentricMorphTier(t)) {
+      const tMaxRectInR = computeMaxInfieldOffsetRadius(infield, tDIn);
+      const tCircInR = prevOuterMorph > 1e-6 ? (prevCircOutR + (t.innerOffset || 0)) : tMaxRectInR;
+      const tMaxInR = prevOuterMorph > 1e-6
+        ? Math.max(tMaxRectInR * (1 - prevOuterMorph) + tCircInR * prevOuterMorph, tCircInR)
+        : tMaxRectInR;
+      const tMinEnd = Math.max(2.2, (t.defaultRowPitch || 0.85) * 3);
+      prevCircOutR = Math.max(tMaxInR + tMinEnd, minorHalfRadius + tDOut);
+      prevOuterMorph = Math.max(0, Math.min(1, t.concentricMorph || 0));
     } else {
       prevOuterMorph = 0;
+      prevCircOutR = 0;
     }
+    cumulativeOffset = tDOut;
   }
 
   const tier = tiers[tierIndex] || tiers[0] || {};
@@ -206,8 +249,8 @@ function evalTierPoint(venue, tierIndex, angleDeg, rowFrac, customRadialDepth) {
   const dOut = dIn + horizontalDepth;
 
   const innerMorph = prevOuterMorph;
-  const outerMorph = tier.morphMode === 'concentric-circle'
-    ? (tier.concentricMorph || 0)
+  const outerMorph = isConcentricMorphTier(tier)
+    ? Math.max(0, Math.min(1, tier.concentricMorph || 0))
     : 0;
 
   // Parallel offset along infield outward normal (90° perpendicular to infield edge)
@@ -216,11 +259,13 @@ function evalTierPoint(venue, tierIndex, angleDeg, rowFrac, customRadialDepth) {
   const rectOutX = p0.x + dOut * p0.nx;
   const rectOutZ = p0.z + dOut * p0.nz;
 
+  const maxRectInR = computeMaxInfieldOffsetRadius(infield, dIn);
+  const circInR = innerMorph > 1e-6 ? (prevCircOutR + (tier.innerOffset || 0)) : maxRectInR;
+
   let inX = rectInX;
   let inZ = rectInZ;
   if (innerMorph > 1e-6) {
     const rLenIn = Math.hypot(rectInX, rectInZ) || 1;
-    const circInR = majorHalfRadius + dIn;
     const circInX = (rectInX / rLenIn) * circInR;
     const circInZ = (rectInZ / rLenIn) * circInR;
     inX = rectInX * (1 - innerMorph) + circInX * innerMorph;
@@ -231,11 +276,23 @@ function evalTierPoint(venue, tierIndex, angleDeg, rowFrac, customRadialDepth) {
   let outZ = rectOutZ;
   if (outerMorph > 1e-6) {
     const rLenOut = Math.hypot(rectOutX, rectOutZ) || 1;
-    const circOutR = majorHalfRadius + dOut;
+    const maxInR = innerMorph > 1e-6
+      ? Math.max(maxRectInR * (1 - innerMorph) + circInR * innerMorph, circInR)
+      : maxRectInR;
+    const minEndDepth = Math.max(2.2, (tier.defaultRowPitch || 0.85) * 3);
+    const circOutR = Math.max(maxInR + minEndDepth, minorHalfRadius + dOut);
     const circOutX = (rectOutX / rLenOut) * circOutR;
     const circOutZ = (rectOutZ / rLenOut) * circOutR;
     outX = rectOutX * (1 - outerMorph) + circOutX * outerMorph;
     outZ = rectOutZ * (1 - outerMorph) + circOutZ * outerMorph;
+
+    // Defensive non-inversion guard for extreme custom aspect ratios
+    const projOut = (outX - inX) * p0.nx + (outZ - inZ) * p0.nz;
+    if (projOut < minEndDepth * 0.5) {
+      const push = minEndDepth * 0.5 - projOut;
+      outX += p0.nx * push;
+      outZ += p0.nz * push;
+    }
   }
 
   const f = rowFrac === undefined ? 0 : rowFrac;
@@ -251,6 +308,40 @@ function evalTierPoint(venue, tierIndex, angleDeg, rowFrac, customRadialDepth) {
     dIn,
     dOut
   };
+}
+
+/**
+ * Returns the exact continuous row count at angleDeg for a tier.
+ * - For standard infield-shape / VIP / solid-wall tiers: returns the fixed schema row count.
+ * - For concentric-circle morphed tiers: returns depth(angleDeg) / rowPitch, reflecting the
+ *   true constant-tread, constant-slope 3D sweeping bowl geometry.
+ */
+function getTierRowsAtAngleFloat(venue, tierIndex, tier, sec, angleDeg) {
+  const fillType = (sec && sec.fillType) || (tier && tier.defaultFillType) || 'standard-seats';
+  if (fillType === 'vip-box') return 1;
+  const fallbackRows = (sec && sec.rows) || (tier && tier.defaultRows) || 22;
+  if (!isConcentricMorphTier(tier) || fillType === 'solid-wall') {
+    return fallbackRows;
+  }
+  const rowPitch = Math.max(0.4, (sec && sec.rowPitch) || (tier && tier.defaultRowPitch) || 0.85);
+  const pt = evalTierPoint(venue, tierIndex, angleDeg, 0, sec && sec.customRadialDepth);
+  const depthM = Math.hypot(pt.outX - pt.inX, pt.outZ - pt.inZ);
+  return Math.max(2, depthM / rowPitch);
+}
+
+/**
+ * Returns the integer seatable row count at angleDeg for a tier (requires >= 0.65 * rowPitch
+ * tread depth on the topmost row so seats never overhang the circular outer rim).
+ */
+function getTierRowsAtAngle(venue, tierIndex, tier, sec, angleDeg) {
+  const fillType = (sec && sec.fillType) || (tier && tier.defaultFillType) || 'standard-seats';
+  if (fillType === 'vip-box') return 1;
+  const fallbackRows = (sec && sec.rows) || (tier && tier.defaultRows) || 22;
+  if (!isConcentricMorphTier(tier) || fillType === 'solid-wall') {
+    return fallbackRows;
+  }
+  const floatRows = getTierRowsAtAngleFloat(venue, tierIndex, tier, sec, angleDeg);
+  return Math.max(2, Math.floor(floatRows + 0.35));
 }
 
 /**
@@ -930,8 +1021,8 @@ function calculateSeatSightline(venue, selection, viewMode) {
   const riserHeight = isVipBox ? 0 : (sector.riserHeight || Number((rowPitch * Math.tan(slopeDeg * DEG2RAD)).toFixed(3)));
 
   const midAngleDeg = ((sector.startAngleDeg + sector.endAngleDeg) / 2) % 360;
-  const rawMaxRows = isVipBox ? 1 : (sector.rows || tier.defaultRows || 22);
-  const totalRows = isVipBox ? 1 : getEffectiveTierRows(tier, rawMaxRows, midAngleDeg, riserHeight, venue);
+  const tierIsConcentric = !isVipBox && isConcentricMorphTier(tier);
+  const totalRows = isVipBox ? 1 : getTierRowsAtAngle(venue, tierIndex, tier, sector, midAngleDeg);
   const row = isVipBox ? 1 : Math.min(Math.max(1, (selection && selection.row) || 1), totalRows);
 
   let rowFrac = totalRows > 1 ? (row - 0.5) / totalRows : 0.5;
@@ -939,6 +1030,10 @@ function calculateSeatSightline(venue, selection, viewMode) {
     const vipEdge = evalTierPoint(venue, tierIndex, midAngleDeg, 0, sector.customRadialDepth);
     const vipDepth = Math.hypot(vipEdge.outX - vipEdge.inX, vipEdge.outZ - vipEdge.inZ);
     rowFrac = Math.max(0.08, Math.min(0.28, 0.9 / Math.max(1.5, vipDepth)));
+  } else if (tierIsConcentric) {
+    const midEdge = evalTierPoint(venue, tierIndex, midAngleDeg, 0, sector.customRadialDepth);
+    const midDepth = Math.hypot(midEdge.outX - midEdge.inX, midEdge.outZ - midEdge.inZ);
+    rowFrac = Math.max(0.02, Math.min(0.98, ((row - 0.5) * rowPitch) / Math.max(0.5, midDepth)));
   }
   const seatPt = evalTierPoint(venue, tierIndex, midAngleDeg, rowFrac, sector.customRadialDepth);
   const seatElevation = (tier.baseElevation || 1.0) + (row - 1) * riserHeight;
@@ -1010,6 +1105,10 @@ module.exports = {
   evalInfieldPerimeterAndNormal,
   getInfieldCornerTransitionAngles,
   evalTierPoint,
+  computeMaxInfieldOffsetRadius,
+  isConcentricMorphTier,
+  getTierRowsAtAngleFloat,
+  getTierRowsAtAngle,
   getRayRoundedRectDistance,
   computeTierRadialBounds,
   getRowInwardNormal,

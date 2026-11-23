@@ -19,6 +19,9 @@ const {
   RAD2DEG,
   rotateXZ,
   evalTierPoint,
+  isConcentricMorphTier,
+  getTierRowsAtAngleFloat,
+  getTierRowsAtAngle,
   getInfieldCornerTransitionAngles,
   getRowInwardNormal,
   getRayRoundedRectDistance,
@@ -878,13 +881,13 @@ class Renderer3D {
     const lastSlope = lastTier.defaultSlopeDeg || 24;
     const lastRows = lastTier.defaultRows || 22;
     const lastPitch = lastTier.defaultRowPitch || 0.85;
-    const isMorphedLast = lastTier.morphMode === 'concentric-circle' && (lastTier.concentricMorph || 0) > 0.1;
+    const isMorphedLast = isConcentricMorphTier(lastTier);
 
     const ringAngles = this.buildFullRingAngles(180);
     const shellCol = [0.10, 0.13, 0.19, 1.0];
 
     const lastRiserH = lastTier.defaultRiserHeight || (lastPitch * Math.tan(lastSlope * DEG2RAD));
-    const topWallY = (lastTier.baseElevation || 14) + Math.max(0, lastRows - 1) * lastRiserH + 1.2;
+    const flatTopWallY = (lastTier.baseElevation || 14) + Math.max(0, lastRows - 1) * lastRiserH + 1.2;
 
     for (let i = 0; i < ringAngles.length - 1; i++) {
       const deg1 = ringAngles[i];
@@ -893,8 +896,14 @@ class Renderer3D {
       const pt1 = evalTierPoint(this.venue, lastTierIdx, deg1, 1);
       const pt2 = evalTierPoint(this.venue, lastTierIdx, deg2, 1);
 
-      const topWallY1 = topWallY;
-      const topWallY2 = topWallY;
+      let topWallY1 = flatTopWallY;
+      let topWallY2 = flatTopWallY;
+      if (isMorphedLast) {
+        const r1 = getTierRowsAtAngleFloat(this.venue, lastTierIdx, lastTier, null, deg1);
+        const r2 = getTierRowsAtAngleFloat(this.venue, lastTierIdx, lastTier, null, deg2);
+        topWallY1 = (lastTier.baseElevation || 14) + Math.max(0, r1 - 1) * lastRiserH + 1.2;
+        topWallY2 = (lastTier.baseElevation || 14) + Math.max(0, r2 - 1) * lastRiserH + 1.2;
+      }
 
       const pad = 1.5;
       const rLen1 = Math.hypot(pt1.x, pt1.z) || 1;
@@ -1287,7 +1296,7 @@ class Renderer3D {
       const activeSectors = sectors.filter(s => !s.isDeleted && s.fillType !== 'empty-void');
       const selectedIdxInTier = activeSectors.findIndex(s => s.id === this.selectedSectorId);
       const upperTierFrontVoms = frontVomWindowsByTier[tierIndex + 1] || [];
-      const tierSelfMorphed = tier.morphMode === 'concentric-circle' && (tier.concentricMorph || 0) > 0.05;
+      const tierSelfMorphed = isConcentricMorphTier(tier);
       const tierHasMorph = tierSelfMorphed || prevTierMorphed;
 
       sectors.forEach((sec) => {
@@ -1326,7 +1335,11 @@ class Renderer3D {
         let isFrontConnected = false;
 
         if (hasVom) {
-          const vomInfo = computeVomitoryAngularBounds(this.venue, tierIndex, sDeg, eDeg, vom, totalRows, sec.customRadialDepth);
+          const midVomDeg = (sDeg + eDeg) / 2;
+          const vomRefRows = tierSelfMorphed
+            ? getTierRowsAtAngle(this.venue, tierIndex, tier, sec, midVomDeg)
+            : totalRows;
+          const vomInfo = computeVomitoryAngularBounds(this.venue, tierIndex, sDeg, eDeg, vom, vomRefRows, sec.customRadialDepth);
           vomStartRow = vomInfo.vomStartRow;
           vomEndRow = vomInfo.vomEndRow;
           vomStartDeg = vomInfo.vomStartDeg;
@@ -1472,6 +1485,154 @@ class Renderer3D {
                 { x: pt2.inX + n2x, y: goldBandBot - 0.06, z: pt2.inZ + n2z },
                 [1.0, 0.86, 0.56, 1.0]
               );
+            }
+          } else if (tierSelfMorphed) {
+            // Constant physical tread width (rowPitch) & constant slopeDeg clipped cleanly by the concentric circle outer rim
+            const depth1 = Math.max(0.5, Math.hypot(pt1.outX - pt1.inX, pt1.outZ - pt1.inZ));
+            const depth2 = Math.max(0.5, Math.hypot(pt2.outX - pt2.inX, pt2.outZ - pt2.inZ));
+            const floatRows1 = Math.max(2, depth1 / rowPitch);
+            const floatRows2 = Math.max(2, depth2 / rowPitch);
+            const yTop1 = baseElev + Math.max(0, floatRows1 - 1) * riserH;
+            const yTop2 = baseElev + Math.max(0, floatRows2 - 1) * riserH;
+            const maxStepCount = Math.ceil(Math.max(depth1, depth2) / rowPitch);
+            const upNorm = { x: 0, y: 1, z: 0 };
+
+            for (let rb = 0; rb < maxStepCount; rb++) {
+              const rowNum = rb + 1;
+              if (isVomStrip && vomEndRow >= vomStartRow && rowNum >= vomStartRow && rowNum <= vomEndRow) {
+                continue;
+              }
+
+              const d0 = rb * rowPitch;
+              const d1 = (rb + 1) * rowPitch;
+              const in1 = d0 < depth1 - 1e-4;
+              const in2 = d0 < depth2 - 1e-4;
+              if (!in1 && !in2) continue;
+
+              const treadY = baseElev + rb * riserH;
+              const riserBot = rb === 0
+                ? (tier.level === 1 ? 0 : Math.max(0, baseElev - 1.1))
+                : (baseElev + (rb - 1) * riserH);
+              const rCol = rb === 0 && tier.level === 1 ? [0.28, 0.33, 0.42, 1.0] : concreteRiserCol;
+
+              if (in1 && in2) {
+                const f1_0 = d0 / depth1;
+                const f1_1 = Math.min(1, d1 / depth1);
+                const f2_0 = d0 / depth2;
+                const f2_1 = Math.min(1, d1 / depth2);
+
+                const x1_in = pt1.inX + (pt1.outX - pt1.inX) * f1_0;
+                const z1_in = pt1.inZ + (pt1.outZ - pt1.inZ) * f1_0;
+                const x1_out = pt1.inX + (pt1.outX - pt1.inX) * f1_1;
+                const z1_out = pt1.inZ + (pt1.outZ - pt1.inZ) * f1_1;
+
+                const x2_in = pt2.inX + (pt2.outX - pt2.inX) * f2_0;
+                const z2_in = pt2.inZ + (pt2.outZ - pt2.inZ) * f2_0;
+                const x2_out = pt2.inX + (pt2.outX - pt2.inX) * f2_1;
+                const z2_out = pt2.inZ + (pt2.outZ - pt2.inZ) * f2_1;
+
+                if (!(rb === 0 && isVomStrip && isFrontConnected)) {
+                  solid.addQuad(
+                    { x: x1_in, y: riserBot, z: z1_in },
+                    { x: x1_in, y: treadY, z: z1_in },
+                    { x: x2_in, y: treadY, z: z2_in },
+                    { x: x2_in, y: riserBot, z: z2_in },
+                    rCol
+                  );
+                }
+
+                solid.addQuad(
+                  { x: x1_in, y: treadY, z: z1_in },
+                  { x: x1_out, y: treadY, z: z1_out },
+                  { x: x2_out, y: treadY, z: z2_out },
+                  { x: x2_in, y: treadY, z: z2_in },
+                  concreteStepCol,
+                  upNorm
+                );
+              } else if (in1 && !in2) {
+                // Row terminates smoothly against the circular outer perimeter between deg1 and deg2
+                const f1_0 = d0 / depth1;
+                const f1_1 = Math.min(1, d1 / depth1);
+                const x1_in = pt1.inX + (pt1.outX - pt1.inX) * f1_0;
+                const z1_in = pt1.inZ + (pt1.outZ - pt1.inZ) * f1_0;
+                const x1_out = pt1.inX + (pt1.outX - pt1.inX) * f1_1;
+                const z1_out = pt1.inZ + (pt1.outZ - pt1.inZ) * f1_1;
+
+                const tExit = Math.max(0, Math.min(1, (depth1 - d0) / Math.max(1e-5, depth1 - depth2)));
+                const exX = pt1.outX + (pt2.outX - pt1.outX) * tExit;
+                const exZ = pt1.outZ + (pt2.outZ - pt1.outZ) * tExit;
+
+                solid.addQuad(
+                  { x: x1_in, y: riserBot, z: z1_in },
+                  { x: x1_in, y: treadY, z: z1_in },
+                  { x: exX, y: treadY, z: exZ },
+                  { x: exX, y: riserBot, z: exZ },
+                  rCol
+                );
+                solid.addTriangle(
+                  { x: x1_in, y: treadY, z: z1_in },
+                  { x: x1_out, y: treadY, z: z1_out },
+                  { x: exX, y: treadY, z: exZ },
+                  concreteStepCol,
+                  upNorm
+                );
+              } else {
+                // Row emerges smoothly from the circular outer perimeter between deg1 and deg2
+                const f2_0 = d0 / depth2;
+                const f2_1 = Math.min(1, d1 / depth2);
+                const x2_in = pt2.inX + (pt2.outX - pt2.inX) * f2_0;
+                const z2_in = pt2.inZ + (pt2.outZ - pt2.inZ) * f2_0;
+                const x2_out = pt2.inX + (pt2.outX - pt2.inX) * f2_1;
+                const z2_out = pt2.inZ + (pt2.outZ - pt2.inZ) * f2_1;
+
+                const tEnter = Math.max(0, Math.min(1, (d0 - depth1) / Math.max(1e-5, depth2 - depth1)));
+                const enX = pt1.outX + (pt2.outX - pt1.outX) * tEnter;
+                const enZ = pt1.outZ + (pt2.outZ - pt1.outZ) * tEnter;
+
+                solid.addQuad(
+                  { x: enX, y: riserBot, z: enZ },
+                  { x: enX, y: treadY, z: enZ },
+                  { x: x2_in, y: treadY, z: z2_in },
+                  { x: x2_in, y: riserBot, z: z2_in },
+                  rCol
+                );
+                solid.addTriangle(
+                  { x: enX, y: treadY, z: enZ },
+                  { x: x2_out, y: treadY, z: z2_out },
+                  { x: x2_in, y: treadY, z: z2_in },
+                  concreteStepCol,
+                  upNorm
+                );
+              }
+            }
+
+            // Continuously seal the sweeping circular outer perimeter along deg1 -> deg2
+            const xTop1 = pt1.outX;
+            const zTop1 = pt1.outZ;
+            const xTop2 = pt2.outX;
+            const zTop2 = pt2.outZ;
+            const rearBot1 = Math.max(0, Math.min(baseElev, yTop1 - 1.4));
+            const rearBot2 = Math.max(0, Math.min(baseElev, yTop2 - 1.4));
+
+            solid.addQuad(
+              { x: xTop1, y: yTop1, z: zTop1 },
+              { x: xTop2, y: yTop2, z: zTop2 },
+              { x: xTop2, y: rearBot2, z: zTop2 },
+              { x: xTop1, y: rearBot1, z: zTop1 },
+              concreteRiserCol
+            );
+
+            // Top Rear Guardrail smoothly tracking the sweeping circular rim
+            if (showGuardrails && guard.rearWallEnabled !== false) {
+              const rearH = guard.rearWallHeight || 1.2;
+              solid.addBeam3D(
+                { x: xTop1, y: yTop1 + rearH, z: zTop1 },
+                { x: xTop2, y: yTop2 + rearH, z: zTop2 },
+                0.10, 0.10, secRailCol
+              );
+              if (a % 2 === 0) {
+                solid.addBox(xTop1, yTop1 + rearH / 2, zTop1, 0.08, rearH, 0.08, secRailCol, 0);
+              }
             }
           } else {
             // Exact uniform row-by-row concrete treads & risers matching seat elevations 1:1
@@ -1644,7 +1805,6 @@ class Renderer3D {
         // 2. Radial Stair Aisle & Volumetric Inter-Stand Handrail strictly along 90° perpendicular cut
         if (!isVip && showGuardrails && guard.aisleHandrailEnabled !== false) {
           const ptEdge = evalTierPoint(this.venue, tierIndex, sDeg, 0, sec.customRadialDepth);
-          const edgeRows = totalRows;
           const ptEdgeTop = { x: ptEdge.outX, z: ptEdge.outZ };
 
           const dxE = ptEdgeTop.x - ptEdge.inX;
@@ -1653,18 +1813,21 @@ class Renderer3D {
           const tanX = -dzE / lenE;
           const tanZ = dxE / lenE;
 
-          const topElevE = isVip ? baseElev : (baseElev + Math.max(0, edgeRows - 1) * riserH);
+          const edgeFloatRows = tierSelfMorphed ? Math.max(2, lenE / rowPitch) : totalRows;
+          const edgeSteps = tierSelfMorphed ? Math.max(2, Math.ceil(edgeFloatRows)) : totalRows;
+          const topElevE = baseElev + Math.max(0, edgeFloatRows - 1) * riserH;
 
           const hwAisle = radialAisleWidth * 0.42;
           // Stepped stair treads per row (y = treadY + 0.025) so aisle NEVER Z-fights through step noses
-          for (let rb = 0; rb < edgeRows; rb++) {
-            const f0 = rb / edgeRows;
-            const f1 = (rb + 1) / edgeRows;
-            const sY = isVip ? (baseElev + 0.025) : (baseElev + rb * riserH + 0.025);
-            const sx0 = ptEdge.inX + (ptEdge.outX - ptEdge.inX) * f0;
-            const sz0 = ptEdge.inZ + (ptEdge.outZ - ptEdge.inZ) * f0;
-            const sx1 = ptEdge.inX + (ptEdge.outX - ptEdge.inX) * f1;
-            const sz1 = ptEdge.inZ + (ptEdge.outZ - ptEdge.inZ) * f1;
+          for (let rb = 0; rb < edgeSteps; rb++) {
+            const f0 = tierSelfMorphed ? Math.min(1, (rb * rowPitch) / lenE) : (rb / edgeSteps);
+            const f1 = tierSelfMorphed ? Math.min(1, ((rb + 1) * rowPitch) / lenE) : ((rb + 1) / edgeSteps);
+            if (f1 - f0 < 1e-4) continue;
+            const sY = baseElev + rb * riserH + 0.025;
+            const sx0 = ptEdge.inX + dxE * f0;
+            const sz0 = ptEdge.inZ + dzE * f0;
+            const sx1 = ptEdge.inX + dxE * f1;
+            const sz1 = ptEdge.inZ + dzE * f1;
             solid.addQuad(
               { x: sx0 - tanX * hwAisle, y: sY, z: sz0 - tanZ * hwAisle },
               { x: sx1 - tanX * hwAisle, y: sY, z: sz1 - tanZ * hwAisle },
@@ -1675,7 +1838,7 @@ class Renderer3D {
             );
           }
 
-          const postCount = Math.max(4, Math.ceil(lenE / 4.0));
+          const postCount = Math.max(3, Math.ceil(lenE / 4.0));
           for (let p = 0; p < postCount; p++) {
             const pf = p / (postCount - 1);
             const px = ptEdge.inX + dxE * pf;
@@ -1693,8 +1856,13 @@ class Renderer3D {
 
         // 3. Recessed 3D Vomitory Tunnel Cutout (with complete 3D railings)
         if (hasVom && vomStartDeg > sDeg + 0.1 && vomEndDeg < eDeg - 0.1) {
-          if (vomStartRow < totalRows) {
-            const actualEndRow = Math.min(totalRows, vomEndRow);
+          const vomMidDeg = (vomStartDeg + vomEndDeg) / 2;
+          const vomEffRowsFloat = tierSelfMorphed
+            ? getTierRowsAtAngleFloat(this.venue, tierIndex, tier, sec, vomMidDeg)
+            : totalRows;
+          const vomMaxIntRows = tierSelfMorphed ? Math.max(2, Math.floor(vomEffRowsFloat)) : totalRows;
+          if (vomStartRow < vomMaxIntRows) {
+            const actualEndRow = Math.min(vomMaxIntRows, vomEndRow);
             this.buildVomitoryRecess(
               solid,
               sec,
@@ -1703,7 +1871,7 @@ class Renderer3D {
               vomEndDeg,
               vomStartRow,
               actualEndRow,
-              totalRows,
+              vomEffRowsFloat,
               baseElev,
               riserH,
               handrailCol,
@@ -1733,7 +1901,6 @@ class Renderer3D {
         const rowAngles = this.buildSectorAngleList(sDeg, eDeg, cornerAngles, null, tierHasMorph, tierIndex);
         const margin = isVip ? 0.55 : (radialAisleWidth * 0.55);
         const stepUnitW = isVip ? Math.max(0.72, seatSpacing * 1.25) : (seatSpacing * stride);
-        const seatRowCount = isVip ? 1 : rawMaxRows;
         let vipFrontFrac = 0.20;
         if (isVip) {
           const vipMidEdge = evalTierPoint(this.venue, tierIndex, (sDeg + eDeg) / 2, 0, sec.customRadialDepth);
@@ -1741,34 +1908,56 @@ class Renderer3D {
           vipFrontFrac = Math.max(0.08, Math.min(0.28, 0.92 / Math.max(1.5, vipDepth)));
         }
 
-        for (let r = 1; r <= seatRowCount; r++) {
-          const rowFrac = isVip ? vipFrontFrac : (totalRows > 1 ? (r - 0.5) / totalRows : 0.5);
-          const rowPts = rowAngles.map((deg) => {
-            const p = evalTierPoint(this.venue, tierIndex, deg, rowFrac, sec.customRadialDepth);
-            return { deg, x: p.x, z: p.z };
-          });
-          if (rowPts.length < 2) continue;
+        const isConcentricSeats = !isVip && tierSelfMorphed;
+        const rowAngleEdges = isConcentricSeats
+          ? rowAngles.map((deg) => {
+            const p = evalTierPoint(this.venue, tierIndex, deg, 0, sec.customRadialDepth);
+            const depth = Math.max(0.5, Math.hypot(p.outX - p.inX, p.outZ - p.inZ));
+            return {
+              deg,
+              inX: p.inX,
+              inZ: p.inZ,
+              outX: p.outX,
+              outZ: p.outZ,
+              depth,
+              maxRows: Math.max(2, Math.floor(depth / rowPitch + 0.35))
+            };
+          })
+          : null;
 
+        let seatRowCount = isVip ? 1 : rawMaxRows;
+        if (isConcentricSeats && rowAngleEdges) {
+          seatRowCount = 0;
+          for (let i = 0; i < rowAngleEdges.length; i++) {
+            if (rowAngleEdges[i].maxRows > seatRowCount) seatRowCount = rowAngleEdges[i].maxRows;
+          }
+        }
+
+        const placeSeatsAlongRun = (r, runPts, runMarginStart, runMarginEnd) => {
+          if (runPts.length < 2) return;
           const cumLen = [0];
-          for (let k = 1; k < rowPts.length; k++) {
-            cumLen.push(cumLen[k - 1] + Math.hypot(rowPts[k].x - rowPts[k - 1].x, rowPts[k].z - rowPts[k - 1].z));
+          for (let k = 1; k < runPts.length; k++) {
+            cumLen.push(cumLen[k - 1] + Math.hypot(runPts[k].x - runPts[k - 1].x, runPts[k].z - runPts[k - 1].z));
           }
           const totalArc = cumLen[cumLen.length - 1];
-          if (totalArc <= margin * 2 + 0.3) continue;
+          const usableArc = totalArc - runMarginStart - runMarginEnd;
+          if (usableArc <= 0.35) return;
 
-          const usableArc = totalArc - margin * 2;
-          const seatsInRow = Math.max(2, Math.floor(usableArc / stepUnitW));
+          const seatsInRow = Math.max(1, Math.floor(usableArc / stepUnitW));
+          const seatWFactor = stride > 1 ? 0.985 : 0.92;
+          const seatDepthM = stride > 1 ? Math.min(0.62, rowPitch * 0.74) : Math.min(0.50, rowPitch * 0.60);
+          const seatRowElev = isVip ? baseElev : (baseElev + (r - 1) * riserH);
 
           let segIdx = 0;
           for (let si = 0; si < seatsInRow; si++) {
-            const targetS = margin + ((si + 0.5) / seatsInRow) * usableArc;
+            const targetS = runMarginStart + ((si + 0.5) / seatsInRow) * usableArc;
             while (segIdx < cumLen.length - 2 && cumLen[segIdx + 1] < targetS) {
               segIdx++;
             }
             const segLen = Math.max(1e-5, cumLen[segIdx + 1] - cumLen[segIdx]);
             const localT = Math.max(0, Math.min(1, (targetS - cumLen[segIdx]) / segLen));
-            const pA = rowPts[segIdx];
-            const pB = rowPts[segIdx + 1];
+            const pA = runPts[segIdx];
+            const pB = runPts[segIdx + 1];
             const seatDeg = pA.deg + (pB.deg - pA.deg) * localT;
 
             // Skip seats inside carved Vomitory opening
@@ -1776,21 +1965,28 @@ class Renderer3D {
               continue;
             }
 
-            // Evaluate exact position on true smooth curve + exact radial inward normal
-            const exactPt = evalTierPoint(this.venue, tierIndex, seatDeg, rowFrac, sec.customRadialDepth);
+            let seatRowFrac;
+            if (isVip) {
+              seatRowFrac = vipFrontFrac;
+            } else if (isConcentricSeats) {
+              const ePt = evalTierPoint(this.venue, tierIndex, seatDeg, 0, sec.customRadialDepth);
+              const eDepth = Math.max(0.5, Math.hypot(ePt.outX - ePt.inX, ePt.outZ - ePt.inZ));
+              if ((r - 0.35) * rowPitch > eDepth) continue;
+              seatRowFrac = Math.min(0.98, ((r - 0.5) * rowPitch) / eDepth);
+            } else {
+              seatRowFrac = totalRows > 1 ? (r - 0.5) / totalRows : 0.5;
+            }
+
+            const exactPt = evalTierPoint(this.venue, tierIndex, seatDeg, seatRowFrac, sec.customRadialDepth);
             let fx, fz;
             if (!tierHasMorph && ((Math.abs(exactPt.nx) > 0.999 && Math.abs(exactPt.nz) < 1e-3) || (Math.abs(exactPt.nz) > 0.999 && Math.abs(exactPt.nx) < 1e-3))) {
               fx = -exactPt.nx;
               fz = -exactPt.nz;
             } else {
-              const inward = getRowInwardNormal(this.venue, tierIndex, seatDeg, rowFrac, sec.customRadialDepth);
+              const inward = getRowInwardNormal(this.venue, tierIndex, seatDeg, seatRowFrac, sec.customRadialDepth);
               fx = inward.x;
               fz = inward.z;
             }
-
-            const seatWFactor = stride > 1 ? 0.985 : 0.92;
-            const seatDepthM = stride > 1 ? Math.min(0.62, rowPitch * 0.74) : Math.min(0.50, rowPitch * 0.60);
-            const seatRowElev = isVip ? baseElev : (baseElev + (r - 1) * riserH);
 
             if (isVip) {
               solid.addVipSeat3D(
@@ -1817,6 +2013,55 @@ class Renderer3D {
                 backCol
               );
             }
+          }
+        };
+
+        for (let r = 1; r <= seatRowCount; r++) {
+          if (isConcentricSeats && rowAngleEdges) {
+            const rowDistCenter = (r - 0.5) * rowPitch;
+            const reqDepth = (r - 0.35) * rowPitch;
+            let runPts = [];
+            let runStartsAtEdge = true;
+            for (let i = 0; i < rowAngleEdges.length; i++) {
+              const e = rowAngleEdges[i];
+              const inside = e.depth >= reqDepth;
+              if (i > 0) {
+                const prev = rowAngleEdges[i - 1];
+                const prevInside = prev.depth >= reqDepth;
+                if (inside !== prevInside) {
+                  const t = Math.max(0, Math.min(1, (reqDepth - prev.depth) / (e.depth - prev.depth)));
+                  const bDeg = prev.deg + (e.deg - prev.deg) * t;
+                  const bPt = evalTierPoint(this.venue, tierIndex, bDeg, Math.min(0.98, rowDistCenter / Math.max(0.5, reqDepth)), sec.customRadialDepth);
+                  if (prevInside) {
+                    runPts.push({ deg: bDeg, x: bPt.x, z: bPt.z });
+                    placeSeatsAlongRun(r, runPts, runStartsAtEdge ? margin : 0.35, 0.35);
+                    runPts = [];
+                  } else {
+                    runStartsAtEdge = false;
+                    runPts = [{ deg: bDeg, x: bPt.x, z: bPt.z }];
+                  }
+                }
+              }
+              if (inside) {
+                if (runPts.length === 0) runStartsAtEdge = (i === 0);
+                const f = Math.min(0.98, rowDistCenter / e.depth);
+                runPts.push({
+                  deg: e.deg,
+                  x: e.inX + (e.outX - e.inX) * f,
+                  z: e.inZ + (e.outZ - e.inZ) * f
+                });
+              }
+            }
+            if (runPts.length >= 2) {
+              placeSeatsAlongRun(r, runPts, runStartsAtEdge ? margin : 0.35, margin);
+            }
+          } else {
+            const rowFrac = isVip ? vipFrontFrac : (totalRows > 1 ? (r - 0.5) / totalRows : 0.5);
+            const rowPts = rowAngles.map((deg) => {
+              const p = evalTierPoint(this.venue, tierIndex, deg, rowFrac, sec.customRadialDepth);
+              return { deg, x: p.x, z: p.z };
+            });
+            placeSeatsAlongRun(r, rowPts, margin, margin);
           }
         }
       });
@@ -2257,7 +2502,7 @@ class Renderer3D {
     if (lastTierIdx < 0) return;
 
     const lastTier = tiers[lastTierIdx];
-    const isMorphedLast = lastTier.morphMode === 'concentric-circle' && (lastTier.concentricMorph || 0) > 0.1;
+    const isMorphedLast = isConcentricMorphTier(lastTier);
     const isBirdNest = this.venue.code === 'BJ-NST-2008-01' ||
       String(this.venue.id || '').indexOf('bird-nest') >= 0;
     const ringAngles = this.buildFullRingAngles(180);
@@ -2266,6 +2511,12 @@ class Renderer3D {
     const fasciaCol = [0.32, 0.38, 0.48, 1.0];
     const lightStripCol = [0.85, 0.92, 1.0, 1.0];
     const thickness = 1.6; // Real 3D thickness prevents ANY Z-fighting!
+
+    const lastRows = lastTier.defaultRows || 22;
+    const lastPitch = lastTier.defaultRowPitch || 0.85;
+    const lastSlope = lastTier.defaultSlopeDeg || 24;
+    const lastRiserH = lastTier.defaultRiserHeight || (lastPitch * Math.tan(lastSlope * DEG2RAD));
+    const flatTopBowl = (lastTier.baseElevation || 14) + Math.max(0, lastRows - 1) * lastRiserH;
 
     for (let i = 0; i < ringAngles.length - 1; i++) {
       const deg1 = ringAngles[i];
@@ -2289,13 +2540,17 @@ class Renderer3D {
       const xIn2 = pt2.outX - nx2 * 14, zIn2 = pt2.outZ - nz2 * 14;
       const xOut2 = pt2.outX + nx2 * 5, zOut2 = pt2.outZ + nz2 * 5;
 
-      const lastRows = lastTier.defaultRows || 22;
-      const lastPitch = lastTier.defaultRowPitch || 0.85;
-      const lastSlope = lastTier.defaultSlopeDeg || 24;
-      const lastRiserH = lastTier.defaultRiserHeight || (lastPitch * Math.tan(lastSlope * DEG2RAD));
-      const topBowl = (lastTier.baseElevation || 14) + Math.max(0, lastRows - 1) * lastRiserH;
-      const yBot1 = Math.max(maxElev, topBowl + 3.5);
-      const yBot2 = yBot1;
+      let yBot1;
+      let yBot2;
+      if (isMorphedLast) {
+        const r1 = getTierRowsAtAngleFloat(this.venue, lastTierIdx, lastTier, null, deg1);
+        const r2 = getTierRowsAtAngleFloat(this.venue, lastTierIdx, lastTier, null, deg2);
+        yBot1 = (lastTier.baseElevation || 14) + Math.max(0, r1 - 1) * lastRiserH + 3.6;
+        yBot2 = (lastTier.baseElevation || 14) + Math.max(0, r2 - 1) * lastRiserH + 3.6;
+      } else {
+        yBot1 = Math.max(maxElev, flatTopBowl + 3.5);
+        yBot2 = yBot1;
+      }
       const yTop1 = yBot1 + thickness;
       const yTop2 = yBot2 + thickness;
 

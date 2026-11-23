@@ -8,6 +8,8 @@ const {
   DEG2RAD,
   rotateXZ,
   evalTierPoint,
+  isConcentricMorphTier,
+  getTierRowsAtAngle,
   getInfieldCornerTransitionAngles,
   getRowInwardNormal,
   computeRunningTrackSpec,
@@ -155,29 +157,76 @@ class Renderer2D {
 
         const innerPts = [];
         const outerPts = [];
+        const sampleDepths = [];
         const isSolidWall = (sec.fillType || tier.defaultFillType) === 'solid-wall';
+        const isVip = (sec.fillType || tier.defaultFillType) === 'vip-box';
         const rawSecRows = sec.rows || tier.defaultRows || 22;
+        const rowPitch = Math.max(0.4, sec.rowPitch || tier.defaultRowPitch || 0.85);
+        const tierIsConcentric = !isSolidWall && !isVip && isConcentricMorphTier(tier);
 
         sampleDegs.forEach((deg) => {
           const pt = evalTierPoint(this.venue, tierIndex, deg, 0, sec.customRadialDepth);
           innerPts.push({ x: pt.inX, y: pt.inZ });
           outerPts.push({ x: pt.outX, y: pt.outZ });
+          sampleDepths.push(Math.hypot(pt.outX - pt.inX, pt.outZ - pt.inZ));
         });
 
-        // 2D Seating Row Arc lines: CAD-style concentric row arcs following true tier morph contour
+        // 2D Seating Row Arc lines: CAD-style constant-pitch concentric row arcs clipped cleanly by circular rim
         const rowLines = [];
-        if (!isSolidWall && tier.level > 0) {
-          for (let r = 1; r < rawSecRows; r++) {
-            const f = r / rawSecRows;
-            const arcPts = [];
-            for (let d = 0; d < sampleDegs.length; d++) {
-              arcPts.push({
-                x: innerPts[d].x + (outerPts[d].x - innerPts[d].x) * f,
-                y: innerPts[d].y + (outerPts[d].y - innerPts[d].y) * f
-              });
+        if (!isSolidWall && !isVip && tier.level > 0) {
+          if (tierIsConcentric) {
+            let maxDepthInSec = 0;
+            for (let d = 0; d < sampleDepths.length; d++) {
+              if (sampleDepths[d] > maxDepthInSec) maxDepthInSec = sampleDepths[d];
             }
-            if (arcPts.length >= 2) {
-              rowLines.push(arcPts);
+            const maxRowLines = Math.floor(maxDepthInSec / rowPitch);
+            for (let r = 1; r <= maxRowLines; r++) {
+              const distM = r * rowPitch;
+              let currentRun = [];
+              for (let d = 0; d < sampleDegs.length; d++) {
+                const inside = distM < sampleDepths[d] - 1e-3;
+                if (d > 0) {
+                  const prevInside = distM < sampleDepths[d - 1] - 1e-3;
+                  if (inside !== prevInside) {
+                    const t = Math.max(0, Math.min(1, (distM - sampleDepths[d - 1]) / (sampleDepths[d] - sampleDepths[d - 1])));
+                    const edgePt = {
+                      x: outerPts[d - 1].x + (outerPts[d].x - outerPts[d - 1].x) * t,
+                      y: outerPts[d - 1].y + (outerPts[d].y - outerPts[d - 1].y) * t
+                    };
+                    if (prevInside) {
+                      currentRun.push(edgePt);
+                      if (currentRun.length >= 2) rowLines.push(currentRun);
+                      currentRun = [];
+                    } else {
+                      currentRun = [edgePt];
+                    }
+                  }
+                }
+                if (inside) {
+                  const f = distM / sampleDepths[d];
+                  currentRun.push({
+                    x: innerPts[d].x + (outerPts[d].x - innerPts[d].x) * f,
+                    y: innerPts[d].y + (outerPts[d].y - innerPts[d].y) * f
+                  });
+                }
+              }
+              if (currentRun.length >= 2) {
+                rowLines.push(currentRun);
+              }
+            }
+          } else {
+            for (let r = 1; r < rawSecRows; r++) {
+              const f = r / rawSecRows;
+              const arcPts = [];
+              for (let d = 0; d < sampleDegs.length; d++) {
+                arcPts.push({
+                  x: innerPts[d].x + (outerPts[d].x - innerPts[d].x) * f,
+                  y: innerPts[d].y + (outerPts[d].y - innerPts[d].y) * f
+                });
+              }
+              if (arcPts.length >= 2) {
+                rowLines.push(arcPts);
+              }
             }
           }
         }
@@ -189,7 +238,9 @@ class Renderer2D {
 
         let vomitoryRect = null;
         if (sec.vomitory && sec.vomitory.position !== 'none' && sec.vomitory.enabled !== false) {
-          const totalRows = sec.rows || tier.defaultRows || 22;
+          const totalRows = tierIsConcentric
+            ? getTierRowsAtAngle(this.venue, tierIndex, tier, sec, midDeg)
+            : (sec.rows || tier.defaultRows || 22);
           const vomInfo = computeVomitoryAngularBounds(
             this.venue,
             tierIndex,
