@@ -452,7 +452,12 @@ class Renderer3D {
     const overrides = this.tierColorOverrides || {};
     let clearR = 10 / 255, clearG = 15 / 255, clearB = 29 / 255;
     const sceneClear = this.sceneManager ? this.sceneManager.getClearColor() : null;
-    if (overrides.sky) {
+    const isCustomScene = this.sceneManager && this.sceneManager.getCurrentSceneId() !== 'default';
+    if (isCustomScene && sceneClear) {
+      clearR = sceneClear[0];
+      clearG = sceneClear[1];
+      clearB = sceneClear[2];
+    } else if (overrides.sky) {
       const skyRgb = parseHexRgb(overrides.sky) || { r: 10, g: 15, b: 29 };
       clearR = skyRgb.r / 255;
       clearG = skyRgb.g / 255;
@@ -472,7 +477,10 @@ class Renderer3D {
 
     // Update dynamic exterior scene animations (e.g. clouds, fairy sparkles)
     if (this.sceneManager) {
-      this.sceneManager.update(elapsedSec, 0.016, gl);
+      this.sceneManager.update(elapsedSec, 0.016, gl, {
+        solidBuffers: this.solidBuffers,
+        screenBuffers: this.screenBuffers
+      });
     }
 
     // 1. Opaque stadium, seats, vomitories, trusses & stage

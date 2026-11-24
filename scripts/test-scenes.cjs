@@ -81,6 +81,12 @@ console.log('--- 2. Testing Decoupled Bounds Calculation Across Venues ---');
     assert.strictEqual(b.depth, b.radiusZ * 2);
     assert.strictEqual(b.minY, -0.60);
     assert.ok(b.maxY > 10, `maxY should account for stand tier elevation for ${v.name}`);
+
+    // Verify Bird's Nest bounds account for its full architectural footprint
+    if (v.id.includes('bird-nest')) {
+      assert.ok(b.radiusX >= 140, `Bird's Nest radiusX must encompass full footprint (got ${b.radiusX})`);
+      assert.ok(b.maxY >= 45, `Bird's Nest maxY must encompass full bowl/canopy elevation (got ${b.maxY})`);
+    }
   });
 
   console.log(`✓ Decoupled venue bounds calculation verified for all ${venues.length} venues.`);
@@ -196,51 +202,54 @@ console.log('--- 5. Testing Bird Eye View Visibility (不允许超出画面) ---
 
       // Test multiple yaw rotation angles around the island
       const yawAngles = [0, 0.42, Math.PI / 2, Math.PI, (3 * Math.PI) / 2, 2 * Math.PI - 0.1];
-      yawAngles.forEach(yaw => {
-        const r = 460;
-        const pitch = 0.68;
-        const eye = {
-          x: Math.sin(yaw) * Math.cos(pitch) * r,
-          y: Math.sin(pitch) * r,
-          z: Math.cos(yaw) * Math.cos(pitch) * r
-        };
-        const target = { x: 0, y: 6, z: 0 };
-        const view = Mat4.create();
-        Mat4.lookAt(view, eye, target, { x: 0, y: 1, z: 0 });
-        const mvp = Mat4.create();
-        Mat4.multiply(mvp, proj, view);
+      const pitchAngles = [0.18, 0.68, 1.35];
 
-        // Project key platform perimeter vertices (excluding distant sky dome)
-        // Check grass meadow edge and rock cliff keel
-        const numSamples = 24;
-        for (let s = 0; s < numSamples; s++) {
-          const a = (s / numSamples) * Math.PI * 2;
-          const p = island.getPerimeterRadius(a, dims.halfWidth, dims.halfDepth);
+      pitchAngles.forEach(pitch => {
+        yawAngles.forEach(yaw => {
+          const r = 460;
+          const eye = {
+            x: Math.sin(yaw) * Math.cos(pitch) * r,
+            y: Math.sin(pitch) * r,
+            z: Math.cos(yaw) * Math.cos(pitch) * r
+          };
+          const target = { x: 0, y: 6, z: 0 };
+          const view = Mat4.create();
+          Mat4.lookAt(view, eye, target, { x: 0, y: 1, z: 0 });
+          const mvp = Mat4.create();
+          Mat4.multiply(mvp, proj, view);
 
-          const samplePoints = [
-            { x: p.x, y: dims.topY, z: p.z }, // Meadow edge
-            { x: p.x * 0.5, y: dims.bottomY * 0.6, z: p.z * 0.5 }, // Mid cliff
-            { x: 0, y: dims.bottomY, z: 0 } // Keel apex
-          ];
+          // Project key platform perimeter vertices (excluding distant sky dome)
+          // Check grass meadow edge and rock cliff keel
+          const numSamples = 24;
+          for (let s = 0; s < numSamples; s++) {
+            const a = (s / numSamples) * Math.PI * 2;
+            const p = island.getPerimeterRadius(a, dims.halfWidth, dims.halfDepth);
 
-          samplePoints.forEach(pt => {
-            const clipX = mvp[0] * pt.x + mvp[4] * pt.y + mvp[8] * pt.z + mvp[12];
-            const clipY = mvp[1] * pt.x + mvp[5] * pt.y + mvp[9] * pt.z + mvp[13];
-            const clipW = mvp[3] * pt.x + mvp[7] * pt.y + mvp[11] * pt.z + mvp[15];
+            const samplePoints = [
+              { x: p.x, y: dims.topY, z: p.z }, // Meadow edge
+              { x: p.x * 0.5, y: dims.bottomY * 0.6, z: p.z * 0.5 }, // Mid cliff
+              { x: 0, y: dims.bottomY, z: 0 } // Keel apex
+            ];
 
-            const ndcX = clipX / clipW;
-            const ndcY = clipY / clipW;
+            samplePoints.forEach(pt => {
+              const clipX = mvp[0] * pt.x + mvp[4] * pt.y + mvp[8] * pt.z + mvp[12];
+              const clipY = mvp[1] * pt.x + mvp[5] * pt.y + mvp[9] * pt.z + mvp[13];
+              const clipW = mvp[3] * pt.x + mvp[7] * pt.y + mvp[11] * pt.z + mvp[15];
 
-            assert.ok(
-              Math.abs(ndcX) <= 0.96,
-              `Platform vertex ndcX (${ndcX.toFixed(3)}) exceeds screen margin for ${v.name} at aspect ${aspect.toFixed(2)}`
-            );
-            assert.ok(
-              Math.abs(ndcY) <= 0.96,
-              `Platform vertex ndcY (${ndcY.toFixed(3)}) exceeds screen margin for ${v.name} at aspect ${aspect.toFixed(2)}`
-            );
-          });
-        }
+              const ndcX = clipX / clipW;
+              const ndcY = clipY / clipW;
+
+              assert.ok(
+                Math.abs(ndcX) <= 0.96,
+                `Platform vertex ndcX (${ndcX.toFixed(3)}) exceeds screen margin for ${v.name} at aspect ${aspect.toFixed(2)}, pitch ${pitch}`
+              );
+              assert.ok(
+                Math.abs(ndcY) <= 0.96,
+                `Platform vertex ndcY (${ndcY.toFixed(3)}) exceeds screen margin for ${v.name} at aspect ${aspect.toFixed(2)}, pitch ${pitch}`
+              );
+            });
+          }
+        });
       });
     });
   });
@@ -269,6 +278,67 @@ console.log('--- 6. Testing Renderer3D Integration with SceneManager ---');
   assert.ok(renderer.sceneManager.getCurrentScene().cloudInstances[0].currentAngle !== undefined);
 
   console.log('✓ Renderer3D SceneManager facade methods and animation loops verified.');
+}
+
+console.log('--- 7. Testing Real Dynamic Vertex Animation & WebGL bufferSubData ---');
+{
+  const island = new FloatingIslandScene();
+  const bounds = computeVenueBounds(venues[0]);
+  const solid = new MeshBuilder();
+  const screens = new MeshBuilder();
+  const alpha = new MeshBuilder();
+  island.buildMeshes({ solid, screens, alpha }, bounds);
+
+  assert.ok(island.cloudBasePositions && island.cloudBasePositions.length > 0, 'Cloud base positions must be captured');
+  assert.ok(island.dynamicCloudPositions && island.dynamicCloudPositions.length > 0, 'Dynamic cloud positions must be allocated');
+  assert.ok(island.particleBasePositions && island.particleBasePositions.length > 0, 'Particle base positions must be captured');
+  assert.ok(island.dynamicParticlePositions && island.dynamicParticlePositions.length > 0, 'Dynamic particle positions must be allocated');
+
+  // Store initial snapshot at t = 0
+  island.update(0.0, 0.016, null);
+  const cloudX0 = island.dynamicCloudPositions[0];
+  const cloudY0 = island.dynamicCloudPositions[1];
+  const partY0 = island.dynamicParticlePositions[1];
+
+  // Advance time to t = 2.5s
+  island.update(2.5, 0.016, null);
+  const cloudX1 = island.dynamicCloudPositions[0];
+  const cloudY1 = island.dynamicCloudPositions[1];
+  const partY1 = island.dynamicParticlePositions[1];
+
+  // Verify positions genuinely displaced due to orbital drift and vertical bobbing
+  const cloudDeltaX = Math.abs(cloudX1 - cloudX0);
+  const cloudDeltaY = Math.abs(cloudY1 - cloudY0);
+  const partDeltaY = Math.abs(partY1 - partY0);
+
+  assert.ok(cloudDeltaX > 0.01, `Cloud X position must drift over time (delta = ${cloudDeltaX})`);
+  assert.ok(cloudDeltaY > 0.01, `Cloud Y position must bob over time (delta = ${cloudDeltaY})`);
+  assert.ok(partDeltaY > 0.01, `Particle Y position must float upwards over time (delta = ${partDeltaY})`);
+
+  // Verify WebGL bufferSubData invocation with spy
+  const subDataCalls = [];
+  const mockGl = {
+    ARRAY_BUFFER: 0x8892,
+    bindBuffer(target, buf) {},
+    bufferSubData(target, offset, data) {
+      subDataCalls.push({ target, offset, length: data.length });
+    }
+  };
+  const mockBuffers = {
+    solidBuffers: { posBuf: { id: 1 } },
+    screenBuffers: { posBuf: { id: 2 } }
+  };
+
+  island.update(3.0, 0.016, mockGl, mockBuffers);
+  assert.strictEqual(subDataCalls.length, 2, 'gl.bufferSubData must be called for solid (clouds) and screens (particles)');
+  assert.strictEqual(subDataCalls[0].target, mockGl.ARRAY_BUFFER);
+  assert.strictEqual(subDataCalls[0].offset, island.cloudVertexStart * 3 * 4);
+  assert.strictEqual(subDataCalls[0].length, island.cloudVertexCount * 3);
+  assert.strictEqual(subDataCalls[1].target, mockGl.ARRAY_BUFFER);
+  assert.strictEqual(subDataCalls[1].offset, island.particleVertexStart * 3 * 4);
+  assert.strictEqual(subDataCalls[1].length, island.particleVertexCount * 3);
+
+  console.log('✓ Dynamic cloud drift/bobbing, sparkle upward float & WebGL bufferSubData verified.');
 }
 
 console.log('\n========================================');

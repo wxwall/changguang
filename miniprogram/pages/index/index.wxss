@@ -175,6 +175,17 @@
   background: rgba(244, 63, 94, 0.9);
 }
 
+.hud-action-btn.scene-btn {
+  background: rgba(16, 185, 129, 0.88);
+  border: 1rpx solid rgba(110, 231, 183, 0.45);
+}
+
+.hud-right-3d {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
 .fullscreen-btn-3d {
   pointer-events: auto;
   flex-shrink: 0;

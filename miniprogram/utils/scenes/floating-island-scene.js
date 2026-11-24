@@ -56,17 +56,17 @@ class FloatingIslandScene extends BaseScene {
 
     // Platform must be larger than stadium, preserving 10 : 8.8 ratio
     // Depth = Width * 0.88. To satisfy depth > rz + margin, width >= (rz + margin) / 0.88
-    const marginZ = Math.max(7.5, rz * 0.05);
-    const marginX = Math.max(12, rx * 0.12);
+    const marginZ = Math.max(12, rz * 0.10);
+    const marginX = Math.max(15, rx * 0.14);
 
     let halfWidth = Math.max(
       rx + marginX,
       (rz + marginZ) / 0.88,
-      85
+      95
     );
 
-    // Keep halfWidth bounded to ensure entire platform remains within screen NDC (< 0.88)
-    halfWidth = Math.min(186, Math.max(85, halfWidth));
+    // Keep halfWidth bounded to ensure entire platform remains within screen NDC (< 0.96)
+    halfWidth = Math.min(200, Math.max(95, halfWidth));
     const halfDepth = halfWidth * 0.88;
 
     // Mountain rock vertical height: proportional to halfWidth
@@ -161,19 +161,19 @@ class FloatingIslandScene extends BaseScene {
   buildWarmSkyBackdrop(screens, halfWidth) {
     const domeR = 640;
     const segments = 32;
-    const rings = 8;
+    const rings = 14;
 
     // Colors:
     // Center / zenith: #fefaf2 (254, 250, 242)
     const colZenith = [0.9961, 0.9804, 0.9490, 1.0];
     // Gentle warm yellow glow: #fff5dc (255, 245, 220)
     const colWarmGlow = [1.0, 0.9608, 0.8627, 1.0];
-    // Horizon / edge: #f6eee3 (246, 238, 227)
+    // Horizon / edge / lower skirt: #f6eee3 (246, 238, 227)
     const colBase = [0.9647, 0.9333, 0.8902, 1.0];
 
     for (let r = 0; r < rings; r++) {
-      const phi1 = (r / rings) * (Math.PI * 0.48);
-      const phi2 = ((r + 1) / rings) * (Math.PI * 0.48);
+      const phi1 = (r / rings) * (Math.PI * 0.78);
+      const phi2 = ((r + 1) / rings) * (Math.PI * 0.78);
 
       const t1 = r / rings;
       const t2 = (r + 1) / rings;
@@ -203,8 +203,8 @@ class FloatingIslandScene extends BaseScene {
   }
 
   interpolateSkyColor(zenith, glow, base, t) {
-    if (t < 0.45) {
-      const u = t / 0.45;
+    if (t < 0.35) {
+      const u = t / 0.35;
       return [
         zenith[0] * (1 - u) + glow[0] * u,
         zenith[1] * (1 - u) + glow[1] * u,
@@ -212,13 +212,16 @@ class FloatingIslandScene extends BaseScene {
         1.0
       ];
     }
-    const u = (t - 0.45) / 0.55;
-    return [
-      glow[0] * (1 - u) + base[0] * u,
-      glow[1] * (1 - u) + base[1] * u,
-      glow[2] * (1 - u) + base[2] * u,
-      1.0
-    ];
+    if (t < 0.75) {
+      const u = (t - 0.35) / 0.40;
+      return [
+        glow[0] * (1 - u) + base[0] * u,
+        glow[1] * (1 - u) + base[1] * u,
+        glow[2] * (1 - u) + base[2] * u,
+        1.0
+      ];
+    }
+    return [base[0], base[1], base[2], 1.0];
   }
 
   /**
@@ -565,6 +568,11 @@ class FloatingIslandScene extends BaseScene {
       const cz = Math.sin(inst.angle) * inst.baseRadius * 0.88;
       const cy = inst.baseY;
 
+      inst.initialX = cx;
+      inst.initialY = cy;
+      inst.initialZ = cz;
+      inst.vertexStart = solid.positions.length / 3;
+
       for (let p = 0; p < puffDefs.length; p++) {
         const puff = puffDefs[p];
         const px = cx + puff.dx * inst.scale;
@@ -576,9 +584,20 @@ class FloatingIslandScene extends BaseScene {
 
         this.addFlattenedPuff(solid, px, py, pz, rx, ry, rz, cloudTopCol, cloudBotCol);
       }
+      inst.vertexCount = solid.positions.length / 3 - inst.vertexStart;
     }
 
     this.cloudVertexCount = solid.positions.length / 3 - this.cloudVertexStart;
+
+    // Allocate & initialize base positions buffer and dynamic positions for WebGL bufferSubData
+    const cloudFloats = this.cloudVertexCount * 3;
+    this.cloudBasePositions = new Float32Array(cloudFloats);
+    this.dynamicCloudPositions = new Float32Array(cloudFloats);
+    const startIdx = this.cloudVertexStart * 3;
+    for (let i = 0; i < cloudFloats; i++) {
+      this.cloudBasePositions[i] = solid.positions[startIdx + i];
+      this.dynamicCloudPositions[i] = solid.positions[startIdx + i];
+    }
   }
 
   /**
@@ -639,16 +658,7 @@ class FloatingIslandScene extends BaseScene {
       const py = topY + 2.0 + (((i * 17) % 100) / 100) * 24.0;
 
       const pSize = 0.65 + 0.45 * Math.sin(i * 1.7);
-
-      this.particleInstances.push({
-        x0: px,
-        y0: py,
-        z0: pz,
-        size: pSize,
-        floatSpeed: 0.35 + 0.25 * ((i % 7) / 7),
-        swaySpeed: 0.8 + 0.4 * ((i % 5) / 5),
-        phase: i * 0.72
-      });
+      const pStartV = screens.positions.length / 3;
 
       // Small glowing diamond quad
       screens.addQuad(
@@ -658,25 +668,88 @@ class FloatingIslandScene extends BaseScene {
         { x: px, y: py - pSize, z: pz },
         goldCol
       );
+
+      this.particleInstances.push({
+        initialX: px,
+        initialY: py,
+        initialZ: pz,
+        vertexStart: pStartV,
+        vertexCount: screens.positions.length / 3 - pStartV,
+        size: pSize,
+        floatSpeed: 0.35 + 0.25 * ((i % 7) / 7),
+        swaySpeed: 0.8 + 0.4 * ((i % 5) / 5),
+        phase: i * 0.72
+      });
     }
 
     this.particleVertexCount = screens.positions.length / 3 - this.particleVertexStart;
+
+    // Allocate & initialize base positions buffer and dynamic positions for WebGL bufferSubData
+    const partFloats = this.particleVertexCount * 3;
+    this.particleBasePositions = new Float32Array(partFloats);
+    this.dynamicParticlePositions = new Float32Array(partFloats);
+    const startPartIdx = this.particleVertexStart * 3;
+    for (let i = 0; i < partFloats; i++) {
+      this.particleBasePositions[i] = screens.positions[startPartIdx + i];
+      this.dynamicParticlePositions[i] = screens.positions[startPartIdx + i];
+    }
   }
 
   /**
-   * Frame-by-frame animation update for clouds drifting/bobbing and particles floating
+   * Frame-by-frame animation update for clouds drifting/bobbing and particles floating.
+   * Performs real WebGL bufferSubData updates if WebGL context and buffers are provided.
    */
-  update(elapsedSec, deltaSec, gl) {
-    // If gl context is present, dynamic buffers can be updated smoothly via bufferSubData.
-    // Base implementation provides mathematical state calculation.
-    if (!this.cloudInstances || this.cloudInstances.length === 0) return;
+  update(elapsedSec, deltaSec, gl, buffers) {
+    // 1. Dynamic clouds orbital drift & vertical bobbing
+    if (this.cloudInstances && this.cloudInstances.length > 0 && this.cloudBasePositions && this.dynamicCloudPositions) {
+      for (let c = 0; c < this.cloudInstances.length; c++) {
+        const cloud = this.cloudInstances[c];
+        cloud.currentAngle = cloud.angle + cloud.speed * elapsedSec;
+        cloud.currentY = cloud.baseY + Math.sin(elapsedSec * cloud.bobSpeed + cloud.phase) * cloud.bobAmp;
+        cloud.currentX = Math.cos(cloud.currentAngle) * cloud.baseRadius;
+        cloud.currentZ = Math.sin(cloud.currentAngle) * cloud.baseRadius * 0.88;
 
-    for (let c = 0; c < this.cloudInstances.length; c++) {
-      const cloud = this.cloudInstances[c];
-      cloud.currentAngle = cloud.angle + cloud.speed * elapsedSec;
-      cloud.currentY = cloud.baseY + Math.sin(elapsedSec * cloud.bobSpeed + cloud.phase) * cloud.bobAmp;
-      cloud.currentX = Math.cos(cloud.currentAngle) * cloud.baseRadius;
-      cloud.currentZ = Math.sin(cloud.currentAngle) * cloud.baseRadius * 0.88;
+        const dx = cloud.currentX - cloud.initialX;
+        const dy = cloud.currentY - cloud.initialY;
+        const dz = cloud.currentZ - cloud.initialZ;
+
+        const relStart = (cloud.vertexStart - this.cloudVertexStart) * 3;
+        const relEnd = relStart + cloud.vertexCount * 3;
+        for (let i = relStart; i < relEnd; i += 3) {
+          this.dynamicCloudPositions[i] = this.cloudBasePositions[i] + dx;
+          this.dynamicCloudPositions[i + 1] = this.cloudBasePositions[i + 1] + dy;
+          this.dynamicCloudPositions[i + 2] = this.cloudBasePositions[i + 2] + dz;
+        }
+      }
+
+      if (gl && buffers && buffers.solidBuffers && buffers.solidBuffers.posBuf && typeof gl.bufferSubData === 'function') {
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.solidBuffers.posBuf);
+        gl.bufferSubData(gl.ARRAY_BUFFER, this.cloudVertexStart * 3 * 4, this.dynamicCloudPositions);
+      }
+    }
+
+    // 2. Dynamic fairy golden sparkles gentle upward floating & swaying
+    if (this.particleInstances && this.particleInstances.length > 0 && this.particleBasePositions && this.dynamicParticlePositions) {
+      const floatRangeY = 24.0;
+      for (let p = 0; p < this.particleInstances.length; p++) {
+        const part = this.particleInstances[p];
+        const dy = ((elapsedSec * part.floatSpeed + part.phase * 3.0) % floatRangeY);
+        const dx = Math.sin(elapsedSec * part.swaySpeed + part.phase) * 1.8;
+        const dz = Math.cos(elapsedSec * part.swaySpeed + part.phase) * 1.8;
+
+        const relStart = (part.vertexStart - this.particleVertexStart) * 3;
+        const relEnd = relStart + part.vertexCount * 3;
+        for (let i = relStart; i < relEnd; i += 3) {
+          this.dynamicParticlePositions[i] = this.particleBasePositions[i] + dx;
+          this.dynamicParticlePositions[i + 1] = this.particleBasePositions[i + 1] + dy;
+          this.dynamicParticlePositions[i + 2] = this.particleBasePositions[i + 2] + dz;
+        }
+      }
+
+      if (gl && buffers && buffers.screenBuffers && buffers.screenBuffers.posBuf && typeof gl.bufferSubData === 'function') {
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.screenBuffers.posBuf);
+        gl.bufferSubData(gl.ARRAY_BUFFER, this.particleVertexStart * 3 * 4, this.dynamicParticlePositions);
+      }
     }
   }
 

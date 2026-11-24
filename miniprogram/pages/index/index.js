@@ -59,7 +59,8 @@ Page({
     colorTargets: [],
     activeColorTarget: '1',
     activeTargetHex: '#2B5EB8',
-    activeThemePreset: 'default'
+    activeThemePreset: 'default',
+    activeSceneId: 'floating-island'
   },
 
   onLoad() {
@@ -459,6 +460,17 @@ Page({
 
   onResetSeatColors() {
     this.applySeatColorsLive({}, 'default');
+  },
+
+  // 切换场外场景（悬浮仙境石头地台 / 经典地台广场）
+  onToggleScene() {
+    if (!this.renderer3d) return;
+    const cur = this.renderer3d.getSceneId();
+    const next = cur === 'floating-island' ? 'default' : 'floating-island';
+    const ok = this.renderer3d.setScene(next);
+    if (ok) {
+      this.setData({ activeSceneId: next });
+    }
   },
 
   // 3D 全屏 / 退出全屏切换

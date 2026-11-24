@@ -108,11 +108,12 @@ class SceneManager {
    * @param {number} elapsedSec
    * @param {number} [deltaSec]
    * @param {WebGLRenderingContext} [gl]
+   * @param {Object} [buffers]
    */
-  update(elapsedSec, deltaSec, gl) {
+  update(elapsedSec, deltaSec, gl, buffers) {
     const scene = this.getCurrentScene();
     if (scene && typeof scene.update === 'function') {
-      scene.update(elapsedSec, deltaSec || 0.016, gl);
+      scene.update(elapsedSec, deltaSec || 0.016, gl, buffers);
     }
   }
 

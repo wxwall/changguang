@@ -57,8 +57,13 @@
           </view>
         </view>
 
-        <view class="fullscreen-btn-3d" bindtap="onToggle3DFullscreen">
-          {{is3DFullscreen ? '退出全屏' : '全屏'}}
+        <view class="hud-right-3d">
+          <view class="hud-action-btn scene-btn" bindtap="onToggleScene">
+            {{activeSceneId === 'floating-island' ? '仙境' : '广场'}}
+          </view>
+          <view class="fullscreen-btn-3d" bindtap="onToggle3DFullscreen">
+            {{is3DFullscreen ? '退出全屏' : '全屏'}}
+          </view>
         </view>
       </view>
 
