@@ -681,53 +681,6 @@ function generateConcertInfieldBlocks(venue) {
 
   const st = getStageTransform(venue);
 
-  // Strictly use schema-defined infieldModules whenever present (supports center-stage 4-sided & end-stage layouts)
-  const schemaModules = Array.isArray(venue.infieldModules) ? venue.infieldModules : [];
-  if (schemaModules.length > 0) {
-    return schemaModules.map((mod, idx) => {
-      const bx = Number(mod.x) || 0;
-      const bz = Number(mod.z !== undefined ? mod.z : mod.y) || 0;
-      const bw = Math.max(1, Number(mod.width) || 20);
-      const bd = Math.max(1, Number(mod.depth) || 10);
-      const rotDeg = Number(mod.rotationDeg) || 0;
-      const rowPitch = Math.max(0.45, Number(mod.rowPitch) || 0.88);
-      const rows = Math.max(1, Number(mod.rows) || Math.floor(bd / rowPitch));
-      const seatSpacing = Math.max(0.4, Number(mod.seatSpacing) || 0.52);
-      const baseElevation = Number(mod.baseElevation) || 0;
-      const slopeDeg = Number(mod.slopeDeg) || 0;
-
-      // Determine exact stage-facing direction along the block's local Z axis
-      const uZ = rotateXZ(0, 1, rotDeg);
-      const toStageX = st.centerX - bx;
-      const toStageZ = st.centerZ - bz;
-      const dot = toStageX * uZ.x + toStageZ * uZ.z;
-      const localFacingZ = dot >= 0 ? 1 : -1;
-      const facingX = uZ.x * localFacingZ;
-      const facingZ = uZ.z * localFacingZ;
-
-      return {
-        id: mod.id || ('infield-mod-' + idx),
-        name: mod.name || ('内场区 ' + (idx + 1)),
-        x: bx,
-        z: bz,
-        width: bw,
-        depth: bd,
-        rows,
-        rowPitch,
-        seatSpacing,
-        baseElevation,
-        slopeDeg,
-        aisleWidth: Number(mod.aisleWidth) || 1.6,
-        rotDeg,
-        localFacingZ,
-        facingX,
-        facingZ,
-        color: mod.color || '#10B981',
-        fromSchema: true
-      };
-    });
-  }
-
   const blocks = [];
   const halfL = st.alongHalf;
   const usableHalfW = Math.max(10, st.crossHalf);
@@ -762,6 +715,55 @@ function generateConcertInfieldBlocks(venue) {
       }
     });
   };
+
+  // Strictly use schema-defined infieldModules whenever present (supports center-stage 4-sided & end-stage layouts)
+  const schemaModules = Array.isArray(venue.infieldModules) ? venue.infieldModules : [];
+  if (schemaModules.length > 0) {
+    schemaModules.forEach((mod, idx) => {
+      const bx = Number(mod.x) || 0;
+      const bz = Number(mod.z !== undefined ? mod.z : mod.y) || 0;
+      const bw = Math.max(1, Number(mod.width) || 20);
+      const bd = Math.max(1, Number(mod.depth) || 10);
+      const rotDeg = Number(mod.rotationDeg) || 0;
+      const rowPitch = Math.max(0.45, Number(mod.rowPitch) || 0.88);
+      const rows = Math.max(1, Number(mod.rows) || Math.floor(bd / rowPitch));
+      const seatSpacing = Math.max(0.4, Number(mod.seatSpacing) || 0.52);
+      const baseElevation = Number(mod.baseElevation) || 0;
+      const slopeDeg = Number(mod.slopeDeg) || 0;
+
+      // Determine exact stage-facing direction along the block's local Z axis
+      const uZ = rotateXZ(0, 1, rotDeg);
+      const toStageX = st.centerX - bx;
+      const toStageZ = st.centerZ - bz;
+      const dot = toStageX * uZ.x + toStageZ * uZ.z;
+      const localFacingZ = dot >= 0 ? 1 : -1;
+      const facingX = uZ.x * localFacingZ;
+      const facingZ = uZ.z * localFacingZ;
+
+      blocks.push({
+        id: mod.id || ('infield-mod-' + idx),
+        name: mod.name || ('内场区 ' + (idx + 1)),
+        x: bx,
+        z: bz,
+        width: bw,
+        depth: bd,
+        rows,
+        rowPitch,
+        seatSpacing,
+        baseElevation,
+        slopeDeg,
+        aisleWidth: Number(mod.aisleWidth) || 1.6,
+        rotDeg,
+        localFacingZ,
+        facingX,
+        facingZ,
+        color: mod.color || '#10B981',
+        fromSchema: true
+      });
+    });
+    fitBlocksToInfield();
+    return blocks;
+  }
 
   if (stage.type === 'center-stage') {
     const hasCatwalk = (st.catwalkLength || 0) > 0.5;
