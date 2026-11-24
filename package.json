@@ -11,7 +11,8 @@
     "lint": "tsc --noEmit",
     "check:venues": "node scripts/check-venues.cjs",
     "test:engine": "node scripts/test-engine-3d.cjs",
-    "test": "npm run check:venues && npm run test:engine"
+    "test:scenes": "node scripts/test-scenes.cjs",
+    "test": "npm run check:venues && npm run test:engine && npm run test:scenes"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

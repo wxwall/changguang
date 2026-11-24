@@ -31,6 +31,11 @@ class InfieldMixinHolder {
     );
 
     // Solid exterior facade shell connecting outer tier down to ground plaza
+    this.buildExteriorFacadeShell(solid);
+  }
+
+  buildExteriorFacadeShell(solid) {
+    const overrides = this.tierColorOverrides || {};
     const tiers = this.venue.standTiers || [];
     const lastTierIdx = tiers.length - 1;
     if (lastTierIdx < 0) return;

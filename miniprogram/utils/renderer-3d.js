@@ -39,6 +39,7 @@ const { StageMixin } = require('./engine-3d-stage');
 const { InfieldMixin } = require('./engine-3d-infield');
 const { StandMixin } = require('./engine-3d-stand');
 const { RaycastMixin } = require('./engine-3d-raycaster');
+const { SceneManager } = require('./scenes/index.js');
 
 const VERTEX_SHADER = `
   attribute vec3 aPosition;
@@ -119,8 +120,29 @@ class Renderer3D {
 
     this.tierColorOverrides = {};
 
+    this.sceneManager = new SceneManager('floating-island');
+
     this.startTime = Date.now();
     this.initGL();
+  }
+
+  setScene(sceneId) {
+    if (this.sceneManager) {
+      const success = this.sceneManager.setCurrentScene(sceneId);
+      if (success && this.venue && this.gl) {
+        this.rebuildSceneMeshes();
+      }
+      return success;
+    }
+    return false;
+  }
+
+  getScene() {
+    return this.sceneManager ? this.sceneManager.getCurrentScene() : null;
+  }
+
+  getSceneId() {
+    return this.sceneManager ? this.sceneManager.getCurrentSceneId() : null;
   }
 
   initGL() {
@@ -165,6 +187,9 @@ class Renderer3D {
 
   setVenue(venue, viewMode, selection) {
     this.venue = venue;
+    if (this.sceneManager) {
+      this.sceneManager.setVenue(venue);
+    }
     if (viewMode) this.viewMode = viewMode;
     if (selection) {
       this.selectedSectorId = selection.sectorId || null;
@@ -309,8 +334,17 @@ class Renderer3D {
     const alpha = new MeshBuilder();
     const beams = new MeshBuilder();
 
-    // 1. Exterior Ground Plaza & Stadium Perimeter Cladding (prevents seeing under bowl)
-    this.buildGroundAndShell(solid);
+    // 1. Exterior Scene (e.g. Floating Island) & Stadium Perimeter Cladding
+    if (this.sceneManager && this.sceneManager.getCurrentSceneId() !== 'default') {
+      this.sceneManager.buildMeshes({ solid, screens, alpha, beams }, { overrides: this.tierColorOverrides });
+      if (typeof this.buildExteriorFacadeShell === 'function') {
+        this.buildExteriorFacadeShell(solid);
+      } else {
+        this.buildGroundAndShell(solid);
+      }
+    } else {
+      this.buildGroundAndShell(solid);
+    }
 
     // 2. Infield Floor, Running Track / Court / Grass Pitch
     this.buildInfieldMesh(solid);
@@ -401,25 +435,45 @@ class Renderer3D {
     this.camTarget.y += (this.targetLook.y - this.camTarget.y) * lerp;
     this.camTarget.z += (this.targetLook.z - this.camTarget.z) * lerp;
 
-    const effectiveFovDeg = Math.max(12, Math.min(90, this.baseFovDeg / Math.pow(this.zoomLevel || 1, 0.85)));
     const aspect = (this.width || 375) / Math.max(1, this.height || 400);
+    let fovRad = (this.baseFovDeg / Math.pow(this.zoomLevel || 1, 0.85)) * DEG2RAD;
+    if (this.cameraMode === 'bird' && aspect < 1.0) {
+      // Compensate horizontal FOV so bird's eye view platform never clips in portrait mode
+      fovRad = 2 * Math.atan(Math.tan(fovRad / 2) / aspect);
+    }
+    const effectiveFovRad = Math.max(12 * DEG2RAD, Math.min(105 * DEG2RAD, fovRad));
 
     const nearPlane = this.cameraMode === 'bird' ? 2.5 : 0.8;
-    Mat4.perspective(this.projMat, effectiveFovDeg * DEG2RAD, aspect, nearPlane, 950.0);
+    Mat4.perspective(this.projMat, effectiveFovRad, aspect, nearPlane, 950.0);
     Mat4.lookAt(this.viewMat, this.camEye, this.camTarget, { x: 0, y: 1, z: 0 });
     Mat4.multiply(this.mvpMat, this.projMat, this.viewMat);
 
     gl.viewport(0, 0, this.width, this.height);
     const overrides = this.tierColorOverrides || {};
-    const skyHex = overrides.sky || '#0A0F1D';
-    const skyRgb = parseHexRgb(skyHex) || { r: 10, g: 15, b: 29 };
-    gl.clearColor(skyRgb.r / 255, skyRgb.g / 255, skyRgb.b / 255, 1.0);
+    let clearR = 10 / 255, clearG = 15 / 255, clearB = 29 / 255;
+    const sceneClear = this.sceneManager ? this.sceneManager.getClearColor() : null;
+    if (overrides.sky) {
+      const skyRgb = parseHexRgb(overrides.sky) || { r: 10, g: 15, b: 29 };
+      clearR = skyRgb.r / 255;
+      clearG = skyRgb.g / 255;
+      clearB = skyRgb.b / 255;
+    } else if (sceneClear) {
+      clearR = sceneClear[0];
+      clearG = sceneClear[1];
+      clearB = sceneClear[2];
+    }
+    gl.clearColor(clearR, clearG, clearB, 1.0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
     gl.useProgram(this.program);
     gl.uniformMatrix4fv(this.uniMVP, false, this.mvpMat);
     const elapsedSec = (Date.now() - this.startTime) * 0.001;
     gl.uniform1f(this.uniTime, elapsedSec);
+
+    // Update dynamic exterior scene animations (e.g. clouds, fairy sparkles)
+    if (this.sceneManager) {
+      this.sceneManager.update(elapsedSec, 0.016, gl);
+    }
 
     // 1. Opaque stadium, seats, vomitories, trusses & stage
     gl.disable(gl.BLEND);
@@ -461,9 +515,11 @@ Object.assign(
 
 Renderer3D.Mat4 = Mat4;
 Renderer3D.MeshBuilder = MeshBuilder;
+Renderer3D.SceneManager = SceneManager;
 
 module.exports = {
   Renderer3D,
   Mat4,
-  MeshBuilder
+  MeshBuilder,
+  SceneManager
 };
