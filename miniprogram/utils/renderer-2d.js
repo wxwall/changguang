@@ -462,7 +462,8 @@ class Renderer2D {
     const h = this.height;
 
     ctx.save();
-    ctx.fillStyle = '#070A12';
+    const overrides = this.tierColorOverrides || {};
+    ctx.fillStyle = overrides.ground || '#070A12';
     ctx.fillRect(0, 0, w, h);
 
     const cx = w / 2 + this.offsetX;

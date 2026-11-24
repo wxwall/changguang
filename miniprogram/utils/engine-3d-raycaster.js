@@ -13,7 +13,7 @@ const {
 
 class RaycastMixinHolder {
   pickAt(nx, ny) {
-    if (!this.venue || this.cameraMode !== 'bird') return null;
+    if (!this.venue) return null;
     const eye = this.camEye;
     const target = this.camTarget;
 
@@ -63,7 +63,8 @@ class RaycastMixinHolder {
     const maxPickY = Math.max(85, ...tierMetas.map(m => m.top + 8));
     let prevT = 0;
     let prevDelta = null;
-    for (let t = 3; t < 900; t += 0.5) {
+    const startT = (this.cameraMode === 'seat') ? 2.5 : 3;
+    for (let t = startT; t < 900; t += 0.5) {
       const px = eye.x + dx * t;
       const py = eye.y + dy * t;
       const pz = eye.z + dz * t;

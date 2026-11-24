@@ -195,6 +195,59 @@ console.log('--- 6. Testing Renderer3D Facade API Backward Compatibility ---');
   console.log('✓ Renderer3D facade backward compatibility 100% verified.');
 }
 
+console.log('--- 7. Testing New Features: Raycast Picking, Multi-Dimension Colors & Minimum Scale ---');
+{
+  const colors = loadCommonJs(path.join(ROOT, 'miniprogram/utils/seat-colors.js'));
+  const appJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'miniprogram/app.json'), 'utf8'));
+  const indexJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'miniprogram/pages/index/index.json'), 'utf8'));
+
+  // 1. Verify Titles do not contain STADICACAD / STADIACAD
+  assert.ok(!appJson.window.navigationBarTitleText.includes('STADI'), 'app.json title should not contain STADIACAD/STADICACAD');
+  assert.ok(!indexJson.navigationBarTitleText.includes('STADI'), 'index.json title should not contain STADIACAD/STADICACAD');
+  console.log('✓ Titles verified without STADICACAD / STADIACAD.');
+
+  // 2. Verify Sky, Roof, Wall, Ground Color Palette & Swatches
+  assert.ok(colors.DEFAULT_TIER_HEX.sky, 'DEFAULT_TIER_HEX must include sky');
+  assert.ok(colors.DEFAULT_TIER_HEX.roof, 'DEFAULT_TIER_HEX must include roof');
+  assert.ok(colors.DEFAULT_TIER_HEX.wall, 'DEFAULT_TIER_HEX must include wall');
+  assert.ok(colors.DEFAULT_TIER_HEX.ground, 'DEFAULT_TIER_HEX must include ground');
+
+  const skySwatches = colors.getSwatchesForTarget('sky');
+  const hasPureBlackSky = skySwatches.some(s => s.hex === '#000000');
+  assert.ok(hasPureBlackSky, 'Sky palette must include pure black #000000 option');
+  console.log('✓ Color palette includes sky (with pure black #000000), roof, wall, ground swatches.');
+
+  // 3. Verify Minimum Scale Form on entry
+  const renderer = new Renderer3D(null, null, 800, 600);
+  const venue = geo.normalizeVenueCoordinates(VENUES[0]);
+  renderer.setVenue(venue, 'concert');
+  assert.strictEqual(renderer.orbitDist, 460, 'Initial venue render must be at minimum form (orbitDist = 460)');
+  renderer.setBirdEyeView();
+  assert.strictEqual(renderer.orbitDist, 460, 'setBirdEyeView must reset to minimum form (orbitDist = 460)');
+  console.log('✓ 3D initial render and bird eye view correctly lock to minimum form (cannot zoom out further).');
+
+  // 4. Verify 3D Picking in both Bird & Seat camera modes
+  renderer.setBirdEyeView();
+  const birdHit = renderer.pickAt(0.3, 0.4);
+  assert.ok(birdHit && (birdHit.sector || birdHit.floorBlock), 'Bird mode picking must resolve a sector or floor block');
+
+  const sel = geo.findDefaultEastFirstRowSelection(venue);
+  const sightline = geo.calculateSeatSightline(venue, sel, 'concert');
+  renderer.flyToSeat(sightline);
+  renderer.camEye = { ...renderer.targetEye };
+  renderer.camTarget = { ...renderer.targetLook };
+  const seatHit = renderer.pickAt(0.5, 0.3);
+  assert.ok(seatHit && (seatHit.sector || seatHit.floorBlock), 'Seat mode picking must resolve across-venue sectors/blocks');
+  console.log('✓ 3D Picking in both bird and seat modes successfully hits sectors/blocks for 2D linkage.');
+
+  // 5. Verify Engine-3D compatibility bridges
+  const raycastBridge = loadCommonJs(path.join(ROOT, 'miniprogram/utils/engine-3d/interaction/raycaster.js'));
+  assert.ok(raycastBridge.RaycastMixin, 'Raycaster bridge must export RaycastMixin');
+  const mat4Bridge = loadCommonJs(path.join(ROOT, 'miniprogram/utils/engine-3d/core/mat4.js'));
+  assert.ok(mat4Bridge.Mat4, 'Mat4 bridge must export Mat4');
+  console.log('✓ Engine-3D backward-compatibility bridges verified.');
+}
+
 console.log('\n========================================');
 console.log('ALL 3D ENGINE ARCHITECTURE TESTS PASSED!');
 console.log('========================================');

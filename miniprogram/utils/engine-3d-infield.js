@@ -11,14 +11,16 @@ const {
   computeRunningTrackSpec,
   generateConcertInfieldBlocks
 } = require('./schema-geometry');
-const { hexToSeat3D } = require('./seat-colors');
+const { hexToSeat3D, parseHexRgb } = require('./seat-colors');
 
 class InfieldMixinHolder {
 
   buildGroundAndShell(solid) {
+    const overrides = this.tierColorOverrides || {};
     // Large architectural plaza apron at y = -0.60 so camera never sees an empty void
     const plazaR = 360;
-    const plazaCol = [0.04, 0.055, 0.095, 1.0];
+    const groundRgb = parseHexRgb(overrides.ground || '#0F172A') || { r: 15, g: 23, b: 42 };
+    const plazaCol = [groundRgb.r / 255, groundRgb.g / 255, groundRgb.b / 255, 1.0];
     solid.addQuad(
       { x: -plazaR, y: -0.60, z: -plazaR },
       { x: -plazaR, y: -0.60, z: plazaR },
@@ -40,7 +42,8 @@ class InfieldMixinHolder {
     const isMorphedLast = isConcentricMorphTier(lastTier);
 
     const ringAngles = this.buildFullRingAngles(180);
-    const shellCol = [0.10, 0.13, 0.19, 1.0];
+    const wallRgb = parseHexRgb(overrides.wall || '#CBD5E1') || { r: 203, g: 213, b: 225 };
+    const shellCol = [wallRgb.r / 255, wallRgb.g / 255, wallRgb.b / 255, 1.0];
 
     const lastRiserH = lastTier.defaultRiserHeight || (lastPitch * Math.tan(lastSlope * DEG2RAD));
     const flatTopWallY = (lastTier.baseElevation || 14) + Math.max(0, lastRows - 1) * lastRiserH + 1.2;

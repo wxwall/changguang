@@ -7,6 +7,7 @@ const {
   isConcentricMorphTier,
   getTierRowsAtAngleFloat
 } = require('./schema-geometry');
+const { parseHexRgb } = require('./seat-colors');
 
 class CanopyMixinHolder {
   buildStadiumCanopyRim(solid) {
@@ -21,9 +22,15 @@ class CanopyMixinHolder {
     const isBirdNest = this.venue.code === 'BJ-NST-2008-01' ||
       String(this.venue.id || '').indexOf('bird-nest') >= 0;
     const ringAngles = this.buildFullRingAngles(180);
-    const topCol = [0.24, 0.29, 0.38, 1.0];
-    const soffitCol = [0.13, 0.17, 0.25, 1.0];
-    const fasciaCol = [0.32, 0.38, 0.48, 1.0];
+
+    const overrides = this.tierColorOverrides || {};
+    const roofRgb = parseHexRgb(overrides.roof || '#1E293B') || { r: 30, g: 41, b: 59 };
+    const rr = roofRgb.r / 255;
+    const rg = roofRgb.g / 255;
+    const rb = roofRgb.b / 255;
+    const topCol = [rr, rg, rb, 1.0];
+    const soffitCol = [rr * 0.72, rg * 0.72, rb * 0.72, 1.0];
+    const fasciaCol = [Math.min(1.0, rr * 1.25), Math.min(1.0, rg * 1.25), Math.min(1.0, rb * 1.25), 1.0];
     const lightStripCol = [0.85, 0.92, 1.0, 1.0];
     const thickness = 1.6; // Real 3D thickness prevents ANY Z-fighting!
 

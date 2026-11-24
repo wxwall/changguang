@@ -1,4 +1,18 @@
 <view class="app-shell">
+  <!-- 体育场切换全景加载过度动画浮层 -->
+  <view wx:if="{{isVenueSwitching}}" class="venue-switch-overlay {{switchingFade ? 'fade-out' : 'fade-in'}}">
+    <view class="switch-card">
+      <view class="switch-loader-ring">
+        <view class="switch-loader-inner"></view>
+      </view>
+      <text class="switch-venue-code">{{switchingVenueName}}</text>
+      <view class="switch-tip-row">
+        <view class="switch-dot-pulse"></view>
+        <text class="switch-tip-text">3D 场馆模型构建中...</text>
+      </view>
+    </view>
+  </view>
+
   <!-- 顶部栏：场馆切换 -->
   <view class="top-header">
     <scroll-view class="venue-tabs" scroll-x="true" enable-flex="true">
@@ -33,7 +47,7 @@
         <view class="hud-left-3d">
           <view class="camera-badge {{cameraMode === 'seat' ? 'seat-mode' : 'bird-mode'}}">
             <text class="badge-dot"></text>
-            <text class="badge-text">{{cameraMode === 'bird' ? '3D 全景鸟瞰 · 点击下方2D选座' : '座席实景 · ' + sightline.sectorName + ' ' + sightline.row + '排'}}</text>
+            <text class="badge-text">{{cameraMode === 'bird' ? '3D 全景鸟瞰 · 点击3D/2D选座' : '座席实景 · ' + sightline.sectorName + ' ' + sightline.row + '排'}}</text>
           </view>
           <view wx:if="{{cameraMode === 'seat'}}" class="hud-action-btn primary" bindtap="onReturnBirdEye">
             返回鸟瞰
@@ -104,7 +118,7 @@
       <view class="inspector-tools">
         <view class="color-picker-btn {{showColorPicker ? 'active' : ''}}" bindtap="onToggleColorPicker">
           <view class="color-btn-dot" style="background: {{activeTargetHex}};"></view>
-          <text>座椅配色</text>
+          <text>场馆配色</text>
         </view>
         <!-- 演唱会舞美 / 标准赛场 切换（已移至底部控制面板） -->
         <view class="mode-pill" bindtap="onToggleViewMode">
@@ -210,13 +224,13 @@
   <view wx:if="{{showSchemaModal}}" class="modal-mask" catchtouchmove="noop">
     <view class="modal-card">
       <view class="modal-header">
-        <text class="modal-title">导入 STADIACAD 2.0.0 Schema</text>
+        <text class="modal-title">导入场馆 2.0.0 Schema</text>
         <view class="modal-header-right">
           <view class="paste-chip" bindtap="onPasteClipboard">粘贴剪贴板</view>
           <text class="modal-close" bindtap="onCloseSchemaModal">✕</text>
         </view>
       </view>
-      <text class="modal-desc">粘贴符合 STADIACAD 2.0.0 规范的场馆 JSON 数据，引擎将实时映射并重建 2D 平面选座图与 3D 场馆：</text>
+      <text class="modal-desc">粘贴符合 2.0.0 规范的场馆 JSON 数据，引擎将实时映射并重建 2D 平面选座图与 3D 场馆：</text>
       <textarea
         class="schema-textarea"
         placeholder="在此输入或粘贴场馆 Schema JSON..."

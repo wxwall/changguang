@@ -29,7 +29,7 @@ const {
   computeVomitoryAngularBounds,
   generateConcertInfieldBlocks
 } = require('./schema-geometry');
-const { hexToSeat3D } = require('./seat-colors');
+const { hexToSeat3D, parseHexRgb } = require('./seat-colors');
 
 const { Mat4 } = require('./engine-3d-mat4');
 const { MeshBuilder } = require('./engine-3d-mesh-builder');
@@ -171,8 +171,8 @@ class Renderer3D {
       this.selectedModuleId = selection.moduleId || null;
       this.selectedFloorBlockId = selection.floorBlockId || null;
     }
-    const summary = venue.engineeringSummary || {};
-    this.orbitDist = Math.max(summary.outermostFootprintLengthM || 240, 160) * 0.88;
+    // 3D 进入页面开始渲染时，场馆总是以最小形态（最大缩放距离 460）展示
+    this.orbitDist = 460;
     this.setBirdEyeView();
     this.rebuildSceneMeshes();
   }
@@ -205,7 +205,10 @@ class Renderer3D {
     this.seatYawOffset = 0;
     this.seatPitchOffset = 0;
     this.zoomLevel = 1.0;
+    this.orbitDist = 460; // 始终以最小形态（页面无法再缩小）展示
     this.updateBirdCameraTarget();
+    this.camEye = { ...this.targetEye };
+    this.camTarget = { ...this.targetLook };
   }
 
   updateBirdCameraTarget() {
@@ -407,7 +410,10 @@ class Renderer3D {
     Mat4.multiply(this.mvpMat, this.projMat, this.viewMat);
 
     gl.viewport(0, 0, this.width, this.height);
-    gl.clearColor(0.03, 0.045, 0.09, 1.0);
+    const overrides = this.tierColorOverrides || {};
+    const skyHex = overrides.sky || '#0A0F1D';
+    const skyRgb = parseHexRgb(skyHex) || { r: 10, g: 15, b: 29 };
+    gl.clearColor(skyRgb.r / 255, skyRgb.g / 255, skyRgb.b / 255, 1.0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
     gl.useProgram(this.program);
