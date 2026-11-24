@@ -38,7 +38,9 @@ function computeVenueBounds(venue) {
     const innerOffset = Math.max(0, Number(t.innerOffset) || 0);
     const rows = Math.max(1, Number(t.defaultRows) || 20);
     const pitch = Math.max(0.6, Number(t.defaultRowPitch) || 0.85);
-    const radialDepth = Math.max(Number(t.radialDepth) || 0, rows * pitch, 6);
+    const radialDepth = (t.radialDepth !== undefined && t.radialDepth !== null)
+      ? Math.max(6, Number(t.radialDepth))
+      : (rows * pitch);
     totalTierDepth += innerOffset + radialDepth;
 
     const baseElev = Number(t.baseElevation) || 0;
