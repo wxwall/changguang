@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "check:venues": "node scripts/check-venues.cjs"
+    "check:venues": "node scripts/check-venues.cjs",
+    "test:engine": "node scripts/test-engine-3d.cjs",
+    "test": "npm run check:venues && npm run test:engine"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

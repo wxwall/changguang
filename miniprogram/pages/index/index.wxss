@@ -689,3 +689,127 @@
   background: #2563EB;
   color: #FFFFFF;
 }
+
+/* ==========================================================================
+   体育场切换全景加载过度动画
+   ========================================================================== */
+.venue-switch-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  background: rgba(11, 15, 25, 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.venue-switch-overlay.fade-in {
+  opacity: 1;
+}
+
+.venue-switch-overlay.fade-out {
+  opacity: 0;
+}
+
+.switch-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40rpx 50rpx;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1rpx solid rgba(56, 189, 248, 0.25);
+  box-shadow: 0 16rpx 48rpx rgba(0, 0, 0, 0.6), 0 0 32rpx rgba(56, 189, 248, 0.15);
+  border-radius: 20rpx;
+  animation: switchPop 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes switchPop {
+  0% {
+    transform: scale(0.92) translateY(12rpx);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
+.switch-loader-ring {
+  width: 76rpx;
+  height: 76rpx;
+  border-radius: 50%;
+  border: 4rpx solid rgba(56, 189, 248, 0.18);
+  border-top-color: #38BDF8;
+  border-right-color: #F43F5E;
+  animation: switchSpin 0.9s cubic-bezier(0.5, 0.1, 0.5, 0.9) infinite;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 24rpx;
+}
+
+.switch-loader-inner {
+  width: 44rpx;
+  height: 44rpx;
+  border-radius: 50%;
+  border: 3rpx solid transparent;
+  border-bottom-color: #38BDF8;
+  animation: switchSpinReverse 0.65s linear infinite;
+}
+
+@keyframes switchSpin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes switchSpinReverse {
+  0% { transform: rotate(360deg); }
+  100% { transform: rotate(0deg); }
+}
+
+.switch-venue-code {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #FFFFFF;
+  letter-spacing: 1rpx;
+  margin-bottom: 12rpx;
+  text-shadow: 0 2rpx 10rpx rgba(56, 189, 248, 0.4);
+}
+
+.switch-tip-row {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.switch-dot-pulse {
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 50%;
+  background: #38BDF8;
+  animation: dotPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes dotPulse {
+  0%, 100% {
+    transform: scale(0.8);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.3);
+    opacity: 1;
+  }
+}
+
+.switch-tip-text {
+  font-size: 21rpx;
+  color: #94A3B8;
+  letter-spacing: 0.5rpx;
+}

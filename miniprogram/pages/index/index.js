@@ -9,6 +9,7 @@ const { Renderer3D } = require('../../utils/renderer-3d');
 const {
   SEAT_COLOR_SWATCHES,
   SEAT_THEME_PRESETS,
+  getSwatchesForTarget,
   getDefaultHexForTarget
 } = require('../../utils/seat-colors');
 
@@ -19,6 +20,9 @@ Page({
     venues: [],
     currentVenue: null,
     loadingVenues: true,
+    isVenueSwitching: false,
+    switchingFade: false,
+    switchingVenueName: '',
     is3DFullscreen: false,
     viewMode: 'concert', // 'concert' | 'sports'
     activeTierFilter: 'all',
@@ -254,6 +258,7 @@ Page({
           .fields({ size: true })
           .exec((res) => {
             if (res && res[0] && res[0].width > 0 && res[0].height > 0) {
+              this._canvas3dCss = { w: res[0].width, h: res[0].height };
               this.renderer3d.canvas.width = res[0].width * dpr;
               this.renderer3d.canvas.height = res[0].height * dpr;
               this.renderer3d.resize(res[0].width * dpr, res[0].height * dpr);
@@ -263,28 +268,44 @@ Page({
     }, 80);
   },
 
-  // 切换场馆 Schema（默认选中东边第1排区域）
+  // 切换场馆 Schema（默认选中东边第1排区域，启动加载过度动画并以最小形态鸟瞰呈现）
   onSelectVenue(e) {
     const venueId = e.currentTarget.dataset.id;
+    if (this.data.currentVenue && (this.data.currentVenue.id === venueId || this.data.currentVenue._id === venueId)) return;
     const venue = this.data.venues.find(v => v.id === venueId || v._id === venueId);
     if (!venue) return;
 
     wx.setStorageSync('STADIACAD_LAST_VENUE', venue.id);
 
-    this.activeSelection = findDefaultEastFirstRowSelection(venue);
-    const sightline = calculateSeatSightline(venue, this.activeSelection, this.data.viewMode);
-    const colorState = this.buildColorPickerState(venue);
-
+    // 触发平滑过渡加载动画
     this.setData({
-      currentVenue: venue,
-      activeTierFilter: 'all',
-      cameraMode: 'seat',
-      zoomLevel: 1.0,
-      sightline,
-      ...colorState
+      isVenueSwitching: true,
+      switchingFade: false,
+      switchingVenueName: venue.shortLabel || venue.name
     });
 
-    this.applyVenueToRenderers(venue, sightline);
+    setTimeout(() => {
+      this.activeSelection = findDefaultEastFirstRowSelection(venue);
+      const sightline = calculateSeatSightline(venue, this.activeSelection, this.data.viewMode);
+      const colorState = this.buildColorPickerState(venue);
+
+      this.setData({
+        currentVenue: venue,
+        activeTierFilter: 'all',
+        cameraMode: 'bird',
+        zoomLevel: 1.0,
+        sightline,
+        ...colorState
+      });
+
+      this.applyVenueToRenderers(venue, sightline, 'bird');
+
+      // 切换完成后平滑淡出过渡动画
+      this.setData({ switchingFade: true });
+      setTimeout(() => {
+        this.setData({ isVenueSwitching: false, switchingFade: false });
+      }, 320);
+    }, 280);
   },
 
   // === 场馆固定楼层座椅配色选择器逻辑 ===
@@ -345,6 +366,30 @@ Page({
       isVipTier: false,
       hex: overrides.floor || getDefaultHexForTarget('floor', false)
     });
+    targets.push({
+      key: 'sky',
+      label: '天空',
+      isVipTier: false,
+      hex: overrides.sky || getDefaultHexForTarget('sky', false)
+    });
+    targets.push({
+      key: 'roof',
+      label: '屋顶',
+      isVipTier: false,
+      hex: overrides.roof || getDefaultHexForTarget('roof', false)
+    });
+    targets.push({
+      key: 'wall',
+      label: '外墙',
+      isVipTier: false,
+      hex: overrides.wall || getDefaultHexForTarget('wall', false)
+    });
+    targets.push({
+      key: 'ground',
+      label: '地面',
+      isVipTier: false,
+      hex: overrides.ground || getDefaultHexForTarget('ground', false)
+    });
 
     const activeKey = (preferredTarget && targets.some(t => t.key === preferredTarget))
       ? preferredTarget
@@ -358,6 +403,7 @@ Page({
       colorTargets: targets,
       activeColorTarget: activeKey,
       activeTargetHex: activeItem ? activeItem.hex : '#2B5EB8',
+      seatColorSwatches: getSwatchesForTarget(activeKey),
       activeThemePreset: presetId
     };
   },
@@ -390,7 +436,8 @@ Page({
     if (!target) return;
     this.setData({
       activeColorTarget: key,
-      activeTargetHex: target.hex
+      activeTargetHex: target.hex,
+      seatColorSwatches: getSwatchesForTarget(key)
     });
   },
 
@@ -526,7 +573,7 @@ Page({
     if (hit) this.selectFromHit(hit);
   },
 
-  // 2D / 3D 点选后统一的选中与进入座席视角逻辑
+  // 2D / 3D 点选后统一的选中与进入座席视角逻辑，实现 3D 与 2D 双向全景联动
   selectFromHit(hit) {
     if (hit.type === 'floor') {
       this.activeSelection = {
@@ -555,6 +602,15 @@ Page({
       };
     }
 
+    // 确保与 2D 页面联动：若当前 2D 过滤了单层且与选区楼层不同，则自动恢复为全部，避免 2D 看不到高亮选区
+    let nextTierFilter = this.data.activeTierFilter;
+    if (hit.type === 'sector' && hit.tierLevel && nextTierFilter !== 'all' && nextTierFilter !== hit.tierLevel) {
+      nextTierFilter = 'all';
+      if (this.renderer2d) {
+        this.renderer2d.setTierFilter('all');
+      }
+    }
+
     this.applySelectionToRenderers();
 
     const sightline = calculateSeatSightline(
@@ -565,6 +621,7 @@ Page({
 
     this.setData({
       sightline,
+      activeTierFilter: nextTierFilter,
       cameraMode: 'seat'
     });
 
@@ -577,32 +634,46 @@ Page({
   onTouchStart3D(e) {
     if (!e.touches || e.touches.length === 0) return;
     if (e.touches.length === 1) {
-      this._t3dLast = { x: e.touches[0].x, y: e.touches[0].y };
-      this._t3dStart = { x: e.touches[0].x, y: e.touches[0].y };
+      const t = e.touches[0];
+      const x = t.x !== undefined ? t.x : t.clientX;
+      const y = t.y !== undefined ? t.y : t.clientY;
+      this._t3dLast = { x, y };
+      this._t3dStart = { x, y };
       this._t3dMoved = false;
     } else if (e.touches.length >= 2) {
       this._t3dMoved = true;
-      const dx = e.touches[0].x - e.touches[1].x;
-      const dy = e.touches[0].y - e.touches[1].y;
-      this._t3dPinchDist = Math.hypot(dx, dy);
+      const t0 = e.touches[0];
+      const t1 = e.touches[1];
+      const x0 = t0.x !== undefined ? t0.x : t0.clientX;
+      const y0 = t0.y !== undefined ? t0.y : t0.clientY;
+      const x1 = t1.x !== undefined ? t1.x : t1.clientX;
+      const y1 = t1.y !== undefined ? t1.y : t1.clientY;
+      this._t3dPinchDist = Math.hypot(x0 - x1, y0 - y1);
     }
   },
 
   onTouchMove3D(e) {
-    if (!this.renderer3d || !e.touches) return;
+    if (!this.renderer3d || !e.touches || e.touches.length === 0) return;
     if (e.touches.length === 1 && this._t3dLast) {
-      const dx = e.touches[0].x - this._t3dLast.x;
-      const dy = e.touches[0].y - this._t3dLast.y;
-      if (this._t3dStart && Math.hypot(e.touches[0].x - this._t3dStart.x, e.touches[0].y - this._t3dStart.y) > 7) {
+      const t = e.touches[0];
+      const x = t.x !== undefined ? t.x : t.clientX;
+      const y = t.y !== undefined ? t.y : t.clientY;
+      const dx = x - this._t3dLast.x;
+      const dy = y - this._t3dLast.y;
+      if (this._t3dStart && Math.hypot(x - this._t3dStart.x, y - this._t3dStart.y) > 12) {
         this._t3dMoved = true;
       }
       this.renderer3d.handleTouchDrag(dx, dy);
-      this._t3dLast = { x: e.touches[0].x, y: e.touches[0].y };
+      this._t3dLast = { x, y };
     } else if (e.touches.length >= 2) {
       this._t3dMoved = true;
-      const dx = e.touches[0].x - e.touches[1].x;
-      const dy = e.touches[0].y - e.touches[1].y;
-      const dist = Math.hypot(dx, dy);
+      const t0 = e.touches[0];
+      const t1 = e.touches[1];
+      const x0 = t0.x !== undefined ? t0.x : t0.clientX;
+      const y0 = t0.y !== undefined ? t0.y : t0.clientY;
+      const x1 = t1.x !== undefined ? t1.x : t1.clientX;
+      const y1 = t1.y !== undefined ? t1.y : t1.clientY;
+      const dist = Math.hypot(x0 - x1, y0 - y1);
       if (this._t3dPinchDist > 10) {
         this.renderer3d.handlePinchZoom(dist / this._t3dPinchDist);
         this.setData({ zoomLevel: Number(this.renderer3d.zoomLevel.toFixed(1)) });
@@ -618,8 +689,13 @@ Page({
     this._t3dStart = null;
     this._t3dMoved = false;
 
-    if (moved || !start || !this.renderer3d || !this._canvas3dCss) return;
-    const { w, h } = this._canvas3dCss;
+    if (moved || !start || !this.renderer3d) return;
+    const dpr = this._dpr || wx.getSystemInfoSync().pixelRatio || 2;
+    const css = this._canvas3dCss || {
+      w: this.renderer3d.width ? this.renderer3d.width / dpr : 375,
+      h: this.renderer3d.height ? this.renderer3d.height / dpr : 260
+    };
+    const { w, h } = css;
     if (!w || !h) return;
 
     const hit = this.renderer3d.pickAt(start.x / w, start.y / h);
