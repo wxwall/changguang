@@ -1,8 +1,7 @@
-const { loadAllStadiumProjects } = require('../../services/venue-service');
+const { loadAllStadiumProjects, loadStadiumProjectById } = require('../../services/venue-service');
 const {
   calculateSeatSightline,
-  findDefaultEastFirstRowSelection,
-  normalizeVenueCoordinates
+  findDefaultEastFirstRowSelection
 } = require('../../utils/schema-geometry');
 const { Renderer2D } = require('../../utils/renderer-2d');
 const { Renderer3D } = require('../../utils/renderer-3d');
@@ -18,6 +17,7 @@ const SEAT_COLORS_STORAGE_KEY = 'STADIACAD_SEAT_COLORS';
 Page({
   data: {
     venues: [],
+    homeVenues: [],
     currentVenue: null,
     loadingVenues: true,
     isVenueSwitching: false,
@@ -49,10 +49,6 @@ Page({
       rowPitch: 0.84,
       guardrailMaterial: '超白钢化夹胶玻璃栏板'
     },
-    showSchemaModal: false,
-    schemaTextareaFocus: false,
-    customSchemaText: '',
-    schemaError: '',
     showColorPicker: false,
     seatColorSwatches: SEAT_COLOR_SWATCHES,
     seatThemePresets: SEAT_THEME_PRESETS,
@@ -94,6 +90,7 @@ Page({
 
       this.setData({
         venues,
+        homeVenues: venues.slice(0, 5),
         currentVenue: initialVenue,
         sightline,
         cameraMode: 'bird',
@@ -269,23 +266,56 @@ Page({
     }, 80);
   },
 
-  // 切换场馆 Schema（默认选中东边第1排区域，启动加载过度动画并以最小形态鸟瞰呈现）
+  // 打开全部场馆列表页面
+  onOpenAllVenues() {
+    const currentId = this.data.currentVenue ? (this.data.currentVenue.id || this.data.currentVenue._id || '') : '';
+    wx.navigateTo({
+      url: `/pages/venues/venues?currentId=${encodeURIComponent(currentId)}`,
+      events: {
+        selectVenue: (picked) => {
+          if (picked && (picked.id || picked.docId)) {
+            this.loadAndSwitchVenue(picked.id, picked.docId, picked.name);
+          }
+        }
+      }
+    });
+  },
+
+  // 切换场馆 Schema（直接从服务器加载该场馆的 Schema，启动过渡动画并以最小形态鸟瞰呈现）
   onSelectVenue(e) {
     const venueId = e.currentTarget.dataset.id;
+    const docId = e.currentTarget.dataset.docId;
     if (this.data.currentVenue && (this.data.currentVenue.id === venueId || this.data.currentVenue._id === venueId)) return;
-    const venue = this.data.venues.find(v => v.id === venueId || v._id === venueId);
-    if (!venue) return;
+    const cached = this.data.venues.find(v => v.id === venueId || v._id === venueId);
+    const displayName = (cached && (cached.shortLabel || cached.name)) || '场馆';
+    this.loadAndSwitchVenue(venueId, docId || (cached && cached._id), displayName);
+  },
 
-    wx.setStorageSync('STADIACAD_LAST_VENUE', venue.id);
+  async loadAndSwitchVenue(venueId, docId, displayName) {
+    if (this.data.currentVenue && (this.data.currentVenue.id === venueId || this.data.currentVenue._id === venueId)) {
+      return;
+    }
 
-    // 触发平滑过渡加载动画
+    // 触发奶白色平滑过渡加载动画
     this.setData({
       isVenueSwitching: true,
       switchingFade: false,
-      switchingVenueName: venue.shortLabel || venue.name
+      switchingVenueName: displayName || '场馆'
     });
 
-    setTimeout(() => {
+    try {
+      let venue = await loadStadiumProjectById(venueId, docId);
+      if (!venue) {
+        venue = (this.data.venues || []).find(v => v.id === venueId || v._id === venueId || (docId && v._id === docId));
+      }
+      if (!venue) {
+        wx.showToast({ title: '加载场馆 Schema 失败', icon: 'none' });
+        this.setData({ isVenueSwitching: false, switchingFade: false });
+        return;
+      }
+
+      wx.setStorageSync('STADIACAD_LAST_VENUE', venue.id);
+
       this.activeSelection = findDefaultEastFirstRowSelection(venue);
       const sightline = calculateSeatSightline(venue, this.activeSelection, this.data.viewMode);
       const colorState = this.buildColorPickerState(venue);
@@ -296,17 +326,21 @@ Page({
         cameraMode: 'bird',
         zoomLevel: 1.0,
         sightline,
+        switchingVenueName: venue.shortLabel || venue.name || displayName,
         ...colorState
       });
 
       this.applyVenueToRenderers(venue, sightline, 'bird');
-
+    } catch (err) {
+      console.error('加载场馆 Schema 异常:', err);
+      wx.showToast({ title: '加载场馆 Schema 失败', icon: 'none' });
+    } finally {
       // 切换完成后平滑淡出过渡动画
       this.setData({ switchingFade: true });
       setTimeout(() => {
         this.setData({ isVenueSwitching: false, switchingFade: false });
       }, 320);
-    }, 280);
+    }
   },
 
   // === 场馆固定楼层座椅配色选择器逻辑 ===
@@ -528,39 +562,46 @@ Page({
     }
   },
 
-  // 2D Canvas 触摸交互（点击选区、单指平移、双指缩放）
+  // 2D Canvas 触摸交互（仅支持点击选区与双指缩放，禁止单指滑动平移）
   onTouchStart2D(e) {
     if (!e.touches || e.touches.length === 0) return;
     this._t2dMoved = false;
     if (e.touches.length === 1) {
-      this._t2dStart = { x: e.touches[0].x, y: e.touches[0].y };
-      this._t2dLast = { x: e.touches[0].x, y: e.touches[0].y };
+      const t = e.touches[0];
+      const x = t.x !== undefined ? t.x : t.clientX;
+      const y = t.y !== undefined ? t.y : t.clientY;
+      this._t2dStart = { x, y };
     } else if (e.touches.length >= 2) {
-      const dx = e.touches[0].x - e.touches[1].x;
-      const dy = e.touches[0].y - e.touches[1].y;
-      this._t2dPinchDist = Math.hypot(dx, dy);
+      this._t2dMoved = true;
+      const t0 = e.touches[0];
+      const t1 = e.touches[1];
+      const x0 = t0.x !== undefined ? t0.x : t0.clientX;
+      const y0 = t0.y !== undefined ? t0.y : t0.clientY;
+      const x1 = t1.x !== undefined ? t1.x : t1.clientX;
+      const y1 = t1.y !== undefined ? t1.y : t1.clientY;
+      this._t2dPinchDist = Math.hypot(x0 - x1, y0 - y1);
     }
   },
 
   onTouchMove2D(e) {
     if (!this.renderer2d || !e.touches) return;
-    if (e.touches.length === 1 && this._t2dLast) {
-      const distFromStart = Math.hypot(e.touches[0].x - this._t2dStart.x, e.touches[0].y - this._t2dStart.y);
-      if (!this._t2dMoved && distFromStart <= 7) {
-        return;
+    if (e.touches.length === 1 && this._t2dStart) {
+      const t = e.touches[0];
+      const x = t.x !== undefined ? t.x : t.clientX;
+      const y = t.y !== undefined ? t.y : t.clientY;
+      const distFromStart = Math.hypot(x - this._t2dStart.x, y - this._t2dStart.y);
+      if (distFromStart > 7) {
+        this._t2dMoved = true;
       }
-      this._t2dMoved = true;
-      const dx = e.touches[0].x - this._t2dLast.x;
-      const dy = e.touches[0].y - this._t2dLast.y;
-      this.renderer2d.offsetX += dx;
-      this.renderer2d.offsetY += dy;
-      this._t2dLast = { x: e.touches[0].x, y: e.touches[0].y };
-      this.renderer2d.render();
     } else if (e.touches.length >= 2) {
       this._t2dMoved = true;
-      const dx = e.touches[0].x - e.touches[1].x;
-      const dy = e.touches[0].y - e.touches[1].y;
-      const dist = Math.hypot(dx, dy);
+      const t0 = e.touches[0];
+      const t1 = e.touches[1];
+      const x0 = t0.x !== undefined ? t0.x : t0.clientX;
+      const y0 = t0.y !== undefined ? t0.y : t0.clientY;
+      const x1 = t1.x !== undefined ? t1.x : t1.clientX;
+      const y1 = t1.y !== undefined ? t1.y : t1.clientY;
+      const dist = Math.hypot(x0 - x1, y0 - y1);
       if (this._t2dPinchDist > 10) {
         const factor = dist / this._t2dPinchDist;
         this.renderer2d.scale = Math.max(0.65, Math.min(4.5, this.renderer2d.scale * factor));
@@ -570,16 +611,17 @@ Page({
     }
   },
 
-  onTouchEnd2D() {
+  onTouchEnd2D(e) {
+    if (!e || !e.touches || e.touches.length === 0) {
+      this._t2dPinchDist = 0;
+    }
     if (this._t2dMoved || !this._t2dStart || !this.renderer2d) {
       this._t2dStart = null;
-      this._t2dLast = null;
       return;
     }
 
     const start = this._t2dStart;
     this._t2dStart = null;
-    this._t2dLast = null;
 
     const hit = this.renderer2d.hitTest(start.x, start.y);
     if (hit) this.selectFromHit(hit);
@@ -773,104 +815,6 @@ Page({
     });
     if (this.renderer3d) {
       this.renderer3d.flyToSeat(sightline);
-    }
-  },
-
-  // 自定义 Schema 导入弹窗（通过 offscreen 隐藏原生 Canvas 后聚焦）
-  onOpenSchemaModal() {
-    this.setData({
-      showSchemaModal: true,
-      schemaError: '',
-      customSchemaText: '',
-      schemaTextareaFocus: false
-    }, () => {
-      setTimeout(() => {
-        this.setData({ schemaTextareaFocus: true });
-      }, 120);
-    });
-  },
-
-  onCloseSchemaModal() {
-    this.setData({
-      showSchemaModal: false,
-      schemaTextareaFocus: false
-    }, () => {
-      this.refreshCanvasSizes();
-    });
-  },
-
-  onPasteClipboard() {
-    wx.getClipboardData({
-      success: (res) => {
-        if (res && res.data) {
-          this.setData({
-            customSchemaText: res.data,
-            schemaError: ''
-          });
-        } else {
-          this.setData({ schemaError: '剪贴板为空，请先复制 Schema JSON' });
-        }
-      },
-      fail: () => {
-        this.setData({ schemaError: '读取剪贴板失败，请直接手动粘贴' });
-      }
-    });
-  },
-
-  onSchemaInput(e) {
-    this.setData({ customSchemaText: e.detail.value, schemaError: '' });
-  },
-
-  onApplyCustomSchema() {
-    const raw = (this.data.customSchemaText || '').trim();
-    if (!raw) {
-      this.setData({ schemaError: '请粘贴有效的 STADIACAD Schema JSON 内容' });
-      return;
-    }
-    try {
-      const parsed = JSON.parse(raw);
-      if (!parsed.infield || !Array.isArray(parsed.standTiers)) {
-        this.setData({ schemaError: 'Schema 缺少核心字段 (infield 或 standTiers)' });
-        return;
-      }
-      const newVenue = normalizeVenueCoordinates({
-        ...parsed,
-        id: parsed.id || `custom-${Date.now()}`,
-        shortLabel: (parsed.name || '自定义场馆').split(' ')[0],
-        capLabel: `${parsed.code || 'CUSTOM'} · ${(((parsed.engineeringSummary && parsed.engineeringSummary.totalCapacity) || 50000) / 1000).toFixed(1)}k座`
-      });
-
-      const updatedVenues = [...this.data.venues, newVenue];
-      this.activeSelection = findDefaultEastFirstRowSelection(newVenue);
-      const sightline = calculateSeatSightline(newVenue, this.activeSelection, this.data.viewMode);
-      const colorState = this.buildColorPickerState(newVenue, null, {}, 'default');
-
-      this.setData({
-        venues: updatedVenues,
-        currentVenue: newVenue,
-        activeTierFilter: 'all',
-        sightline,
-        showSchemaModal: false,
-        schemaTextareaFocus: false,
-        cameraMode: 'seat',
-        zoomLevel: 1.0,
-        ...colorState
-      }, () => {
-        this.refreshCanvasSizes();
-      });
-
-      if (this.renderer2d) {
-        this.renderer2d.tierColorOverrides = {};
-        this.renderer2d.setVenue(newVenue, this.data.viewMode);
-      }
-      if (this.renderer3d) {
-        this.renderer3d.tierColorOverrides = {};
-        this.renderer3d.setVenue(newVenue, this.data.viewMode, this.getSelectionIds());
-        this.renderer3d.flyToSeat(sightline);
-      }
-      this.applySelectionToRenderers();
-    } catch (err) {
-      this.setData({ schemaError: 'JSON 语法解析失败，请检查格式是否完整' });
     }
   }
 });

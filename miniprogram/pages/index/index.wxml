@@ -13,14 +13,18 @@
     </view>
   </view>
 
-  <!-- 顶部栏：场馆切换 -->
+  <!-- 顶部栏：最左侧全部按钮 + 首页5个场馆切换 -->
   <view class="top-header">
+    <view class="venue-all-btn" bindtap="onOpenAllVenues">
+      <text class="venue-all-text">全部</text>
+    </view>
     <scroll-view class="venue-tabs" scroll-x="true" enable-flex="true">
       <view
-        wx:for="{{venues}}"
+        wx:for="{{homeVenues}}"
         wx:key="id"
         class="venue-chip {{currentVenue.id === item.id ? 'active' : ''}}"
         data-id="{{item.id}}"
+        data-doc-id="{{item._id}}"
         bindtap="onSelectVenue"
       >
         <text class="venue-chip-code">{{item.shortLabel}}</text>
@@ -29,8 +33,8 @@
     </scroll-view>
   </view>
 
-  <!-- 核心视口容器：弹出 Schema 输入框时整体移出屏幕以防原生 Canvas 遮挡模拟器 textarea，同时保留 WebGL 上下文 -->
-  <view class="viewport-body {{showSchemaModal ? 'offscreen' : ''}}">
+  <!-- 核心视口容器 -->
+  <view class="viewport-body">
     <!-- 上方版块：3D WebGL 全景沉浸式视野渲染视图 -->
     <view class="pane-3d {{is3DFullscreen ? 'full' : 'split-top'}}">
       <canvas
@@ -130,7 +134,6 @@
           <view class="mode-dot {{viewMode === 'concert' ? 'concert' : 'sports'}}"></view>
           <text>{{viewMode === 'concert' ? '演唱会' : '标准赛场'}}</text>
         </view>
-        <view class="schema-import-btn" bindtap="onOpenSchemaModal">Schema</view>
       </view>
     </view>
 
@@ -191,7 +194,7 @@
           value="{{sightline.row}}"
           disabled="{{sightline.maxRows <= 1}}"
           activeColor="#F43F5E"
-          backgroundColor="#1E293B"
+          backgroundColor="#E5D9C8"
           block-size="16"
           bindchanging="onRowChanging"
           bindchange="onRowChange"
@@ -223,35 +226,5 @@
         <text class="footer-spec">坡度 {{sightline.slopeDeg}}° · 排距 {{sightline.rowPitch}}m · {{sightline.guardrailMaterial}} · {{sightline.cValueStatus}}</text>
       </view>
     </block>
-  </view>
-
-  <!-- 动态粘贴/导入新场馆 Schema 弹窗（原生 Canvas 已移出屏幕，彻底解决模拟器无法弹出输入框的问题） -->
-  <view wx:if="{{showSchemaModal}}" class="modal-mask" catchtouchmove="noop">
-    <view class="modal-card">
-      <view class="modal-header">
-        <text class="modal-title">导入场馆 2.0.0 Schema</text>
-        <view class="modal-header-right">
-          <view class="paste-chip" bindtap="onPasteClipboard">粘贴剪贴板</view>
-          <text class="modal-close" bindtap="onCloseSchemaModal">✕</text>
-        </view>
-      </view>
-      <text class="modal-desc">粘贴符合 2.0.0 规范的场馆 JSON 数据，引擎将实时映射并重建 2D 平面选座图与 3D 场馆：</text>
-      <textarea
-        class="schema-textarea"
-        placeholder="在此输入或粘贴场馆 Schema JSON..."
-        maxlength="-1"
-        fixed="true"
-        cursor-spacing="24"
-        show-confirm-bar="{{false}}"
-        focus="{{schemaTextareaFocus}}"
-        value="{{customSchemaText}}"
-        bindinput="onSchemaInput"
-      ></textarea>
-      <view wx:if="{{schemaError}}" class="schema-error">{{schemaError}}</view>
-      <view class="modal-actions">
-        <button class="btn-secondary" bindtap="onCloseSchemaModal">取消</button>
-        <button class="btn-primary" bindtap="onApplyCustomSchema">立即解析并渲染</button>
-      </view>
-    </view>
   </view>
 </view>

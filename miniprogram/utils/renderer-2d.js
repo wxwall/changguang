@@ -463,7 +463,7 @@ class Renderer2D {
 
     ctx.save();
     const overrides = this.tierColorOverrides || {};
-    ctx.fillStyle = overrides.ground || '#070A12';
+    ctx.fillStyle = overrides.ground || '#f6eee3';
     ctx.fillRect(0, 0, w, h);
 
     const cx = w / 2 + this.offsetX;
@@ -493,9 +493,6 @@ class Renderer2D {
     this.drawSightlineRay(ctx, s);
 
     ctx.restore();
-
-    // 6. Minimal North Compass
-    this.drawOverlayHUD(ctx);
   }
 
   drawGrid(ctx, s) {
@@ -503,7 +500,7 @@ class Renderer2D {
     if (!grid.enabled) return;
 
     ctx.save();
-    ctx.strokeStyle = 'rgba(148, 163, 184, 0.06)';
+    ctx.strokeStyle = 'rgba(120, 95, 70, 0.10)';
     ctx.lineWidth = 1 / s;
     const maxR = 190;
     if (grid.showPolarGrid) {
@@ -931,35 +928,6 @@ class Renderer2D {
     ctx.arc(selected.center.x, selected.center.y, 3.8 / s, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
-    ctx.restore();
-  }
-
-  drawOverlayHUD(ctx) {
-    ctx.save();
-    const x = 22;
-    const y = 24;
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
-    ctx.beginPath();
-    ctx.arc(x, y, 13, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(148, 163, 184, 0.3)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    // Rotated 90° clockwise: North points Right
-    ctx.fillStyle = '#F43F5E';
-    ctx.beginPath();
-    ctx.moveTo(x + 9, y);
-    ctx.lineTo(x + 1, y - 3.5);
-    ctx.lineTo(x + 1, y + 3.5);
-    ctx.closePath();
-    ctx.fill();
-
-    ctx.fillStyle = '#F8FAFC';
-    ctx.font = 'bold 8px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('N', x - 4, y + 0.5);
     ctx.restore();
   }
 

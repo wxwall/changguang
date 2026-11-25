@@ -342,10 +342,99 @@ async function loadAllStadiumProjects() {
   }
 }
 
+/**
+ * 根据场馆 id 或云文档 _id 直接从服务器加载单个场馆的完整 Schema
+ */
+async function loadStadiumProjectById(venueId, docId) {
+  try {
+    ensureCloudInit();
+    const db = wx.cloud.database();
+    const collection = db.collection('stadiumProjects');
+    let doc = null;
+
+    if (docId) {
+      try {
+        const res = await collection.doc(docId).get();
+        if (res && res.data) {
+          doc = res.data;
+        }
+      } catch (err) {
+        console.warn('[DEBUG-stadium-cloud] doc(_id).get() 失败，尝试字段查询:', err && (err.errMsg || err.message));
+      }
+    }
+
+    if (!doc && venueId) {
+      try {
+        const _ = db.command;
+        const res = await collection.where(_.or([
+          { _id: venueId },
+          { id: venueId }
+        ])).limit(1).get();
+        if (res && Array.isArray(res.data) && res.data.length > 0) {
+          doc = res.data[0];
+        }
+      } catch (whereErr) {
+        console.warn('[DEBUG-stadium-cloud] 条件查询单场馆失败，尝试排除大字段:', whereErr && (whereErr.errMsg || whereErr.message));
+        try {
+          const _ = db.command;
+          const resFallback = await collection.where(_.or([
+            { _id: venueId },
+            { id: venueId }
+          ])).limit(1).field({
+            history: false,
+            snapshots: false,
+            versions: false,
+            rawCad: false,
+            cadFile: false,
+            previewImage: false
+          }).get();
+          if (resFallback && Array.isArray(resFallback.data) && resFallback.data.length > 0) {
+            doc = resFallback.data[0];
+          }
+        } catch (whereFbErr) {
+          console.warn('[DEBUG-stadium-cloud] 条件查询排除大字段后仍失败:', whereFbErr);
+        }
+      }
+    }
+
+    if (!doc && docId) {
+      try {
+        const resFallback = await collection.doc(docId).field({
+          history: false,
+          snapshots: false,
+          versions: false,
+          rawCad: false,
+          cadFile: false,
+          previewImage: false
+        }).get();
+        if (resFallback && resFallback.data) {
+          doc = resFallback.data;
+        }
+      } catch (fbErr) {
+        console.warn('[DEBUG-stadium-cloud] 排除大字段后拉取单场馆仍失败:', fbErr);
+      }
+    }
+
+    if (doc) {
+      const formatted = extractVenueDoc(doc);
+      if (formatted) {
+        return formatted;
+      }
+    }
+  } catch (topErr) {
+    console.warn('[DEBUG-stadium-cloud] 从服务器加载单个场馆 Schema 异常，尝试本地兜底:', topErr);
+  }
+
+  const fallback = getLocalFallbackVenues();
+  const matched = fallback.find(v => v.id === venueId || v._id === venueId || (docId && (v._id === docId || v.id === docId)));
+  return matched || null;
+}
+
 module.exports = {
   parseIfJson,
   normalizeTiers,
   resolveRawVenue,
   extractVenueDoc,
-  loadAllStadiumProjects
+  loadAllStadiumProjects,
+  loadStadiumProjectById
 };

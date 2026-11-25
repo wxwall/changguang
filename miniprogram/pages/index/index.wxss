@@ -3,23 +3,46 @@
   flex-direction: column;
   width: 100vw;
   height: 100vh;
-  background-color: #070A12;
-  color: #F8FAFC;
+  background-color: #f6eee3;
+  color: #1E293B;
   overflow: hidden;
 }
 
-/* 顶部栏：仅保留简洁的场馆切换 */
+/* 顶部栏：最左侧全部按钮 + 5个场馆切换 */
 .top-header {
   flex-shrink: 0;
-  background: #0F1626;
-  border-bottom: 1rpx solid rgba(148, 163, 184, 0.16);
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  background: #f6eee3;
+  border-bottom: 1rpx solid rgba(120, 95, 70, 0.14);
   padding: 10rpx 18rpx 10rpx;
 }
 
+.venue-all-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 70rpx;
+  padding: 0 22rpx;
+  border-radius: 12rpx;
+  background: #1E293B;
+  border: 1rpx solid #1E293B;
+}
+
+.venue-all-text {
+  font-size: 24rpx;
+  font-weight: 600;
+  color: #f6eee3;
+  white-space: nowrap;
+}
+
 .venue-tabs {
+  flex: 1;
+  min-width: 0;
   display: flex;
   white-space: nowrap;
-  width: 100%;
   height: 70rpx;
 }
 
@@ -30,24 +53,29 @@
   padding: 6rpx 20rpx;
   margin-right: 12rpx;
   border-radius: 12rpx;
-  background: rgba(30, 41, 59, 0.78);
-  border: 1rpx solid rgba(148, 163, 184, 0.22);
+  background: rgba(255, 255, 255, 0.82);
+  border: 1rpx solid rgba(120, 95, 70, 0.18);
+  flex-shrink: 0;
 }
 
 .venue-chip.active {
-  background: rgba(244, 63, 94, 0.18);
+  background: rgba(244, 63, 94, 0.12);
   border-color: #F43F5E;
 }
 
 .venue-chip-code {
   font-size: 24rpx;
   font-weight: 600;
-  color: #F8FAFC;
+  color: #1E293B;
+}
+
+.venue-chip.active .venue-chip-code {
+  color: #E11D48;
 }
 
 .venue-chip-cap {
   font-size: 18rpx;
-  color: #94A3B8;
+  color: #64748B;
   margin-top: 2rpx;
 }
 
@@ -58,17 +86,7 @@
   flex-direction: column;
   position: relative;
   overflow: hidden;
-}
-
-/* 打开 Schema 弹窗时将原生 canvas 整体移出视口，彻底解决微信开发者工具模拟器原生画布遮挡 textarea 的问题 */
-.viewport-body.offscreen {
-  position: fixed;
-  left: -9999rpx;
-  top: 0;
-  width: 100vw;
-  height: 800rpx;
-  visibility: hidden;
-  pointer-events: none;
+  background-color: #f6eee3;
 }
 
 .pane-3d,
@@ -80,7 +98,7 @@
 
 .pane-3d.split-top {
   height: 46%;
-  border-bottom: 1rpx solid rgba(148, 163, 184, 0.22);
+  border-bottom: 1rpx solid rgba(120, 95, 70, 0.16);
 }
 
 .pane-3d.full {
@@ -89,6 +107,7 @@
 
 .pane-2d.split-bottom {
   height: 54%;
+  background-color: #f6eee3;
 }
 
 .pane-2d.hidden {
@@ -128,9 +147,9 @@
   padding: 6rpx 14rpx;
   border-radius: 8rpx;
   font-size: 19rpx;
-  background: rgba(15, 23, 42, 0.86);
-  border: 1rpx solid rgba(148, 163, 184, 0.28);
-  color: #F8FAFC;
+  background: rgba(246, 238, 227, 0.92);
+  border: 1rpx solid rgba(120, 95, 70, 0.22);
+  color: #1E293B;
   overflow: hidden;
 }
 
@@ -149,7 +168,7 @@
   height: 10rpx;
   flex-shrink: 0;
   border-radius: 50%;
-  background: #38BDF8;
+  background: #0284C7;
   margin-right: 8rpx;
 }
 
@@ -172,12 +191,12 @@
 }
 
 .hud-action-btn.accent {
-  background: rgba(244, 63, 94, 0.9);
+  background: rgba(244, 63, 94, 0.92);
 }
 
 .hud-action-btn.scene-btn {
-  background: rgba(16, 185, 129, 0.88);
-  border: 1rpx solid rgba(110, 231, 183, 0.45);
+  background: rgba(16, 185, 129, 0.92);
+  border: 1rpx solid rgba(5, 150, 105, 0.45);
 }
 
 .hud-right-3d {
@@ -192,9 +211,9 @@
   padding: 7rpx 16rpx;
   font-size: 20rpx;
   font-weight: 600;
-  color: #F8FAFC;
-  background: rgba(15, 23, 42, 0.88);
-  border: 1rpx solid rgba(56, 189, 248, 0.45);
+  color: #1E293B;
+  background: rgba(246, 238, 227, 0.92);
+  border: 1rpx solid rgba(120, 95, 70, 0.25);
   border-radius: 8rpx;
 }
 
@@ -203,16 +222,16 @@
   bottom: 12rpx;
   right: 14rpx;
   display: flex;
-  background: rgba(15, 23, 42, 0.88);
+  background: rgba(246, 238, 227, 0.92);
   padding: 4rpx;
   border-radius: 10rpx;
-  border: 1rpx solid rgba(148, 163, 184, 0.25);
+  border: 1rpx solid rgba(120, 95, 70, 0.22);
 }
 
 .zoom-chip {
   padding: 5rpx 12rpx;
   font-size: 19rpx;
-  color: #94A3B8;
+  color: #475569;
   border-radius: 6rpx;
 }
 
@@ -229,16 +248,16 @@
   left: 14rpx;
   display: flex;
   gap: 6rpx;
-  background: rgba(15, 23, 42, 0.86);
+  background: rgba(255, 255, 255, 0.9);
   padding: 5rpx;
   border-radius: 10rpx;
-  border: 1rpx solid rgba(148, 163, 184, 0.24);
+  border: 1rpx solid rgba(120, 95, 70, 0.2);
 }
 
 .tier-pill {
   padding: 5rpx 12rpx;
   font-size: 19rpx;
-  color: #CBD5E1;
+  color: #475569;
   border-radius: 6rpx;
 }
 
@@ -254,17 +273,17 @@
   right: 14rpx;
   padding: 6rpx 14rpx;
   font-size: 19rpx;
-  color: #E2E8F0;
-  background: rgba(15, 23, 42, 0.84);
-  border: 1rpx solid rgba(148, 163, 184, 0.25);
+  color: #1E293B;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1rpx solid rgba(120, 95, 70, 0.22);
   border-radius: 8rpx;
 }
 
 /* 底部控制面板 */
 .bottom-inspector {
   flex-shrink: 0;
-  background: #0F1626;
-  border-top: 1rpx solid rgba(148, 163, 184, 0.22);
+  background: #f6eee3;
+  border-top: 1rpx solid rgba(120, 95, 70, 0.16);
   padding: 14rpx 22rpx 18rpx;
 }
 
@@ -296,12 +315,12 @@
 .sector-name {
   font-size: 24rpx;
   font-weight: 700;
-  color: #F8FAFC;
+  color: #1E293B;
 }
 
 .sector-sub {
   font-size: 19rpx;
-  color: #94A3B8;
+  color: #64748B;
 }
 
 .inspector-tools {
@@ -315,11 +334,11 @@
   display: flex;
   align-items: center;
   padding: 6rpx 14rpx;
-  background: rgba(30, 41, 59, 0.94);
-  border: 1rpx solid rgba(148, 163, 184, 0.32);
+  background: rgba(255, 255, 255, 0.88);
+  border: 1rpx solid rgba(120, 95, 70, 0.2);
   border-radius: 26rpx;
   font-size: 20rpx;
-  color: #E2E8F0;
+  color: #1E293B;
 }
 
 .mode-dot {
@@ -331,21 +350,12 @@
 
 .mode-dot.concert {
   background: #F43F5E;
-  box-shadow: 0 0 8rpx #F43F5E;
+  box-shadow: 0 0 8rpx rgba(244, 63, 94, 0.55);
 }
 
 .mode-dot.sports {
   background: #10B981;
-  box-shadow: 0 0 8rpx #10B981;
-}
-
-.schema-import-btn {
-  padding: 6rpx 12rpx;
-  font-size: 20rpx;
-  color: #38BDF8;
-  background: rgba(56, 189, 248, 0.14);
-  border: 1rpx solid rgba(56, 189, 248, 0.38);
-  border-radius: 8rpx;
+  box-shadow: 0 0 8rpx rgba(16, 185, 129, 0.55);
 }
 
 .color-picker-btn {
@@ -354,23 +364,23 @@
   gap: 8rpx;
   padding: 6rpx 12rpx;
   font-size: 20rpx;
-  color: #FDE68A;
+  color: #B45309;
   background: rgba(245, 158, 11, 0.14);
-  border: 1rpx solid rgba(245, 158, 11, 0.40);
+  border: 1rpx solid rgba(217, 119, 6, 0.35);
   border-radius: 8rpx;
 }
 
 .color-picker-btn.active {
   color: #FFFFFF;
-  background: rgba(245, 158, 11, 0.36);
-  border-color: #FBBF24;
+  background: #D97706;
+  border-color: #B45309;
 }
 
 .color-btn-dot {
   width: 14rpx;
   height: 14rpx;
   border-radius: 50%;
-  border: 1rpx solid rgba(255, 255, 255, 0.72);
+  border: 1rpx solid rgba(30, 41, 59, 0.35);
   flex-shrink: 0;
 }
 
@@ -396,27 +406,27 @@
   height: 48rpx;
   margin-right: 10rpx;
   border-radius: 10rpx;
-  background: rgba(15, 23, 42, 0.92);
-  border: 1rpx solid rgba(148, 163, 184, 0.24);
+  background: rgba(255, 255, 255, 0.86);
+  border: 1rpx solid rgba(120, 95, 70, 0.18);
   flex-shrink: 0;
 }
 
 .color-target-chip.active {
-  background: rgba(37, 99, 235, 0.26);
-  border-color: #60A5FA;
+  background: rgba(37, 99, 235, 0.14);
+  border-color: #2563EB;
 }
 
 .target-color-dot {
   width: 18rpx;
   height: 18rpx;
   border-radius: 50%;
-  border: 1rpx solid rgba(255, 255, 255, 0.7);
+  border: 1rpx solid rgba(30, 41, 59, 0.35);
 }
 
 .target-label {
   font-size: 20rpx;
   font-weight: 600;
-  color: #E2E8F0;
+  color: #1E293B;
 }
 
 .color-swatch-bar {
@@ -435,27 +445,27 @@
   height: 82rpx;
   margin-right: 8rpx;
   border-radius: 10rpx;
-  background: rgba(15, 23, 42, 0.76);
-  border: 1rpx solid rgba(148, 163, 184, 0.16);
+  background: rgba(255, 255, 255, 0.85);
+  border: 1rpx solid rgba(120, 95, 70, 0.16);
   flex-shrink: 0;
 }
 
 .swatch-item.active {
-  background: rgba(248, 250, 252, 0.14);
-  border: 2rpx solid #FFFFFF;
+  background: #FFFFFF;
+  border: 2rpx solid #F43F5E;
 }
 
 .swatch-chip {
   width: 38rpx;
   height: 38rpx;
   border-radius: 8rpx;
-  border: 1rpx solid rgba(255, 255, 255, 0.35);
+  border: 1rpx solid rgba(30, 41, 59, 0.22);
   margin-bottom: 4rpx;
 }
 
 .swatch-name {
   font-size: 17rpx;
-  color: #CBD5E1;
+  color: #334155;
 }
 
 .color-preset-row {
@@ -482,15 +492,15 @@
   margin-right: 8rpx;
   border-radius: 8rpx;
   font-size: 19rpx;
-  color: #CBD5E1;
-  background: rgba(30, 41, 59, 0.9);
-  border: 1rpx solid rgba(148, 163, 184, 0.22);
+  color: #334155;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1rpx solid rgba(120, 95, 70, 0.18);
   flex-shrink: 0;
 }
 
 .preset-chip.active {
   color: #FFFFFF;
-  background: rgba(244, 63, 94, 0.28);
+  background: #F43F5E;
   border-color: #F43F5E;
 }
 
@@ -504,9 +514,9 @@
 .color-reset-btn {
   padding: 6rpx 14rpx;
   font-size: 19rpx;
-  color: #94A3B8;
-  background: rgba(30, 41, 59, 0.95);
-  border: 1rpx solid rgba(148, 163, 184, 0.25);
+  color: #475569;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1rpx solid rgba(120, 95, 70, 0.2);
   border-radius: 8rpx;
 }
 
@@ -527,7 +537,7 @@
 
 .slider-label {
   font-size: 19rpx;
-  color: #94A3B8;
+  color: #64748B;
   width: 180rpx;
 }
 
@@ -553,8 +563,8 @@
 
 .metric-box {
   flex: 1;
-  background: rgba(15, 23, 42, 0.92);
-  border: 1rpx solid rgba(148, 163, 184, 0.16);
+  background: rgba(255, 255, 255, 0.82);
+  border: 1rpx solid rgba(120, 95, 70, 0.14);
   border-radius: 10rpx;
   padding: 8rpx 10rpx;
   display: flex;
@@ -569,12 +579,12 @@
 .metric-value {
   font-size: 23rpx;
   font-weight: 700;
-  color: #E2E8F0;
+  color: #1E293B;
   margin-top: 2rpx;
 }
 
 .metric-value.highlight {
-  color: #34D399;
+  color: #059669;
 }
 
 .inspector-footer {
@@ -590,119 +600,8 @@
   text-overflow: ellipsis;
 }
 
-/* 导入自定义 Schema 模态框 */
-.modal-mask {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(7, 10, 18, 0.9);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 9999;
-}
-
-.modal-card {
-  width: 670rpx;
-  background: #0F1626;
-  border: 1rpx solid rgba(148, 163, 184, 0.32);
-  border-radius: 16rpx;
-  padding: 26rpx;
-  box-sizing: border-box;
-}
-
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12rpx;
-}
-
-.modal-title {
-  font-size: 26rpx;
-  font-weight: 700;
-  color: #F8FAFC;
-}
-
-.modal-header-right {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-}
-
-.paste-chip {
-  padding: 6rpx 14rpx;
-  font-size: 20rpx;
-  color: #34D399;
-  background: rgba(52, 211, 153, 0.14);
-  border: 1rpx solid rgba(52, 211, 153, 0.38);
-  border-radius: 8rpx;
-}
-
-.modal-close {
-  font-size: 30rpx;
-  color: #94A3B8;
-  padding: 4rpx 8rpx;
-}
-
-.modal-desc {
-  font-size: 21rpx;
-  color: #94A3B8;
-  line-height: 1.4;
-  display: block;
-  margin-bottom: 14rpx;
-}
-
-.schema-textarea {
-  width: 100%;
-  height: 360rpx;
-  box-sizing: border-box;
-  background: #070A12;
-  border: 1rpx solid rgba(148, 163, 184, 0.28);
-  border-radius: 10rpx;
-  padding: 14rpx;
-  font-size: 20rpx;
-  color: #38BDF8;
-  font-family: monospace;
-  margin-bottom: 14rpx;
-}
-
-.schema-error {
-  color: #F43F5E;
-  font-size: 20rpx;
-  margin-bottom: 12rpx;
-}
-
-.modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 16rpx;
-}
-
-.btn-secondary,
-.btn-primary {
-  margin: 0;
-  font-size: 24rpx;
-  padding: 0 28rpx;
-  height: 64rpx;
-  line-height: 64rpx;
-  border-radius: 10rpx;
-}
-
-.btn-secondary {
-  background: #1E293B;
-  color: #CBD5E1;
-}
-
-.btn-primary {
-  background: #2563EB;
-  color: #FFFFFF;
-}
-
 /* ==========================================================================
-   体育场切换全景加载过度动画
+   体育场切换全景加载过度动画（统一奶白色 #f6eee3 风格）
    ========================================================================== */
 .venue-switch-overlay {
   position: absolute;
@@ -711,7 +610,7 @@
   right: 0;
   bottom: 0;
   z-index: 1000;
-  background: rgba(11, 15, 25, 0.88);
+  background: rgba(246, 238, 227, 0.94);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   display: flex;
@@ -734,9 +633,9 @@
   flex-direction: column;
   align-items: center;
   padding: 40rpx 50rpx;
-  background: rgba(15, 23, 42, 0.85);
-  border: 1rpx solid rgba(56, 189, 248, 0.25);
-  box-shadow: 0 16rpx 48rpx rgba(0, 0, 0, 0.6), 0 0 32rpx rgba(56, 189, 248, 0.15);
+  background: rgba(255, 255, 255, 0.92);
+  border: 1rpx solid rgba(120, 95, 70, 0.18);
+  box-shadow: 0 16rpx 48rpx rgba(120, 95, 70, 0.16);
   border-radius: 20rpx;
   animation: switchPop 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
@@ -756,9 +655,9 @@
   width: 76rpx;
   height: 76rpx;
   border-radius: 50%;
-  border: 4rpx solid rgba(56, 189, 248, 0.18);
-  border-top-color: #38BDF8;
-  border-right-color: #F43F5E;
+  border: 4rpx solid rgba(244, 63, 94, 0.16);
+  border-top-color: #F43F5E;
+  border-right-color: #0284C7;
   animation: switchSpin 0.9s cubic-bezier(0.5, 0.1, 0.5, 0.9) infinite;
   display: flex;
   align-items: center;
@@ -771,7 +670,7 @@
   height: 44rpx;
   border-radius: 50%;
   border: 3rpx solid transparent;
-  border-bottom-color: #38BDF8;
+  border-bottom-color: #0284C7;
   animation: switchSpinReverse 0.65s linear infinite;
 }
 
@@ -788,10 +687,9 @@
 .switch-venue-code {
   font-size: 32rpx;
   font-weight: 700;
-  color: #FFFFFF;
+  color: #1E293B;
   letter-spacing: 1rpx;
   margin-bottom: 12rpx;
-  text-shadow: 0 2rpx 10rpx rgba(56, 189, 248, 0.4);
 }
 
 .switch-tip-row {
@@ -804,7 +702,7 @@
   width: 12rpx;
   height: 12rpx;
   border-radius: 50%;
-  background: #38BDF8;
+  background: #F43F5E;
   animation: dotPulse 1.2s ease-in-out infinite;
 }
 
@@ -821,6 +719,6 @@
 
 .switch-tip-text {
   font-size: 21rpx;
-  color: #94A3B8;
+  color: #64748B;
   letter-spacing: 0.5rpx;
 }
