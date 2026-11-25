@@ -6,6 +6,9 @@
 const { normalizeVenueCoordinates } = require('../utils/schema-geometry');
 
 const MAX_PAGE_LIMIT = 20;
+const VENUE_CACHE_TTL_MS = 60 * 1000;
+let _cachedVenues = null;
+let _cachedAt = 0;
 
 /**
  * 尝试将字符串解析为 JSON 对象，若非 JSON 字符串则返回原值
@@ -262,7 +265,16 @@ async function fetchAllDocsWithConcurrency(collection, totalCount, concurrency =
  * 从云数据库集合 stadiumProjects 加载所有场馆数据
  * 采用单文档安全分批 + 并发池策略，彻底杜绝微信 -602001 response size exceeded 1MB 报错
  */
-async function loadAllStadiumProjects() {
+async function loadAllStadiumProjects(options = {}) {
+  if (
+    !(options && options.forceRefresh) &&
+    _cachedVenues &&
+    _cachedVenues.length > 0 &&
+    (Date.now() - _cachedAt < VENUE_CACHE_TTL_MS)
+  ) {
+    return _cachedVenues;
+  }
+
   try {
     ensureCloudInit();
 
@@ -331,6 +343,10 @@ async function loadAllStadiumProjects() {
     }
 
     console.log('[DEBUG-stadium-cloud] 规范化完成，有效场馆数:', venues.length);
+    if (venues.length > 0) {
+      _cachedVenues = venues;
+      _cachedAt = Date.now();
+    }
     return venues;
   } catch (topErr) {
     console.error('[DEBUG-stadium-cloud] 云数据库查询异常，执行降级保护:', topErr);
@@ -346,11 +362,29 @@ async function loadAllStadiumProjects() {
  * 根据场馆 id 或云文档 _id 直接从服务器加载单个场馆的完整 Schema
  */
 async function loadStadiumProjectById(venueId, docId) {
+  if (_cachedVenues && _cachedVenues.length > 0 && (Date.now() - _cachedAt < VENUE_CACHE_TTL_MS)) {
+    const cachedHit = _cachedVenues.find(
+      v => (v.id === venueId || v._id === venueId || (docId && v._id === docId)) &&
+           Array.isArray(v.standTiers) && v.standTiers.length > 0
+    );
+    if (cachedHit) {
+      return cachedHit;
+    }
+  }
+
   try {
     ensureCloudInit();
     const db = wx.cloud.database();
     const collection = db.collection('stadiumProjects');
     let doc = null;
+    const excludeLargeFields = {
+      history: false,
+      snapshots: false,
+      versions: false,
+      rawCad: false,
+      cadFile: false,
+      previewImage: false
+    };
 
     if (docId) {
       try {
@@ -359,7 +393,15 @@ async function loadStadiumProjectById(venueId, docId) {
           doc = res.data;
         }
       } catch (err) {
-        console.warn('[DEBUG-stadium-cloud] doc(_id).get() 失败，尝试字段查询:', err && (err.errMsg || err.message));
+        console.warn('[DEBUG-stadium-cloud] doc(_id).get() 失败，尝试排除大字段拉取:', err && (err.errMsg || err.message));
+        try {
+          const resFallback = await collection.doc(docId).field(excludeLargeFields).get();
+          if (resFallback && resFallback.data) {
+            doc = resFallback.data;
+          }
+        } catch (fbErr) {
+          console.warn('[DEBUG-stadium-cloud] doc(_id) 排除大字段后仍失败:', fbErr && (fbErr.errMsg || fbErr.message));
+        }
       }
     }
 
@@ -380,14 +422,7 @@ async function loadStadiumProjectById(venueId, docId) {
           const resFallback = await collection.where(_.or([
             { _id: venueId },
             { id: venueId }
-          ])).limit(1).field({
-            history: false,
-            snapshots: false,
-            versions: false,
-            rawCad: false,
-            cadFile: false,
-            previewImage: false
-          }).get();
+          ])).limit(1).field(excludeLargeFields).get();
           if (resFallback && Array.isArray(resFallback.data) && resFallback.data.length > 0) {
             doc = resFallback.data[0];
           }
@@ -397,27 +432,14 @@ async function loadStadiumProjectById(venueId, docId) {
       }
     }
 
-    if (!doc && docId) {
-      try {
-        const resFallback = await collection.doc(docId).field({
-          history: false,
-          snapshots: false,
-          versions: false,
-          rawCad: false,
-          cadFile: false,
-          previewImage: false
-        }).get();
-        if (resFallback && resFallback.data) {
-          doc = resFallback.data;
-        }
-      } catch (fbErr) {
-        console.warn('[DEBUG-stadium-cloud] 排除大字段后拉取单场馆仍失败:', fbErr);
-      }
-    }
-
     if (doc) {
       const formatted = extractVenueDoc(doc);
       if (formatted) {
+        if (Array.isArray(_cachedVenues)) {
+          const idx = _cachedVenues.findIndex(v => v.id === formatted.id || v._id === formatted._id);
+          if (idx >= 0) _cachedVenues[idx] = formatted;
+          else _cachedVenues.push(formatted);
+        }
         return formatted;
       }
     }

@@ -969,10 +969,20 @@ function findDefaultEastFirstRowSelection(venue) {
     }
   });
 
+  let defaultRow = 1;
+  if (bestSector) {
+    const isVipBox = (bestSector.fillType || tier.defaultFillType) === 'vip-box';
+    if (!isVipBox) {
+      const midAngleDeg = ((bestSector.startAngleDeg + bestSector.endAngleDeg) / 2) % 360;
+      const totalRows = getTierRowsAtAngle(venue, tierIndex, tier, bestSector, midAngleDeg);
+      defaultRow = Math.max(1, Math.round((1 + totalRows) / 2));
+    }
+  }
+
   return {
     tierIndex,
     sector: bestSector,
-    row: 1,
+    row: defaultRow,
     seatNo: 1,
     isModule: false,
     isFloorBlock: false

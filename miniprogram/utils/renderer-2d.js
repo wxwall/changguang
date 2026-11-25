@@ -65,11 +65,12 @@ class Renderer2D {
   setVenue(venue, viewMode) {
     this.venue = venue;
     if (viewMode) this.viewMode = viewMode;
+    this.activeTierFilter = 'all';
     this.scale = 1.0;
     this.offsetX = 0;
     this.offsetY = 0;
-    this.computeBaseScale();
     this.buildGeometryCache();
+    this.computeBaseScale();
     this.render();
   }
 
@@ -104,14 +105,84 @@ class Renderer2D {
 
   computeBaseScale() {
     if (!this.venue) return;
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+
+    for (let i = 0; i < this.hitPolygons.length; i++) {
+      const bb = this.hitPolygons[i].bbox;
+      if (!bb) continue;
+      if (bb.minX < minX) minX = bb.minX;
+      if (bb.maxX > maxX) maxX = bb.maxX;
+      if (bb.minY < minY) minY = bb.minY;
+      if (bb.maxY > maxY) maxY = bb.maxY;
+    }
+    for (let i = 0; i < this.floorPolygons.length; i++) {
+      const bb = this.floorPolygons[i].bbox;
+      if (!bb) continue;
+      if (bb.minX < minX) minX = bb.minX;
+      if (bb.maxX > maxX) maxX = bb.maxX;
+      if (bb.minY < minY) minY = bb.minY;
+      if (bb.maxY > maxY) maxY = bb.maxY;
+    }
+    if (this.venue.infield) {
+      const iw = (this.venue.infield.width || 0) * 0.5;
+      const il = (this.venue.infield.length || 0) * 0.5;
+      if (iw > 0) {
+        if (-iw < minX) minX = -iw;
+        if (iw > maxX) maxX = iw;
+      }
+      if (il > 0) {
+        if (-il < minY) minY = -il;
+        if (il > maxY) maxY = il;
+      }
+      const stage = this.venue.infield.stageConfig;
+      if (stage) {
+        const st = getStageTransform(this.venue);
+        const sw = stage.width || 30;
+        const sd = stage.depth || 20;
+        const rotDeg = st.rotFromSouthDeg || 0;
+        const includeStageLocal = (lx, lz) => {
+          const rp = rotateXZ(lx, lz, rotDeg);
+          if (rp.x < minX) minX = rp.x;
+          if (rp.x > maxX) maxX = rp.x;
+          if (rp.z < minY) minY = rp.z;
+          if (rp.z > maxY) maxY = rp.z;
+        };
+        const sx0 = st.stageLocalX || 0;
+        const sz0 = st.stageLocalZ || 0;
+        includeStageLocal(sx0 - sw * 0.55, sz0 - sd / 2 - 2.2);
+        includeStageLocal(sx0 + sw * 0.55, sz0 - sd / 2 - 2.2);
+        includeStageLocal(sx0 - sw * 0.55, sz0 + sd / 2 + (st.catwalkLength || 0));
+        includeStageLocal(sx0 + sw * 0.55, sz0 + sd / 2 + (st.catwalkLength || 0));
+        if (stage.fohEnabled) {
+          const fw = (stage.fohWidth || 8) * 0.5;
+          const fd = (stage.fohDepth || 5) * 0.5;
+          const fz = st.fohLocalZ || 0;
+          includeStageLocal(sx0 - fw, fz - fd);
+          includeStageLocal(sx0 + fw, fz + fd);
+        }
+      }
+    }
+
     const summary = this.venue.engineeringSummary || {};
     const footW = summary.outermostFootprintWidthM || 220;
     const footL = summary.outermostFootprintLengthM || 260;
 
-    // 2D view is rotated 90° clockwise: venue length spans horizontally, width spans vertically
-    const sx = (this.width * 0.94) / footL;
-    const sy = (this.height * 0.94) / footW;
-    this.baseMeterToPx = Math.max(0.4, Math.min(sx, sy));
+    // 2D view is rotated 90° clockwise: world Y spans horizontally, world X spans vertically
+    const fullSpanX = (Number.isFinite(minY) && Number.isFinite(maxY))
+      ? Math.max(footL, 2 * Math.max(Math.abs(minY), Math.abs(maxY)))
+      : footL;
+    const fullSpanY = (Number.isFinite(minX) && Number.isFinite(maxX))
+      ? Math.max(footW, 2 * Math.max(Math.abs(minX), Math.abs(maxX)))
+      : footW;
+
+    const safeW = Math.max(1, this.width || 375);
+    const safeH = Math.max(1, this.height || 280);
+    const sx = (safeW * 0.88) / Math.max(1, fullSpanX);
+    const sy = (safeH * 0.88) / Math.max(1, fullSpanY);
+    this.baseMeterToPx = Math.max(0.05, Math.min(sx, sy));
   }
 
   buildGeometryCache() {
@@ -462,8 +533,7 @@ class Renderer2D {
     const h = this.height;
 
     ctx.save();
-    const overrides = this.tierColorOverrides || {};
-    ctx.fillStyle = overrides.ground || '#f6eee3';
+    ctx.fillStyle = '#f6eee3';
     ctx.fillRect(0, 0, w, h);
 
     const cx = w / 2 + this.offsetX;
@@ -517,6 +587,8 @@ class Renderer2D {
     const infield = this.venue.infield;
     if (!infield) return;
 
+    const isConcert = this.viewMode === 'concert';
+
     ctx.save();
     if (infield.shape === 'ellipse') {
       ctx.beginPath();
@@ -524,7 +596,9 @@ class Renderer2D {
     } else {
       this.traceRoundedRect(ctx, 0, 0, infield.width, infield.length, infield.cornerRadius);
     }
-    if (infield.surfaceType === 'synthetic-track') {
+    if (isConcert) {
+      ctx.fillStyle = '#1E293B';
+    } else if (infield.surfaceType === 'synthetic-track') {
       ctx.fillStyle = '#064E3B';
     } else if (infield.surfaceType === 'hardwood-court') {
       ctx.fillStyle = '#1E293B';
@@ -535,6 +609,11 @@ class Renderer2D {
     ctx.strokeStyle = 'rgba(255,255,255,0.22)';
     ctx.lineWidth = 1.2 / s;
     ctx.stroke();
+
+    if (isConcert) {
+      ctx.restore();
+      return;
+    }
 
     if (infield.sportPreset === 'track-field' || infield.surfaceType === 'synthetic-track') {
       const spec = computeRunningTrackSpec(infield);
@@ -583,36 +662,115 @@ class Renderer2D {
     const pw = infield.pitchWidth || 68;
     const pl = infield.pitchLength || 105;
 
+    const hw = pw / 2;
+    const hl = pl / 2;
     ctx.save();
     ctx.rotate((infield.pitchOrientationDeg || 0) * DEG2RAD);
     if (infield.surfaceType === 'hardwood-court') {
       ctx.fillStyle = '#B45309';
-      ctx.fillRect(-pw / 2, -pl / 2, pw, pl);
-      ctx.strokeStyle = 'rgba(253, 230, 138, 0.75)';
+      ctx.fillRect(-hw, -hl, pw, pl);
+
+      const keyW = Math.min(4.9, pw * 0.34);
+      const keyD = Math.min(5.8, pl * 0.22);
+      const ccR = Math.min(1.8, pw * 0.13);
+      ctx.fillStyle = 'rgba(30, 64, 175, 0.55)';
+      ctx.fillRect(-keyW / 2, -hl, keyW, keyD);
+      ctx.fillRect(-keyW / 2, hl - keyD, keyW, keyD);
+
+      ctx.strokeStyle = 'rgba(253, 230, 138, 0.80)';
       ctx.lineWidth = 0.9 / s;
-      ctx.strokeRect(-pw / 2, -pl / 2, pw, pl);
+      ctx.strokeRect(-hw, -hl, pw, pl);
       ctx.beginPath();
-      ctx.arc(0, 0, 3.2, 0, Math.PI * 2);
+      ctx.moveTo(-hw, 0);
+      ctx.lineTo(hw, 0);
       ctx.stroke();
       ctx.beginPath();
-      ctx.moveTo(-pw / 2, 0);
-      ctx.lineTo(pw / 2, 0);
+      ctx.arc(0, 0, ccR, 0, Math.PI * 2);
       ctx.stroke();
+
+      // Free-throw lanes & circles
+      ctx.strokeRect(-keyW / 2, -hl, keyW, keyD);
+      ctx.strokeRect(-keyW / 2, hl - keyD, keyW, keyD);
+      ctx.beginPath();
+      ctx.arc(0, -hl + keyD, ccR, 0, Math.PI);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(0, hl - keyD, ccR, Math.PI, Math.PI * 2);
+      ctx.stroke();
+
+      // FIBA 3-point arcs & corner lines
+      const basketOff = Math.min(1.575, pl * 0.065);
+      const cornerInset = Math.min(0.90, pw * 0.07);
+      const cornerX = hw - cornerInset;
+      const r3 = Math.min(6.75, hw * 0.90);
+      const straightZ = Math.sqrt(Math.max(0, r3 * r3 - cornerX * cornerX));
+      const arcAngle = Math.asin(Math.min(1, cornerX / Math.max(0.1, r3)));
+      if (r3 > 2.5) {
+        ctx.beginPath();
+        ctx.moveTo(-cornerX, -hl);
+        ctx.lineTo(-cornerX, -hl + basketOff + straightZ);
+        ctx.moveTo(cornerX, -hl);
+        ctx.lineTo(cornerX, -hl + basketOff + straightZ);
+        ctx.moveTo(cornerX, -hl + basketOff + straightZ);
+        ctx.arc(0, -hl + basketOff, r3, Math.PI / 2 - arcAngle, Math.PI / 2 + arcAngle);
+        ctx.moveTo(-cornerX, hl);
+        ctx.lineTo(-cornerX, hl - basketOff - straightZ);
+        ctx.moveTo(cornerX, hl);
+        ctx.lineTo(cornerX, hl - basketOff - straightZ);
+        ctx.moveTo(-cornerX, hl - basketOff - straightZ);
+        ctx.arc(0, hl - basketOff, r3, Math.PI * 1.5 - arcAngle, Math.PI * 1.5 + arcAngle);
+        ctx.stroke();
+      }
     } else {
       ctx.fillStyle = '#047857';
-      ctx.fillRect(-pw / 2, -pl / 2, pw, pl);
-      ctx.strokeStyle = 'rgba(255,255,255,0.42)';
+      ctx.fillRect(-hw, -hl, pw, pl);
+      ctx.strokeStyle = 'rgba(255,255,255,0.48)';
       ctx.lineWidth = 0.9 / s;
-      ctx.strokeRect(-pw / 2, -pl / 2, pw, pl);
+      ctx.strokeRect(-hw, -hl, pw, pl);
       ctx.beginPath();
-      ctx.moveTo(-pw / 2, 0);
-      ctx.lineTo(pw / 2, 0);
+      ctx.moveTo(-hw, 0);
+      ctx.lineTo(hw, 0);
+      ctx.stroke();
+      const centerR = Math.min(9.15, hw * 0.4);
+      ctx.beginPath();
+      ctx.arc(0, 0, centerR, 0, Math.PI * 2);
+      ctx.stroke();
+
+      const penW = Math.min(40.32, pw * 0.72);
+      const penD = Math.min(16.5, pl * 0.22);
+      const goalW = Math.min(18.32, pw * 0.42);
+      const goalD = Math.min(5.5, pl * 0.10);
+      const penSpotD = Math.min(11.0, penD * 0.67);
+
+      ctx.strokeRect(-penW / 2, -hl, penW, penD);
+      ctx.strokeRect(-penW / 2, hl - penD, penW, penD);
+      ctx.strokeRect(-goalW / 2, -hl, goalW, goalD);
+      ctx.strokeRect(-goalW / 2, hl - goalD, goalW, goalD);
+
+      const penArcHalfAng = Math.acos(Math.min(1, (penD - penSpotD) / centerR));
+      if (penArcHalfAng > 0.05) {
+        ctx.beginPath();
+        ctx.arc(0, -hl + penSpotD, centerR, Math.PI / 2 - penArcHalfAng, Math.PI / 2 + penArcHalfAng);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(0, hl - penSpotD, centerR, Math.PI * 1.5 - penArcHalfAng, Math.PI * 1.5 + penArcHalfAng);
+        ctx.stroke();
+      }
+
+      // Corner arcs
+      const cr = 1.0;
+      ctx.beginPath();
+      ctx.arc(-hw, -hl, cr, 0, Math.PI / 2);
       ctx.stroke();
       ctx.beginPath();
-      ctx.arc(0, 0, 9.15, 0, Math.PI * 2);
+      ctx.arc(hw, -hl, cr, Math.PI / 2, Math.PI);
       ctx.stroke();
-      ctx.strokeRect(-20.15, -pl / 2, 40.3, 16.5);
-      ctx.strokeRect(-20.15, pl / 2 - 16.5, 40.3, 16.5);
+      ctx.beginPath();
+      ctx.arc(hw, hl, cr, Math.PI, Math.PI * 1.5);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(-hw, hl, cr, Math.PI * 1.5, Math.PI * 2);
+      ctx.stroke();
     }
     ctx.restore();
     ctx.restore();

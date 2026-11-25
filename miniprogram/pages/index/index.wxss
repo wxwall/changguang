@@ -73,12 +73,6 @@
   color: #E11D48;
 }
 
-.venue-chip-cap {
-  font-size: 18rpx;
-  color: #64748B;
-  margin-top: 2rpx;
-}
-
 /* 主视口容器：3D 上方，2D 下方 */
 .viewport-body {
   flex: 1;
@@ -129,51 +123,20 @@
   left: 14rpx;
   right: 14rpx;
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   pointer-events: none;
 }
 
-.hud-left-3d {
+.hud-bottom-center-3d {
+  position: absolute;
+  bottom: 12rpx;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 10rpx;
-  max-width: 78%;
-}
-
-.camera-badge {
-  display: flex;
-  align-items: center;
-  padding: 6rpx 14rpx;
-  border-radius: 8rpx;
-  font-size: 19rpx;
-  background: rgba(246, 238, 227, 0.92);
-  border: 1rpx solid rgba(120, 95, 70, 0.22);
-  color: #1E293B;
-  overflow: hidden;
-}
-
-.camera-badge.seat-mode {
-  border-color: rgba(244, 63, 94, 0.65);
-}
-
-.badge-text {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.badge-dot {
-  width: 10rpx;
-  height: 10rpx;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: #0284C7;
-  margin-right: 8rpx;
-}
-
-.camera-badge.seat-mode .badge-dot {
-  background: #F43F5E;
+  justify-content: center;
+  pointer-events: none;
 }
 
 .hud-action-btn {

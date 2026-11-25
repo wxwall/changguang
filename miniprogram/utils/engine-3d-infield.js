@@ -90,10 +90,13 @@ class InfieldMixinHolder {
     const infield = this.venue.infield;
     if (!infield) return;
 
+    const isConcert = this.viewMode === 'concert';
     const ringAngles = this.buildFullRingAngles(144);
     const isTrack = infield.sportPreset === 'track-field' || infield.surfaceType === 'synthetic-track';
     let baseColor = [0.05, 0.25, 0.19, 1.0];
-    if (infield.surfaceType === 'hardwood-court') {
+    if (isConcert) {
+      baseColor = [0.12, 0.16, 0.24, 1.0];
+    } else if (infield.surfaceType === 'hardwood-court') {
       baseColor = [0.12, 0.16, 0.24, 1.0];
     } else if (isTrack) {
       baseColor = [0.05, 0.27, 0.20, 1.0];
@@ -109,6 +112,11 @@ class InfieldMixinHolder {
       const p1 = { x: Math.sin(deg1 * DEG2RAD) * r1, y: 0.0, z: -Math.cos(deg1 * DEG2RAD) * r1 };
       const p2 = { x: Math.sin(deg2 * DEG2RAD) * r2, y: 0.0, z: -Math.cos(deg2 * DEG2RAD) * r2 };
       solid.addTriangle({ x: 0, y: 0.0, z: 0 }, p1, p2, baseColor, { x: 0, y: 1, z: 0 });
+    }
+
+    // In concert mode, omit sports pitch/court flooring, running track, and markings
+    if (isConcert) {
+      return;
     }
 
     // Strict parameter-computed running track belt + green inner apron + lane markings
@@ -196,35 +204,171 @@ class InfieldMixinHolder {
       );
     };
 
+    const addPitchRectOutline = (cx, cz, rw, rl, lw, y, col) => {
+      const x0 = cx - rw / 2, x1 = cx + rw / 2;
+      const z0 = cz - rl / 2, z1 = cz + rl / 2;
+      addPitchQuad(x0, z0, x0, z0 + lw, x1, z0 + lw, x1, z0, y, col);
+      addPitchQuad(x0, z1 - lw, x0, z1, x1, z1, x1, z1 - lw, y, col);
+      addPitchQuad(x0, z0, x0 + lw, z0, x0 + lw, z1, x0, z1, y, col);
+      addPitchQuad(x1 - lw, z0, x1, z0, x1, z1, x1 - lw, z1, y, col);
+    };
+
+    const addPitchArc = (cx, cz, radius, startAngle, endAngle, segs, lw, y, col) => {
+      const rIn = Math.max(0.02, radius - lw * 0.5);
+      const rOut = radius + lw * 0.5;
+      for (let i = 0; i < segs; i++) {
+        const a1 = startAngle + (endAngle - startAngle) * (i / segs);
+        const a2 = startAngle + (endAngle - startAngle) * ((i + 1) / segs);
+        const s1 = Math.sin(a1), c1 = Math.cos(a1);
+        const s2 = Math.sin(a2), c2 = Math.cos(a2);
+        addPitchQuad(
+          cx + s1 * rIn, cz + c1 * rIn,
+          cx + s1 * rOut, cz + c1 * rOut,
+          cx + s2 * rOut, cz + c2 * rOut,
+          cx + s2 * rIn, cz + c2 * rIn,
+          y, col
+        );
+      }
+    };
+
+    const addPitchDisc = (cx, cz, radius, segs, y, col) => {
+      for (let i = 0; i < segs; i++) {
+        const a1 = (i / segs) * Math.PI * 2;
+        const a2 = ((i + 1) / segs) * Math.PI * 2;
+        const pc = rotateXZ(cx, cz, pitchOri);
+        const p1 = rotateXZ(cx + Math.sin(a1) * radius, cz + Math.cos(a1) * radius, pitchOri);
+        const p2 = rotateXZ(cx + Math.sin(a2) * radius, cz + Math.cos(a2) * radius, pitchOri);
+        solid.addTriangle(
+          { x: pc.x, y, z: pc.z },
+          { x: p1.x, y, z: p1.z },
+          { x: p2.x, y, z: p2.z },
+          col,
+          { x: 0, y: 1, z: 0 }
+        );
+      }
+    };
+
     if (infield.surfaceType === 'hardwood-court') {
-      // Hardwood basketball court at y = 0.08
-      addPitchQuad(-hw, -hl, -hw, hl, hw, hl, hw, -hl, 0.08, [0.78, 0.46, 0.17, 1.0]);
-      // Key paint at y = 0.12
-      addPitchQuad(-2.45, -hl, -2.45, -hl + 5.8, 2.45, -hl + 5.8, 2.45, -hl, 0.12, [0.14, 0.38, 0.84, 1.0]);
-      addPitchQuad(-2.45, hl - 5.8, -2.45, hl, 2.45, hl, 2.45, hl - 5.8, 0.12, [0.14, 0.38, 0.84, 1.0]);
+      // Deep navy-slate courtside apron surrounding the hardwood floor
+      const apronPadX = 3.2;
+      const apronPadZ = 3.8;
+      addPitchQuad(-hw - apronPadX, -hl - apronPadZ, -hw - apronPadX, hl + apronPadZ, hw + apronPadX, hl + apronPadZ, hw + apronPadX, -hl - apronPadZ, 0.055, [0.08, 0.14, 0.26, 1.0]);
+
+      // Alternating maple & warm-oak hardwood plank strips at y = 0.08
+      const planks = 24;
+      const plankW = pw / planks;
+      for (let i = 0; i < planks; i++) {
+        const x1 = -hw + i * plankW;
+        const x2 = x1 + plankW;
+        const col = i % 2 === 0 ? [0.80, 0.52, 0.22, 1.0] : [0.74, 0.46, 0.18, 1.0];
+        addPitchQuad(x1, -hl, x1, hl, x2, hl, x2, -hl, 0.08, col);
+      }
+
+      // FIBA-proportioned painted keys & center court circle
+      const keyW = Math.min(4.9, pw * 0.34);
+      const keyD = Math.min(5.8, pl * 0.22);
+      const keyCol = [0.12, 0.34, 0.78, 1.0];
+      const ccR = Math.min(1.8, pw * 0.13);
+      addPitchQuad(-keyW / 2, -hl, -keyW / 2, -hl + keyD, keyW / 2, -hl + keyD, keyW / 2, -hl, 0.11, keyCol);
+      addPitchQuad(-keyW / 2, hl - keyD, -keyW / 2, hl, keyW / 2, hl, keyW / 2, hl - keyD, 0.11, keyCol);
+      addPitchDisc(0, 0, ccR, 32, 0.11, keyCol);
+
+      // Crisp white FIBA court markings at y = 0.14
+      const lw = 0.10;
+      const lineCol = [0.96, 0.97, 0.99, 1.0];
+      addPitchRectOutline(0, 0, pw, pl, lw, 0.14, lineCol);
+      addPitchQuad(-hw, -lw / 2, -hw, lw / 2, hw, lw / 2, hw, -lw / 2, 0.14, lineCol);
+      addPitchArc(0, 0, ccR, 0, Math.PI * 2, 36, lw, 0.14, lineCol);
+
+      // Free-throw lanes & circles
+      addPitchRectOutline(0, -hl + keyD / 2, keyW, keyD, lw, 0.14, lineCol);
+      addPitchRectOutline(0, hl - keyD / 2, keyW, keyD, lw, 0.14, lineCol);
+      addPitchArc(0, -hl + keyD, ccR, -Math.PI / 2, Math.PI / 2, 20, lw, 0.14, lineCol);
+      addPitchArc(0, hl - keyD, ccR, Math.PI / 2, Math.PI * 1.5, 20, lw, 0.14, lineCol);
+
+      // 3-point arcs & straight corner 3-point lines (FIBA 6.75m radius, 0.90m sideline inset)
+      const basketOff = Math.min(1.575, pl * 0.065);
+      const cornerInset = Math.min(0.90, pw * 0.07);
+      const cornerX = hw - cornerInset;
+      const r3 = Math.min(6.75, hw * 0.90);
+      const straightZ = Math.sqrt(Math.max(0, r3 * r3 - cornerX * cornerX));
+      const arcAngle = Math.asin(Math.min(1, cornerX / Math.max(0.1, r3)));
+      if (r3 > 2.5) {
+        // Top basket 3-pt
+        addPitchQuad(-cornerX - lw / 2, -hl, -cornerX + lw / 2, -hl, -cornerX + lw / 2, -hl + basketOff + straightZ, -cornerX - lw / 2, -hl + basketOff + straightZ, 0.14, lineCol);
+        addPitchQuad(cornerX - lw / 2, -hl, cornerX + lw / 2, -hl, cornerX + lw / 2, -hl + basketOff + straightZ, cornerX - lw / 2, -hl + basketOff + straightZ, 0.14, lineCol);
+        addPitchArc(0, -hl + basketOff, r3, -arcAngle, arcAngle, 32, lw, 0.14, lineCol);
+        // Bottom basket 3-pt
+        addPitchQuad(-cornerX - lw / 2, hl - basketOff - straightZ, -cornerX + lw / 2, hl - basketOff - straightZ, -cornerX + lw / 2, hl, -cornerX - lw / 2, hl, 0.14, lineCol);
+        addPitchQuad(cornerX - lw / 2, hl - basketOff - straightZ, cornerX + lw / 2, hl - basketOff - straightZ, cornerX + lw / 2, hl, cornerX - lw / 2, hl, 0.14, lineCol);
+        addPitchArc(0, hl - basketOff, r3, Math.PI - arcAngle, Math.PI + arcAngle, 32, lw, 0.14, lineCol);
+      }
+
+      // Restricted area arcs
+      const rRest = Math.min(1.25, pw * 0.09);
+      addPitchArc(0, -hl + basketOff, rRest, -Math.PI / 2, Math.PI / 2, 16, lw, 0.14, lineCol);
+      addPitchArc(0, hl - basketOff, rRest, Math.PI / 2, Math.PI * 1.5, 16, lw, 0.14, lineCol);
     } else {
-      // Mowed grass stripes at y = 0.08
-      const stripes = 12;
+      // Rich emerald turf apron outside touchlines (y = 0.055)
+      const turfPadX = 3.2;
+      const turfPadZ = 4.0;
+      addPitchQuad(-hw - turfPadX, -hl - turfPadZ, -hw - turfPadX, hl + turfPadZ, hw + turfPadX, hl + turfPadZ, hw + turfPadX, -hl - turfPadZ, 0.055, [0.04, 0.34, 0.23, 1.0]);
+
+      // 18 alternating mowed grass stripes at y = 0.08
+      const stripes = 18;
       const stripeLen = pl / stripes;
       for (let i = 0; i < stripes; i++) {
         const z1 = -hl + i * stripeLen;
         const z2 = z1 + stripeLen;
-        const col = i % 2 === 0 ? [0.05, 0.45, 0.31, 1.0] : [0.07, 0.53, 0.36, 1.0];
+        const col = i % 2 === 0 ? [0.05, 0.44, 0.29, 1.0] : [0.08, 0.53, 0.35, 1.0];
         addPitchQuad(-hw, z1, -hw, z2, hw, z2, hw, z1, 0.08, col);
       }
 
-      // Crisp white pitch lines at y = 0.14
-      const lw = 0.35;
-      const lineCol = [0.92, 0.96, 1.0, 1.0];
+      // Accurate FIFA football pitch markings at y = 0.14
+      const lw = 0.20;
+      const lineCol = [0.95, 0.97, 1.0, 1.0];
+      // Outer touchlines & goal lines + halfway line
+      addPitchRectOutline(0, 0, pw, pl, lw, 0.14, lineCol);
       addPitchQuad(-hw, -lw / 2, -hw, lw / 2, hw, lw / 2, hw, -lw / 2, 0.14, lineCol);
-      addPitchQuad(-hw, -hl, -hw, -hl + lw, hw, -hl + lw, hw, -hl, 0.14, lineCol);
-      addPitchQuad(-hw, hl - lw, -hw, hl, hw, hl, hw, hl - lw, 0.14, lineCol);
-      addPitchQuad(-hw, -hl, -hw + lw, -hl, -hw + lw, hl, -hw, hl, 0.14, lineCol);
-      addPitchQuad(hw - lw, -hl, hw, -hl, hw, hl, hw - lw, hl, 0.14, lineCol);
+
+      // Center circle (r = 9.15m) & center spot
+      const centerR = Math.min(9.15, hw * 0.4);
+      addPitchArc(0, 0, centerR, 0, Math.PI * 2, 48, lw, 0.14, lineCol);
+      addPitchDisc(0, 0, 0.38, 16, 0.142, lineCol);
+
+      // Penalty areas (40.32m x 16.5m) & Goal areas (18.32m x 5.5m)
+      const penW = Math.min(40.32, pw * 0.72);
+      const penD = Math.min(16.5, pl * 0.22);
+      const goalW = Math.min(18.32, pw * 0.42);
+      const goalD = Math.min(5.5, pl * 0.10);
+      const penSpotD = Math.min(11.0, penD * 0.67);
+
+      // Top end (-hl)
+      addPitchRectOutline(0, -hl + penD / 2, penW, penD, lw, 0.14, lineCol);
+      addPitchRectOutline(0, -hl + goalD / 2, goalW, goalD, lw, 0.14, lineCol);
+      addPitchDisc(0, -hl + penSpotD, 0.32, 14, 0.142, lineCol);
+      // Bottom end (+hl)
+      addPitchRectOutline(0, hl - penD / 2, penW, penD, lw, 0.14, lineCol);
+      addPitchRectOutline(0, hl - goalD / 2, goalW, goalD, lw, 0.14, lineCol);
+      addPitchDisc(0, hl - penSpotD, 0.32, 14, 0.142, lineCol);
+
+      // Penalty arcs (r = 9.15m outside the 16.5m box)
+      const penArcHalfAng = Math.acos(Math.min(1, (penD - penSpotD) / centerR));
+      if (penArcHalfAng > 0.05) {
+        addPitchArc(0, -hl + penSpotD, centerR, -penArcHalfAng, penArcHalfAng, 20, lw, 0.14, lineCol);
+        addPitchArc(0, hl - penSpotD, centerR, Math.PI - penArcHalfAng, Math.PI + penArcHalfAng, 20, lw, 0.14, lineCol);
+      }
+
+      // 4 Corner arcs (r = 1.0m)
+      const cr = 1.0;
+      addPitchArc(-hw, -hl, cr, 0, Math.PI / 2, 8, lw, 0.14, lineCol);
+      addPitchArc(hw, -hl, cr, -Math.PI / 2, 0, 8, lw, 0.14, lineCol);
+      addPitchArc(-hw, hl, cr, Math.PI / 2, Math.PI, 8, lw, 0.14, lineCol);
+      addPitchArc(hw, hl, cr, Math.PI, Math.PI * 1.5, 8, lw, 0.14, lineCol);
     }
   }
 
-  buildInfieldModulesMesh(solid) {
+  buildInfieldModulesMesh(solid, alpha) {
     // Only render permanent non-stage sideline modules in Sports mode (concert stage modules render via buildConcertInfieldSeatsMesh)
     const modules = (this.venue.infieldModules || []).filter(m => !m.autoGeneratedForStage);
     modules.forEach((mod) => {
@@ -241,7 +385,7 @@ class InfieldMixinHolder {
       const baseElev = Number(mod.baseElevation) || 0;
 
       // Platform deck
-      solid.addBox(cx, baseElev + 0.15, cz, w, 0.3, d, [0.20, 0.25, 0.34, 1.0], rotYRad);
+      solid.addBox(cx, baseElev + 0.15, cz, w, 0.3, d, [0.24, 0.29, 0.37, 1.0], rotYRad);
 
       // Populate rows of 3D seats inside the module facing inward toward pitch center (0, 0)
       const rows = Math.max(1, Number(mod.rows) || 4);
@@ -264,19 +408,37 @@ class InfieldMixinHolder {
         for (let s = 0; s < seatsPerRow; s++) {
           const localX = -usableW / 2 + (s + 0.5) * (usableW / seatsPerRow);
           const wp = rotateXZ(localX, localZ, rotDeg);
-          solid.addSeat3D(cx + wp.x, rowY, cz + wp.z, seatSpacing * stride * 0.9, 0.48, fx, fz, seatPanCol, seatBackCol);
+          solid.addSeat3D(cx + wp.x, rowY, cz + wp.z, seatSpacing * 0.96, 0.58, fx, fz, seatPanCol, seatBackCol);
         }
       }
 
-      // Front & rear perimeter safety rails
-      const frontP = rotateXZ(0, -d / 2, rotDeg);
-      const backP = rotateXZ(0, d / 2, rotDeg);
-      solid.addBox(cx + frontP.x, baseElev + 0.95, cz + frontP.z, w, 0.08, 0.08, railCol, rotYRad);
-      solid.addBox(cx + backP.x, baseElev + 0.95, cz + backP.z, w, 0.08, 0.08, railCol, rotYRad);
+      // Lowered & textured front/rear perimeter safety rails (~0.66m)
+      const railOpts = {
+        capColor: [0.80, 0.84, 0.90, 1.0],
+        postColor: [0.24, 0.28, 0.35, 1.0],
+        midColor: [0.58, 0.63, 0.70, 1.0],
+        postSpacing: 3.0,
+        showGlass: true
+      };
+      const fL = rotateXZ(-w / 2, -d / 2, rotDeg);
+      const fR = rotateXZ(w / 2, -d / 2, rotDeg);
+      const bL = rotateXZ(-w / 2, d / 2, rotDeg);
+      const bR = rotateXZ(w / 2, d / 2, rotDeg);
+      const topRowY = baseElev + 0.3 + Math.max(0, rows - 1) * Math.sin((mod.slopeDeg || 0) * DEG2RAD) * (mod.rowPitch || 0.95);
+      solid.addTexturedRailingRun(
+        { x: cx + fL.x, z: cz + fL.z }, baseElev + 0.3,
+        { x: cx + fR.x, z: cz + fR.z }, baseElev + 0.3,
+        0.66, railOpts, alpha
+      );
+      solid.addTexturedRailingRun(
+        { x: cx + bL.x, z: cz + bL.z }, topRowY,
+        { x: cx + bR.x, z: cz + bR.z }, topRowY,
+        0.66, railOpts, alpha
+      );
     });
   }
 
-  buildConcertInfieldSeatsMesh(solid) {
+  buildConcertInfieldSeatsMesh(solid, alpha) {
     const blocks = generateConcertInfieldBlocks(this.venue);
     blocks.forEach((blk) => {
       // Matte fabric seat (supports user color picker 'floor' override or schema block color) & subtle dark-slate floor mat
@@ -313,7 +475,7 @@ class InfieldMixinHolder {
         matPt(-hw, backLocalZ, yBack),
         matPt(hw, backLocalZ, yBack),
         matPt(hw, frontLocalZ, yFront),
-        [0.08, 0.11, 0.17, 1.0],
+        [0.22, 0.26, 0.34, 1.0],
         { x: 0, y: 1, z: 0 }
       );
       if (yBack > 0.3) {
@@ -323,7 +485,7 @@ class InfieldMixinHolder {
           matPt(hw, backLocalZ, 0.14),
           matPt(hw, backLocalZ, yBack),
           matPt(-hw, backLocalZ, yBack),
-          [0.14, 0.17, 0.23, 1.0]
+          [0.22, 0.26, 0.34, 1.0]
         );
       }
 
@@ -344,8 +506,8 @@ class InfieldMixinHolder {
             blk.x + wp.x,
             seatY,
             blk.z + wp.z,
-            seatSpacing * stride * 0.94,
-            0.50,
+            seatSpacing * 0.98,
+            0.68,
             blk.facingX || 0,
             blk.facingZ !== undefined ? blk.facingZ : -1,
             panCol,
@@ -354,19 +516,30 @@ class InfieldMixinHolder {
         }
       }
 
-      // Clean perimeter open safety rails
-      const frontP = rotateXZ(0, frontLocalZ, rotDeg);
-      const backP = rotateXZ(0, backLocalZ, rotDeg);
-      solid.addBox(blk.x + frontP.x, yFront + 0.72, blk.z + frontP.z, blk.width, 0.08, 0.10, railCol, rotYRad);
-      solid.addBox(blk.x + backP.x, yBack + 0.72, blk.z + backP.z, blk.width, 0.08, 0.10, railCol, rotYRad);
+      // Lowered & textured perimeter open safety rails (~0.64m)
+      const railOpts = {
+        capColor: [0.76, 0.80, 0.86, 1.0],
+        postColor: [0.24, 0.28, 0.35, 1.0],
+        midColor: [0.54, 0.60, 0.68, 1.0],
+        postSpacing: 3.2
+      };
+      const fL = matPt(-hw, frontLocalZ, yFront);
+      const fR = matPt(hw, frontLocalZ, yFront);
+      const bL = matPt(-hw, backLocalZ, yBack);
+      const bR = matPt(hw, backLocalZ, yBack);
+      solid.addTexturedRailingRun({ x: fL.x, z: fL.z }, yFront, { x: fR.x, z: fR.z }, yFront, 0.64, railOpts, alpha);
+      solid.addTexturedRailingRun({ x: bL.x, z: bL.z }, yBack, { x: bR.x, z: bR.z }, yBack, 0.64, railOpts, alpha);
     });
   }
 
-  buildSportsEquipmentMesh(solid) {
+  buildSportsEquipmentMesh(solid, alpha, screens) {
     const infield = this.venue.infield;
     if (!infield) return;
-    const hl = (infield.pitchLength || 105) / 2;
-    const whiteCol = [0.95, 0.97, 1.0, 1.0];
+    const pw = infield.pitchWidth || 68;
+    const pl = infield.pitchLength || 105;
+    const hw = pw / 2;
+    const hl = pl / 2;
+    const whiteCol = [0.96, 0.97, 1.0, 1.0];
     const pitchOri = infield.pitchOrientationDeg || 0;
     const rotRad = -pitchOri * DEG2RAD;
 
@@ -374,18 +547,172 @@ class InfieldMixinHolder {
       const wp = rotateXZ(lx, lz, pitchOri);
       solid.addBox(wp.x, cy, wp.z, w, h, d, col, rotRad);
     };
+    const ptW = (lx, y, lz) => {
+      const wp = rotateXZ(lx, lz, pitchOri);
+      return { x: wp.x, y, z: wp.z };
+    };
 
     if (infield.surfaceType === 'hardwood-court') {
-      // Basketball stanchions & backboards
-      addEqBox(0, 1.8, -hl - 0.8, 0.4, 3.6, 0.4, [0.15, 0.20, 0.30, 1.0]);
-      addEqBox(0, 3.3, -hl + 0.4, 1.8, 1.05, 0.1, whiteCol);
-      addEqBox(0, 1.8, hl + 0.8, 0.4, 3.6, 0.4, [0.15, 0.20, 0.30, 1.0]);
-      addEqBox(0, 3.3, hl - 0.4, 1.8, 1.05, 0.1, whiteCol);
+      // Pro basketball stanchions, tempered glass backboards & orange rims
+      const basketOff = Math.min(1.575, pl * 0.065);
+      [-1, 1].forEach((endSign) => {
+        const baseZ = endSign * (hl + 1.2);
+        const boardZ = endSign * (hl - basketOff + 0.38);
+        const rimZ = endSign * (hl - basketOff);
+        // Padded dark-navy stanchion base & upright + overhang boom arm
+        addEqBox(0, 0.65, baseZ, 0.85, 1.3, 1.2, [0.10, 0.16, 0.28, 1.0]);
+        addEqBox(0, 2.2, baseZ, 0.30, 2.2, 0.30, [0.14, 0.20, 0.32, 1.0]);
+        solid.addBeam3D(ptW(0, 3.25, baseZ), ptW(0, 3.35, boardZ), 0.22, 0.22, [0.14, 0.20, 0.32, 1.0]);
+        // Tempered glass backboard + white frame
+        if (alpha) {
+          alpha.addQuad(
+            ptW(-0.90, 2.90, boardZ), ptW(-0.90, 3.95, boardZ),
+            ptW(0.90, 3.95, boardZ), ptW(0.90, 2.90, boardZ),
+            [0.72, 0.88, 0.98, 0.35]
+          );
+        }
+        addEqBox(0, 2.92, boardZ, 1.80, 0.06, 0.06, whiteCol);
+        addEqBox(0, 3.93, boardZ, 1.80, 0.06, 0.06, whiteCol);
+        addEqBox(-0.88, 3.42, boardZ, 0.06, 1.05, 0.06, whiteCol);
+        addEqBox(0.88, 3.42, boardZ, 0.06, 1.05, 0.06, whiteCol);
+        // Orange rim & net
+        addEqBox(0, 3.05, rimZ, 0.48, 0.06, 0.48, [0.95, 0.38, 0.08, 1.0]);
+      });
     } else {
-      // Football goals
-      addEqBox(0, 1.22, -hl, 7.32, 2.44, 0.3, whiteCol);
-      addEqBox(0, 1.22, hl, 7.32, 2.44, 0.3, whiteCol);
+      // Realistic 3D Football Goals (posts, crossbar, rear ground frame & semi-transparent net)
+      const goalW = 7.32;
+      const goalH = 2.44;
+      const goalD = 1.80;
+      const halfG = goalW / 2;
+      const netCol = [0.92, 0.95, 0.98, 0.28];
+
+      [-1, 1].forEach((endSign) => {
+        const gz = endSign * hl;
+        const backZ = endSign * (hl + goalD);
+        // Left & right goalposts + top crossbar
+        addEqBox(-halfG, goalH / 2, gz, 0.14, goalH, 0.14, whiteCol);
+        addEqBox(halfG, goalH / 2, gz, 0.14, goalH, 0.14, whiteCol);
+        addEqBox(0, goalH, gz, goalW + 0.14, 0.14, 0.14, whiteCol);
+        // Rear ground frame & back stanchions
+        addEqBox(0, 0.06, backZ, goalW, 0.08, 0.08, [0.76, 0.80, 0.86, 1.0]);
+        solid.addBeam3D(ptW(-halfG, 0.06, gz), ptW(-halfG, 0.06, backZ), 0.08, 0.08, [0.76, 0.80, 0.86, 1.0]);
+        solid.addBeam3D(ptW(halfG, 0.06, gz), ptW(halfG, 0.06, backZ), 0.08, 0.08, [0.76, 0.80, 0.86, 1.0]);
+        solid.addBeam3D(ptW(-halfG, goalH, gz), ptW(-halfG, 0.06, backZ), 0.06, 0.06, [0.76, 0.80, 0.86, 1.0]);
+        solid.addBeam3D(ptW(halfG, goalH, gz), ptW(halfG, 0.06, backZ), 0.06, 0.06, [0.76, 0.80, 0.86, 1.0]);
+        // Semi-transparent goal net
+        if (alpha) {
+          const topBackZ = endSign * (hl + goalD * 0.45);
+          alpha.addQuad(ptW(-halfG, 0.08, backZ), ptW(-halfG, goalH, topBackZ), ptW(halfG, goalH, topBackZ), ptW(halfG, 0.08, backZ), netCol);
+          alpha.addQuad(ptW(-halfG, goalH, gz), ptW(-halfG, goalH, topBackZ), ptW(halfG, goalH, topBackZ), ptW(halfG, goalH, gz), netCol);
+          alpha.addTriangle(ptW(-halfG, 0.08, gz), ptW(-halfG, goalH, gz), ptW(-halfG, 0.08, backZ), netCol);
+          alpha.addTriangle(ptW(halfG, 0.08, gz), ptW(halfG, 0.08, backZ), ptW(halfG, goalH, gz), netCol);
+        }
+      });
     }
+
+    // Perimeter LED Advertising Boards around the field in Sports mode
+    this.buildSportsPerimeterBoardsMesh(solid, screens);
+  }
+
+  buildSportsPerimeterBoardsMesh(solid, screens) {
+    const infield = this.venue.infield;
+    if (!infield) return;
+    const isCourt = infield.surfaceType === 'hardwood-court';
+    const isTrack = infield.sportPreset === 'track-field' || infield.surfaceType === 'synthetic-track';
+    const pw = infield.pitchWidth || 68;
+    const pl = infield.pitchLength || 105;
+    const hw = pw / 2;
+    const hl = pl / 2;
+    const pitchOri = infield.pitchOrientationDeg || 0;
+
+    let padX = isCourt ? 2.4 : 3.6;
+    let padZ = isCourt ? 3.0 : 4.6;
+    if (isTrack) {
+      const spec = computeRunningTrackSpec(infield);
+      const maxHalfW = Math.max(hw + 1.2, spec.innerApronWidth * 0.5 - 1.2);
+      const maxHalfL = Math.max(hl + 1.5, spec.innerApronLength * 0.5 - 1.5);
+      padX = Math.min(padX, maxHalfW - hw);
+      padZ = Math.min(padZ, maxHalfL - hl);
+    }
+
+    const bx = hw + padX;
+    const bz = hl + padZ;
+    const boardH = isCourt ? 0.85 : 1.05;
+    const boardDepth = 0.24;
+    const panelMaxW = isCourt ? 3.2 : 4.8;
+    const panelGap = 0.16;
+    const frameCol = [0.10, 0.12, 0.16, 1.0];
+    const trimCol = [0.22, 0.26, 0.34, 1.0];
+
+    // Sponsor-style vibrant LED ribbon color palette (alternating crisp blocks)
+    const ledPalette = [
+      { bg: [0.06, 0.38, 0.88, 1.0], accent: [0.20, 0.84, 1.00, 1.0] },
+      { bg: [0.05, 0.56, 0.42, 1.0], accent: [0.58, 0.96, 0.35, 1.0] },
+      { bg: [0.78, 0.12, 0.22, 1.0], accent: [1.00, 0.82, 0.22, 1.0] },
+      { bg: [0.10, 0.18, 0.36, 1.0], accent: [0.96, 0.48, 0.14, 1.0] }
+    ];
+
+    const addBoardRun = (lx1, lz1, lx2, lz2, inNx, inNz, colorOffset) => {
+      const totalLen = Math.hypot(lx2 - lx1, lz2 - lz1);
+      if (totalLen < 2.0) return;
+      const count = Math.max(1, Math.floor(totalLen / panelMaxW));
+      const stepLen = totalLen / count;
+      const dirX = (lx2 - lx1) / totalLen;
+      const dirZ = (lz2 - lz1) / totalLen;
+      const segAngleRad = -pitchOri * DEG2RAD - Math.atan2(dirZ, dirX);
+
+      for (let i = 0; i < count; i++) {
+        const s0 = i * stepLen + panelGap * 0.5;
+        const s1 = (i + 1) * stepLen - panelGap * 0.5;
+        const pW = s1 - s0;
+        if (pW < 0.4) continue;
+        const midS = (s0 + s1) * 0.5;
+        const lcx = lx1 + dirX * midS;
+        const lcz = lz1 + dirZ * midS;
+        const wCenter = rotateXZ(lcx, lcz, pitchOri);
+
+        // Dark structural LED cabinet housing
+        solid.addBox(wCenter.x, boardH * 0.5 + 0.06, wCenter.z, pW, boardH, boardDepth, frameCol, segAngleRad);
+        // Subtle rear support foot
+        const footPos = rotateXZ(lcx - inNx * 0.22, lcz - inNz * 0.22, pitchOri);
+        solid.addBox(footPos.x, 0.18, footPos.z, 0.18, 0.28, 0.32, trimCol, segAngleRad);
+
+        // Luminous inward-facing LED display face
+        const faceOff = boardDepth * 0.5 + 0.015;
+        const pA = rotateXZ(lx1 + dirX * (s0 + 0.06) + inNx * faceOff, lz1 + dirZ * (s0 + 0.06) + inNz * faceOff, pitchOri);
+        const pB = rotateXZ(lx1 + dirX * (s1 - 0.06) + inNx * faceOff, lz1 + dirZ * (s1 - 0.06) + inNz * faceOff, pitchOri);
+        const pal = ledPalette[(i + colorOffset) % ledPalette.length];
+        const target = screens || solid;
+
+        const botY = 0.14;
+        const midY = botY + (boardH - 0.16) * 0.72;
+        const topY = boardH - 0.02;
+        // Main LED body
+        target.addQuad(
+          { x: pA.x, y: botY, z: pA.z },
+          { x: pA.x, y: midY, z: pA.z },
+          { x: pB.x, y: midY, z: pB.z },
+          { x: pB.x, y: botY, z: pB.z },
+          pal.bg
+        );
+        // Bright top sponsor accent ticker strip
+        target.addQuad(
+          { x: pA.x, y: midY, z: pA.z },
+          { x: pA.x, y: topY, z: pA.z },
+          { x: pB.x, y: topY, z: pB.z },
+          { x: pB.x, y: midY, z: pB.z },
+          pal.accent
+        );
+      }
+    };
+
+    const cornerGap = isCourt ? 1.0 : 1.8;
+    // Left & right touchline/sideline LED board runs
+    addBoardRun(-bx, -bz + cornerGap, -bx, bz - cornerGap, 1, 0, 0);
+    addBoardRun(bx, bz - cornerGap, bx, -bz + cornerGap, -1, 0, 2);
+    // Top & bottom goal-line/baseline LED board runs
+    addBoardRun(-bx + cornerGap, -bz, bx - cornerGap, -bz, 0, 1, 1);
+    addBoardRun(bx - cornerGap, bz, -bx + cornerGap, bz, 0, -1, 3);
   }
 
 }

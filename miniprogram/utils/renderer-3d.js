@@ -65,17 +65,23 @@ const FRAGMENT_SHADER = `
   varying vec3 vWorldPos;
   uniform float uTime;
   uniform float uIsUnlit;
+  uniform vec3 uCamEye;
 
   void main() {
     if (uIsUnlit > 0.5) {
       gl_FragColor = vColor;
       return;
     }
-    vec3 norm = normalize(vNormal);
+    float normLen = length(vNormal);
+    vec3 norm = normLen > 0.0001 ? (vNormal / normLen) : vec3(0.0, 1.0, 0.0);
     // Pure matte non-reflective shading: soft hemisphere + gentle wrapped diffuse, zero specular glare
     float hemi = 0.5 + 0.5 * norm.y;
     float wrap = max(0.0, (dot(norm, normalize(vec3(0.24, 0.94, 0.24))) + 0.65) / 1.65);
-    float lighting = 0.68 + 0.18 * hemi + 0.12 * wrap;
+    float baseLighting = 0.68 + 0.18 * hemi + 0.12 * wrap;
+    // Attenuate high-frequency normal contrast at bird's-eye distances to suppress seat moiré
+    float camDist = length(vWorldPos - uCamEye);
+    float distFade = smoothstep(120.0, 320.0, camDist);
+    float lighting = mix(baseLighting, 0.88, distFade * 0.55);
 
     gl_FragColor = vec4(vColor.rgb * lighting, vColor.a);
   }
@@ -164,6 +170,7 @@ class Renderer3D {
     this.uniMVP = gl.getUniformLocation(prog, 'uMVP');
     this.uniTime = gl.getUniformLocation(prog, 'uTime');
     this.uniIsUnlit = gl.getUniformLocation(prog, 'uIsUnlit');
+    this.uniCamEye = gl.getUniformLocation(prog, 'uCamEye');
 
     gl.enable(gl.DEPTH_TEST);
     gl.depthFunc(gl.LEQUAL);
@@ -329,10 +336,23 @@ class Renderer3D {
     this.disposeBufferGroup(this.alphaBuffers);
     this.disposeBufferGroup(this.beamBuffers);
 
-    const solid = new MeshBuilder();
-    const screens = new MeshBuilder();
-    const alpha = new MeshBuilder();
-    const beams = new MeshBuilder();
+    let estRows = 0;
+    const tiers = (this.venue && this.venue.standTiers) || [];
+    for (let ti = 0; ti < tiers.length; ti++) {
+      const t = tiers[ti];
+      const secs = t.sectors || [];
+      for (let si = 0; si < secs.length; si++) {
+        const s = secs[si];
+        if (!s.isDeleted && s.fillType !== 'empty-void') {
+          estRows += (s.rows || t.defaultRows || 22);
+        }
+      }
+    }
+    const estSolidCap = Math.max(65536, Math.min(4194304, estRows * 3000));
+    const solid = new MeshBuilder(estSolidCap);
+    const screens = new MeshBuilder(4096);
+    const alpha = new MeshBuilder(4096);
+    const beams = new MeshBuilder(1024);
 
     // 1. Exterior Scene (e.g. Floating Island) & Stadium Perimeter Cladding
     if (this.sceneManager && this.sceneManager.getCurrentSceneId() !== 'default') {
@@ -351,7 +371,7 @@ class Renderer3D {
 
     // 3. Schema Infield Modules (sports sideline seating only — prevents clash with rotated concert stage)
     if (this.viewMode === 'sports') {
-      this.buildInfieldModulesMesh(solid);
+      this.buildInfieldModulesMesh(solid, alpha);
     }
 
     // 4. Stand Tiers: Stepped concrete rows, row-by-row 3D seats, radial stairs + handrails,
@@ -361,12 +381,12 @@ class Renderer3D {
     // 5. Architectural Thick Roof Canopy Ring (zero Z-fighting!)
     this.buildStadiumCanopyRim(solid);
 
-    // 6. Concert Stage + Concert Infield Floor Seating Blocks OR Sports Goals/Hoops
+    // 6. Concert Stage + Concert Infield Floor Seating Blocks OR Sports Goals/Hoops & Perimeter LED Boards
     if (this.viewMode === 'concert') {
-      this.buildConcertInfieldSeatsMesh(solid);
+      this.buildConcertInfieldSeatsMesh(solid, alpha);
       this.buildConcertStageMesh(solid, screens, beams);
     } else {
-      this.buildSportsEquipmentMesh(solid);
+      this.buildSportsEquipmentMesh(solid, alpha, screens);
     }
 
     this.solidBuffers = this.uploadMesh(solid);
@@ -379,20 +399,23 @@ class Renderer3D {
 
   uploadMesh(meshBuilder) {
     const gl = this.gl;
-    const count = meshBuilder.positions.length / 3;
+    const pos = meshBuilder.positions;
+    const count = pos.length / 3;
     if (count === 0) return { count: 0 };
 
     const posBuf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(meshBuilder.positions), gl.STATIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, pos instanceof Float32Array ? pos : new Float32Array(pos), gl.STATIC_DRAW);
 
+    const norm = meshBuilder.normals;
     const normBuf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, normBuf);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(meshBuilder.normals), gl.STATIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, norm instanceof Float32Array ? norm : new Float32Array(norm), gl.STATIC_DRAW);
 
+    const col = meshBuilder.colors;
     const colBuf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, colBuf);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(meshBuilder.colors), gl.STATIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, col instanceof Float32Array ? col : new Float32Array(col), gl.STATIC_DRAW);
 
     return { posBuf, normBuf, colBuf, count };
   }
@@ -474,6 +497,9 @@ class Renderer3D {
     gl.uniformMatrix4fv(this.uniMVP, false, this.mvpMat);
     const elapsedSec = (Date.now() - this.startTime) * 0.001;
     gl.uniform1f(this.uniTime, elapsedSec);
+    if (this.uniCamEye) {
+      gl.uniform3f(this.uniCamEye, this.camEye.x, this.camEye.y, this.camEye.z);
+    }
 
     // Update dynamic exterior scene animations (e.g. clouds, fairy sparkles)
     if (this.sceneManager) {

@@ -14,6 +14,17 @@ const {
 
 const SEAT_COLORS_STORAGE_KEY = 'STADIACAD_SEAT_COLORS';
 
+function toViewVenue(venue) {
+  if (!venue) return null;
+  return {
+    id: venue.id,
+    _id: venue._id,
+    standTiers: Array.isArray(venue.standTiers)
+      ? venue.standTiers.map(t => ({ id: t.id, level: t.level }))
+      : []
+  };
+}
+
 Page({
   data: {
     venues: [],
@@ -88,10 +99,18 @@ Page({
       const sightline = calculateSeatSightline(initialVenue, this.activeSelection, this.data.viewMode);
       const colorState = this.buildColorPickerState(initialVenue);
 
+      this._venues = venues;
+      this._currentVenue = initialVenue;
+      const homeVenues = venues.slice(0, 5).map(v => ({
+        id: v.id,
+        _id: v._id,
+        shortLabel: v.shortLabel,
+        capLabel: v.capLabel
+      }));
+
       this.setData({
-        venues,
-        homeVenues: venues.slice(0, 5),
-        currentVenue: initialVenue,
+        homeVenues,
+        currentVenue: toViewVenue(initialVenue),
         sightline,
         cameraMode: 'bird',
         loadingVenues: false,
@@ -112,12 +131,17 @@ Page({
     }
   },
 
+  getCurrentVenue() {
+    return this._currentVenue || this.data.currentVenue;
+  },
+
   applyVenueToRenderers(venue, sightline, cameraMode = 'bird') {
     if (!venue) return;
     const overrides = this.getSavedVenueColors(venue.id);
     if (this.renderer2d) {
       this.renderer2d.tierColorOverrides = Object.assign({}, overrides);
       this.renderer2d.setVenue(venue, this.data.viewMode);
+      this.renderer2d.setTierFilter(this.data.activeTierFilter || 'all');
     }
     if (this.renderer3d) {
       this.renderer3d.tierColorOverrides = Object.assign({}, overrides);
@@ -164,9 +188,10 @@ Page({
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
         this.renderer2d = new Renderer2D(canvas, ctx, width, height, dpr);
-        if (this.data.currentVenue) {
-          this.renderer2d.tierColorOverrides = Object.assign({}, this.getSavedVenueColors(this.data.currentVenue.id));
-          this.renderer2d.setVenue(this.data.currentVenue, this.data.viewMode);
+        const activeVenue2d = this.getCurrentVenue();
+        if (activeVenue2d) {
+          this.renderer2d.tierColorOverrides = Object.assign({}, this.getSavedVenueColors(activeVenue2d.id));
+          this.renderer2d.setVenue(activeVenue2d, this.data.viewMode);
           this.applySelectionToRenderers();
         }
       });
@@ -190,9 +215,10 @@ Page({
         this.canvas3d = canvas;
         this._canvas3dCss = { w: width, h: height };
         this.renderer3d = new Renderer3D(canvas, gl, width * dpr, height * dpr);
-        if (this.data.currentVenue) {
-          this.renderer3d.tierColorOverrides = Object.assign({}, this.getSavedVenueColors(this.data.currentVenue.id));
-          this.renderer3d.setVenue(this.data.currentVenue, this.data.viewMode, this.getSelectionIds());
+        const activeVenue3d = this.getCurrentVenue();
+        if (activeVenue3d) {
+          this.renderer3d.tierColorOverrides = Object.assign({}, this.getSavedVenueColors(activeVenue3d.id));
+          this.renderer3d.setVenue(activeVenue3d, this.data.viewMode, this.getSelectionIds());
           this.applySelectionToRenderers();
           if (this.data.cameraMode === 'seat' && this.data.sightline) {
             this.renderer3d.flyToSeat(this.data.sightline);
@@ -268,7 +294,8 @@ Page({
 
   // 打开全部场馆列表页面
   onOpenAllVenues() {
-    const currentId = this.data.currentVenue ? (this.data.currentVenue.id || this.data.currentVenue._id || '') : '';
+    const cur = this.getCurrentVenue();
+    const currentId = cur ? (cur.id || cur._id || '') : '';
     wx.navigateTo({
       url: `/pages/venues/venues?currentId=${encodeURIComponent(currentId)}`,
       events: {
@@ -281,20 +308,30 @@ Page({
     });
   },
 
-  // 切换场馆 Schema（直接从服务器加载该场馆的 Schema，启动过渡动画并以最小形态鸟瞰呈现）
+  // 切换场馆 Schema（优先使用已加载的本地内存缓存，未命中时从服务器加载）
   onSelectVenue(e) {
     const venueId = e.currentTarget.dataset.id;
     const docId = e.currentTarget.dataset.docId;
-    if (this.data.currentVenue && (this.data.currentVenue.id === venueId || this.data.currentVenue._id === venueId)) return;
-    const cached = this.data.venues.find(v => v.id === venueId || v._id === venueId);
+    const cur = this.getCurrentVenue();
+    if (cur && (cur.id === venueId || cur._id === venueId)) return;
+    const list = this._venues || this.data.venues || [];
+    const cached = list.find(v => v.id === venueId || v._id === venueId);
     const displayName = (cached && (cached.shortLabel || cached.name)) || '场馆';
     this.loadAndSwitchVenue(venueId, docId || (cached && cached._id), displayName);
   },
 
   async loadAndSwitchVenue(venueId, docId, displayName) {
-    if (this.data.currentVenue && (this.data.currentVenue.id === venueId || this.data.currentVenue._id === venueId)) {
+    const cur = this.getCurrentVenue();
+    if (cur && (cur.id === venueId || cur._id === venueId)) {
+      if (this.data.isVenueSwitching) {
+        this._switchSeq = (this._switchSeq || 0) + 1;
+        this.setData({ isVenueSwitching: false, switchingFade: false });
+      }
       return;
     }
+
+    const switchSeq = (this._switchSeq || 0) + 1;
+    this._switchSeq = switchSeq;
 
     // 触发奶白色平滑过渡加载动画
     this.setData({
@@ -304,9 +341,23 @@ Page({
     });
 
     try {
-      let venue = await loadStadiumProjectById(venueId, docId);
+      const list = this._venues || this.data.venues || [];
+      let venue = list.find(
+        v => (v.id === venueId || v._id === venueId || (docId && v._id === docId)) &&
+             Array.isArray(v.standTiers) && v.standTiers.length > 0
+      );
       if (!venue) {
-        venue = (this.data.venues || []).find(v => v.id === venueId || v._id === venueId || (docId && v._id === docId));
+        venue = await loadStadiumProjectById(venueId, docId);
+        if (switchSeq !== this._switchSeq) return;
+        if (venue) {
+          if (!Array.isArray(this._venues)) this._venues = [];
+          const existingIdx = this._venues.findIndex(v => v.id === venue.id || v._id === venue._id);
+          if (existingIdx >= 0) {
+            this._venues[existingIdx] = venue;
+          } else {
+            this._venues.push(venue);
+          }
+        }
       }
       if (!venue) {
         wx.showToast({ title: '加载场馆 Schema 失败', icon: 'none' });
@@ -314,14 +365,19 @@ Page({
         return;
       }
 
+      // 让出 1 帧使过渡动画浮层先完成绘制，避免同步建网阻塞首帧渲染
+      await new Promise(resolve => setTimeout(resolve, 16));
+      if (switchSeq !== this._switchSeq) return;
+
       wx.setStorageSync('STADIACAD_LAST_VENUE', venue.id);
 
+      this._currentVenue = venue;
       this.activeSelection = findDefaultEastFirstRowSelection(venue);
       const sightline = calculateSeatSightline(venue, this.activeSelection, this.data.viewMode);
       const colorState = this.buildColorPickerState(venue);
 
       this.setData({
-        currentVenue: venue,
+        currentVenue: toViewVenue(venue),
         activeTierFilter: 'all',
         cameraMode: 'bird',
         zoomLevel: 1.0,
@@ -333,13 +389,19 @@ Page({
       this.applyVenueToRenderers(venue, sightline, 'bird');
     } catch (err) {
       console.error('加载场馆 Schema 异常:', err);
-      wx.showToast({ title: '加载场馆 Schema 失败', icon: 'none' });
+      if (switchSeq === this._switchSeq) {
+        wx.showToast({ title: '加载场馆 Schema 失败', icon: 'none' });
+      }
     } finally {
-      // 切换完成后平滑淡出过渡动画
-      this.setData({ switchingFade: true });
-      setTimeout(() => {
-        this.setData({ isVenueSwitching: false, switchingFade: false });
-      }, 320);
+      if (switchSeq === this._switchSeq) {
+        // 切换完成后平滑淡出过渡动画
+        this.setData({ switchingFade: true });
+        setTimeout(() => {
+          if (switchSeq === this._switchSeq) {
+            this.setData({ isVenueSwitching: false, switchingFade: false });
+          }
+        }, 320);
+      }
     }
   },
 
@@ -444,7 +506,7 @@ Page({
   },
 
   applySeatColorsLive(overrides, presetId) {
-    const venue = this.data.currentVenue;
+    const venue = this.getCurrentVenue();
     if (!venue) return;
     this.saveVenueColors(venue.id, overrides);
     const colorState = this.buildColorPickerState(venue, this.data.activeColorTarget, overrides, presetId);
@@ -478,7 +540,7 @@ Page({
 
   onPickSeatColor(e) {
     const hex = e.currentTarget.dataset.hex;
-    const venue = this.data.currentVenue;
+    const venue = this.getCurrentVenue();
     if (!hex || !venue) return;
     const overrides = this.getSavedVenueColors(venue.id);
     overrides[this.data.activeColorTarget] = hex;
@@ -520,15 +582,16 @@ Page({
   onToggleViewMode() {
     const nextMode = this.data.viewMode === 'concert' ? 'sports' : 'concert';
     // Switching modes clears incompatible infield-only selections back to East Row 1
+    const venue = this.getCurrentVenue();
     if (
       (nextMode === 'sports' && this.activeSelection && this.activeSelection.isFloorBlock) ||
       (nextMode === 'concert' && this.activeSelection && this.activeSelection.isModule)
     ) {
-      this.activeSelection = findDefaultEastFirstRowSelection(this.data.currentVenue);
+      this.activeSelection = findDefaultEastFirstRowSelection(venue);
       this.applySelectionToRenderers();
     }
 
-    const sightline = calculateSeatSightline(this.data.currentVenue, this.activeSelection, nextMode);
+    const sightline = calculateSeatSightline(venue, this.activeSelection, nextMode);
 
     this.setData({
       viewMode: nextMode,
@@ -668,7 +731,7 @@ Page({
     this.applySelectionToRenderers();
 
     const sightline = calculateSeatSightline(
-      this.data.currentVenue,
+      this.getCurrentVenue(),
       this.activeSelection,
       this.data.viewMode
     );
@@ -770,7 +833,7 @@ Page({
   // 一键飞入当前默认/所选席位
   onFlyToSelectedSeat() {
     const sightline = calculateSeatSightline(
-      this.data.currentVenue,
+      this.getCurrentVenue(),
       this.activeSelection,
       this.data.viewMode
     );
@@ -805,7 +868,7 @@ Page({
     if (!this.activeSelection) return;
     this.activeSelection.row = rowNumber;
     const sightline = calculateSeatSightline(
-      this.data.currentVenue,
+      this.getCurrentVenue(),
       this.activeSelection,
       this.data.viewMode
     );

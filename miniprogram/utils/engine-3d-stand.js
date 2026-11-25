@@ -23,8 +23,19 @@ class StandMixinHolder {
     const showVomitories = !(this.venue.gridSystem && this.venue.gridSystem.showVomitories === false);
     const cornerAngles = getInfieldCornerTransitionAngles(this.venue);
 
-    // 每排按真实座位间距绘制单座，不再按 stride 合并成宽"长椅"
-    const globalSeatStride = 1;
+    // 大型体育场（>4.5万座）采用 stride=2 保持单座轮廓同时将顶点数与显存减半
+    let totalRowUnits = 0;
+    for (let ti = 0; ti < tiers.length; ti++) {
+      const t = tiers[ti];
+      const secs = t.sectors || [];
+      for (let si = 0; si < secs.length; si++) {
+        const s = secs[si];
+        if (!s.isDeleted && s.fillType !== 'empty-void' && (s.fillType || t.defaultFillType) !== 'vip-box') {
+          totalRowUnits += (s.rows || t.defaultRows || 22);
+        }
+      }
+    }
+    const globalSeatStride = totalRowUnits > 450 ? 2 : 1;
 
     const tierSeatColors = [
       { pan: [0.17, 0.37, 0.72, 1.0], back: [0.14, 0.31, 0.62, 1.0] }, // 1F Matte Navy-Blue
@@ -32,8 +43,8 @@ class StandMixinHolder {
       { pan: [0.68, 0.48, 0.16, 1.0], back: [0.56, 0.39, 0.12, 1.0] }, // 3F Matte Amber VIP
       { pan: [0.40, 0.27, 0.68, 1.0], back: [0.33, 0.22, 0.58, 1.0] }  // 4F Matte Violet
     ];
-    const concreteStepCol = [0.15, 0.18, 0.24, 1.0];
-    const concreteRiserCol = [0.13, 0.16, 0.21, 1.0];
+    const concreteStepCol = [0.25, 0.29, 0.36, 1.0];
+    const concreteRiserCol = [0.22, 0.26, 0.33, 1.0];
     const vipFloorCol = [0.22, 0.17, 0.13, 1.0];
     const vipCarpetCol = [0.30, 0.13, 0.15, 1.0];
     const vipGoldTrimCol = [0.86, 0.70, 0.38, 1.0];
@@ -396,17 +407,22 @@ class StandMixinHolder {
               concreteRiserCol
             );
 
-            // Top Rear Guardrail smoothly tracking the sweeping circular rim
+            // Top Rear Guardrail smoothly tracking the sweeping circular rim (lowered & multi-material)
             if (showGuardrails && guard.rearWallEnabled !== false) {
-              const rearH = guard.rearWallHeight || 1.2;
-              solid.addBeam3D(
-                { x: xTop1, y: yTop1 + rearH, z: zTop1 },
-                { x: xTop2, y: yTop2 + rearH, z: zTop2 },
-                0.10, 0.10, secRailCol
+              const rearH = Math.min(0.84, (guard.rearWallHeight || 1.2) * 0.68);
+              solid.addTexturedRailingRun(
+                { x: xTop1, z: zTop1 }, yTop1,
+                { x: xTop2, z: zTop2 }, yTop2,
+                rearH,
+                {
+                  capColor: secRailCol,
+                  postColor: isVip ? [0.24, 0.20, 0.16, 1.0] : [0.24, 0.28, 0.35, 1.0],
+                  midColor: isVip ? [0.76, 0.64, 0.36, 1.0] : [0.56, 0.62, 0.70, 1.0],
+                  includeStartPost: a % 2 === 0,
+                  includeEndPost: false,
+                  postSpacing: 10
+                }
               );
-              if (a % 2 === 0) {
-                solid.addBox(xTop1, yTop1 + rearH / 2, zTop1, 0.08, rearH, 0.08, secRailCol, 0);
-              }
             }
           } else {
             // Exact uniform row-by-row concrete treads & risers matching seat elevations 1:1
@@ -468,57 +484,91 @@ class StandMixinHolder {
               concreteRiserCol
             );
 
-            // Top Rear Guardrail / Balustrade along the stand top rim
+            // Top Rear Guardrail / Balustrade along the stand top rim (lowered & multi-material)
             if (showGuardrails && guard.rearWallEnabled !== false) {
-              const rearH = guard.rearWallHeight || 1.2;
-              solid.addBeam3D(
-                { x: xTop1, y: topElev + rearH, z: zTop1 },
-                { x: xTop2, y: topElev + rearH, z: zTop2 },
-                0.10, 0.10, secRailCol
+              const rearH = Math.min(0.84, (guard.rearWallHeight || 1.2) * 0.68);
+              solid.addTexturedRailingRun(
+                { x: xTop1, z: zTop1 }, topElev,
+                { x: xTop2, z: zTop2 }, topElev,
+                rearH,
+                {
+                  capColor: secRailCol,
+                  postColor: isVip ? [0.24, 0.20, 0.16, 1.0] : [0.24, 0.28, 0.35, 1.0],
+                  midColor: isVip ? [0.76, 0.64, 0.36, 1.0] : [0.56, 0.62, 0.70, 1.0],
+                  includeStartPost: a % 2 === 0,
+                  includeEndPost: false,
+                  postSpacing: 10
+                }
               );
-              if (a % 2 === 0) {
-                solid.addBox(xTop1, topElev + rearH / 2, zTop1, 0.08, rearH, 0.08, secRailCol, 0);
-              }
             }
           }
 
           // Front Guardrail (OMITTED across front-connected Row-0/Row-1 vomitories!)
-          // Single top horizontal bar ONLY + vertical posts/pickets (+ glass/concrete infill)
-          // Uses flat baseElev so the lower ring is completely continuous and never detached
+          // Lowered height (~0.68-0.75m) with gunmetal stanchions, base shoes, brushed-metal cap, mid-rail & glass infill
           if (showGuardrails && guard.frontRailEnabled !== false && !(isVomStrip && isFrontConnected)) {
-            const frontH = isVip ? Math.min(1.08, guard.frontRailHeight || 1.05) : (guard.frontRailHeight || 1.1);
+            const rawFrontH = guard.frontRailHeight || 1.1;
+            const frontH = isVip ? Math.min(0.70, rawFrontH * 0.65) : Math.min(0.74, rawFrontH * 0.66);
             const f1_bot = { x: pt1.inX, y: baseElev, z: pt1.inZ };
             const f2_bot = { x: pt2.inX, y: baseElev, z: pt2.inZ };
             const g1_top = { x: pt1.inX, y: baseElev + frontH, z: pt1.inZ };
             const g2_top = { x: pt2.inX, y: baseElev + frontH, z: pt2.inZ };
+            const postCol = isVip ? [0.24, 0.20, 0.16, 1.0] : [0.24, 0.28, 0.35, 1.0];
 
-            // Single volumetric 3D top horizontal handrail + vertical stanchion post
-            solid.addBeam3D(g1_top, g2_top, isVip ? 0.09 : 0.11, isVip ? 0.09 : 0.11, secRailCol);
+            // Ergonomic brushed-metal top handrail cap
+            solid.addBeam3D(g1_top, g2_top, isVip ? 0.085 : 0.095, isVip ? 0.048 : 0.052, secRailCol);
+            // Gunmetal stanchion post with base anchor flange
             if (a === 0 || a % 2 === 0) {
-              solid.addBox(f1_bot.x, baseElev + frontH / 2, f1_bot.z, isVip ? 0.07 : 0.09, frontH, isVip ? 0.07 : 0.09, secRailCol, 0);
+              solid.addBox(f1_bot.x, baseElev + frontH / 2, f1_bot.z, isVip ? 0.058 : 0.068, frontH, isVip ? 0.058 : 0.068, postCol, 0);
+              solid.addBox(f1_bot.x, baseElev + 0.025, f1_bot.z, 0.115, 0.05, 0.115, postCol, 0);
             }
 
             if (isVip) {
               // Frameless smoked tempered glass balcony balustrade + slim champagne-gold shoe channel
               alpha.addQuad(
-                { x: pt1.inX, y: baseElev + 0.08, z: pt1.inZ },
+                { x: pt1.inX, y: baseElev + 0.07, z: pt1.inZ },
                 g1_top,
                 g2_top,
-                { x: pt2.inX, y: baseElev + 0.08, z: pt2.inZ },
-                [0.64, 0.78, 0.90, 0.30]
+                { x: pt2.inX, y: baseElev + 0.07, z: pt2.inZ },
+                [0.64, 0.78, 0.90, 0.28]
               );
               solid.addQuad(
                 f1_bot,
-                { x: pt1.inX, y: baseElev + 0.08, z: pt1.inZ },
-                { x: pt2.inX, y: baseElev + 0.08, z: pt2.inZ },
+                { x: pt1.inX, y: baseElev + 0.07, z: pt1.inZ },
+                { x: pt2.inX, y: baseElev + 0.07, z: pt2.inZ },
                 f2_bot,
                 vipGoldTrimCol
               );
             } else if (guard.material === 'tempered-glass' && tier.level > 1) {
-              alpha.addQuad(f1_bot, g1_top, g2_top, f2_bot, [0.50, 0.84, 1.0, 0.34]);
+              alpha.addQuad(
+                { x: pt1.inX, y: baseElev + 0.05, z: pt1.inZ },
+                g1_top,
+                g2_top,
+                { x: pt2.inX, y: baseElev + 0.05, z: pt2.inZ },
+                [0.54, 0.82, 0.98, 0.28]
+              );
+              solid.addBeam3D(
+                { x: pt1.inX, y: baseElev + 0.04, z: pt1.inZ },
+                { x: pt2.inX, y: baseElev + 0.04, z: pt2.inZ },
+                0.06, 0.06, postCol
+              );
             } else if (guard.material === 'concrete-parapet' && tier.level > 1) {
               solid.addQuad(f1_bot, g1_top, g2_top, f2_bot, [0.42, 0.48, 0.58, 1.0]);
             } else {
+              // Sleek mid-rail + slim stainless pickets + subtle tinted glass infill on upper tiers
+              solid.addBeam3D(
+                { x: pt1.inX, y: baseElev + frontH * 0.52, z: pt1.inZ },
+                { x: pt2.inX, y: baseElev + frontH * 0.52, z: pt2.inZ },
+                0.042, 0.042, [0.56, 0.62, 0.70, 1.0]
+              );
+              if (alpha && tier.level > 1) {
+                alpha.addQuad(
+                  { x: pt1.inX, y: baseElev + 0.05, z: pt1.inZ },
+                  { x: pt1.inX, y: baseElev + frontH - 0.03, z: pt1.inZ },
+                  { x: pt2.inX, y: baseElev + frontH - 0.03, z: pt2.inZ },
+                  { x: pt2.inX, y: baseElev + 0.05, z: pt2.inZ },
+                  [0.56, 0.78, 0.92, 0.18]
+                );
+              }
               const segLen = Math.hypot(f2_bot.x - f1_bot.x, f2_bot.z - f1_bot.z);
               const pickets = Math.max(1, Math.min(4, Math.floor(segLen / 1.1)));
               for (let p = 1; p <= pickets; p++) {
@@ -527,7 +577,7 @@ class StandMixinHolder {
                   f1_bot.x + (f2_bot.x - f1_bot.x) * pt,
                   baseElev + frontH / 2,
                   f1_bot.z + (f2_bot.z - f1_bot.z) * pt,
-                  0.05, frontH, 0.05, secRailCol, 0
+                  0.038, frontH - 0.04, 0.038, [0.56, 0.62, 0.70, 1.0], 0
                 );
               }
             }
@@ -612,19 +662,18 @@ class StandMixinHolder {
             );
           }
 
-          const postCount = Math.max(3, Math.ceil(lenE / 4.0));
-          for (let p = 0; p < postCount; p++) {
-            const pf = p / (postCount - 1);
-            const px = ptEdge.inX + dxE * pf;
-            const pz = ptEdge.inZ + dzE * pf;
-            const py = baseElev + (topElevE - baseElev) * pf;
-            solid.addBox(px, py + 0.50, pz, 0.09, 1.0, 0.09, handrailCol, 0);
-          }
-          // Single top sloped handrail along the inter-stand aisle
-          solid.addBeam3D(
-            { x: ptEdge.inX, y: baseElev + 1.00, z: ptEdge.inZ },
-            { x: ptEdgeTop.x, y: topElevE + 1.00, z: ptEdgeTop.z },
-            0.10, 0.10, handrailCol
+          // Lowered & textured inter-stand aisle handrail (~0.68m)
+          solid.addTexturedRailingRun(
+            { x: ptEdge.inX, z: ptEdge.inZ }, baseElev,
+            { x: ptEdgeTop.x, z: ptEdgeTop.z }, topElevE,
+            0.68,
+            {
+              capColor: [0.80, 0.84, 0.90, 1.0],
+              postColor: [0.24, 0.28, 0.35, 1.0],
+              midColor: [0.58, 0.63, 0.70, 1.0],
+              postSpacing: 3.6
+            },
+            alpha
           );
         }
 
@@ -718,11 +767,16 @@ class StandMixinHolder {
           if (usableArc <= 0.35) return;
 
           const seatsInRow = Math.max(1, Math.floor(usableArc / stepUnitW));
-          const seatWFactor = stride > 1 ? 0.985 : 0.92;
-          const seatDepthM = stride > 1 ? Math.min(0.62, rowPitch * 0.74) : Math.min(0.50, rowPitch * 0.60);
+          const seatWFactor = 0.98;
+          const seatDepthM = Math.min(0.76, rowPitch * 0.88);
           const seatRowElev = isVip ? baseElev : (baseElev + (r - 1) * riserH);
 
           let segIdx = 0;
+          let cachedSegIdx = -1;
+          let cachedSegNx = 0;
+          let cachedSegNz = 0;
+          let cachedSegHasNorm = false;
+
           for (let si = 0; si < seatsInRow; si++) {
             const targetS = runMarginStart + ((si + 0.5) / seatsInRow) * usableArc;
             while (segIdx < cumLen.length - 2 && cumLen[segIdx + 1] < targetS) {
@@ -739,34 +793,70 @@ class StandMixinHolder {
               continue;
             }
 
-            let seatRowFrac;
+            let seatX, seatZ, ptNx, ptNz;
             if (isVip) {
-              seatRowFrac = vipFrontFrac;
+              const exactPt = evalTierPoint(this.venue, tierIndex, seatDeg, vipFrontFrac, sec.customRadialDepth);
+              seatX = exactPt.x;
+              seatZ = exactPt.z;
+              ptNx = exactPt.nx;
+              ptNz = exactPt.nz;
             } else if (isConcentricSeats) {
               const ePt = evalTierPoint(this.venue, tierIndex, seatDeg, 0, sec.customRadialDepth);
               const eDepth = Math.max(0.5, Math.hypot(ePt.outX - ePt.inX, ePt.outZ - ePt.inZ));
               if ((r - 0.35) * rowPitch > eDepth) continue;
-              seatRowFrac = Math.min(0.98, ((r - 0.5) * rowPitch) / eDepth);
+              const seatRowFrac = Math.min(0.98, ((r - 0.5) * rowPitch) / eDepth);
+              seatX = ePt.inX + (ePt.outX - ePt.inX) * seatRowFrac;
+              seatZ = ePt.inZ + (ePt.outZ - ePt.inZ) * seatRowFrac;
+              ptNx = ePt.nx;
+              ptNz = ePt.nz;
             } else {
-              seatRowFrac = totalRows > 1 ? (r - 0.5) / totalRows : 0.5;
+              const seatRowFrac = totalRows > 1 ? (r - 0.5) / totalRows : 0.5;
+              const exactPt = evalTierPoint(this.venue, tierIndex, seatDeg, seatRowFrac, sec.customRadialDepth);
+              seatX = exactPt.x;
+              seatZ = exactPt.z;
+              ptNx = exactPt.nx;
+              ptNz = exactPt.nz;
             }
 
-            const exactPt = evalTierPoint(this.venue, tierIndex, seatDeg, seatRowFrac, sec.customRadialDepth);
             let fx, fz;
-            if (!tierHasMorph && ((Math.abs(exactPt.nx) > 0.999 && Math.abs(exactPt.nz) < 1e-3) || (Math.abs(exactPt.nz) > 0.999 && Math.abs(exactPt.nx) < 1e-3))) {
-              fx = -exactPt.nx;
-              fz = -exactPt.nz;
+            if (!tierHasMorph && ((Math.abs(ptNx) > 0.999 && Math.abs(ptNz) < 1e-3) || (Math.abs(ptNz) > 0.999 && Math.abs(ptNx) < 1e-3))) {
+              fx = -ptNx;
+              fz = -ptNz;
             } else {
-              const inward = getRowInwardNormal(this.venue, tierIndex, seatDeg, seatRowFrac, sec.customRadialDepth);
-              fx = inward.x;
-              fz = inward.z;
+              if (cachedSegIdx !== segIdx) {
+                cachedSegIdx = segIdx;
+                const tdx = pB.x - pA.x;
+                const tdz = pB.z - pA.z;
+                const tLen = Math.hypot(tdx, tdz);
+                if (tLen > 1e-4) {
+                  let n1x = tdz / tLen;
+                  let n1z = -tdx / tLen;
+                  if (n1x * (-ptNx) + n1z * (-ptNz) < 0) {
+                    n1x = -n1x;
+                    n1z = -n1z;
+                  }
+                  cachedSegNx = n1x;
+                  cachedSegNz = n1z;
+                  cachedSegHasNorm = true;
+                } else {
+                  cachedSegHasNorm = false;
+                }
+              }
+              if (cachedSegHasNorm) {
+                fx = cachedSegNx;
+                fz = cachedSegNz;
+              } else {
+                const inward = getRowInwardNormal(this.venue, tierIndex, seatDeg, 0.5, sec.customRadialDepth);
+                fx = inward.x;
+                fz = inward.z;
+              }
             }
 
             if (isVip) {
               solid.addVipSeat3D(
-                exactPt.x,
+                seatX,
                 seatRowElev,
-                exactPt.z,
+                seatZ,
                 Math.min(0.68, stepUnitW * 0.88),
                 0.58,
                 fx,
@@ -776,10 +866,10 @@ class StandMixinHolder {
               );
             } else {
               solid.addSeat3D(
-                exactPt.x,
+                seatX,
                 seatRowElev,
-                exactPt.z,
-                stepUnitW * seatWFactor,
+                seatZ,
+                seatSpacing * seatWFactor,
                 seatDepthM,
                 fx,
                 fz,
@@ -1063,20 +1153,14 @@ class StandMixinHolder {
           pitWallCol,
           { x: 0, y: -1, z: 0 }
         );
-        // Single-bar side safety rails on bridge (front & back open)
+        // Lowered & textured side safety rails on bridge (front & back open)
         const addRailRun = (pA, yA, pB, yB) => {
-          const span = Math.hypot(pB.x - pA.x, pB.z - pA.z);
-          const posts = Math.max(2, Math.ceil(span / 2.8) + 1);
-          for (let i = 0; i < posts; i++) {
-            const f = i / (posts - 1);
-            solid.addBox(
-              pA.x + (pB.x - pA.x) * f,
-              yA + (yB - yA) * f + 0.50,
-              pA.z + (pB.z - pA.z) * f,
-              0.09, 1.0, 0.09, handrailCol, 0
-            );
-          }
-          solid.addBeam3D({ x: pA.x, y: yA + 1.00, z: pA.z }, { x: pB.x, y: yB + 1.00, z: pB.z }, 0.10, 0.10, handrailCol);
+          solid.addTexturedRailingRun(pA, yA, pB, yB, 0.68, {
+            capColor: [0.80, 0.84, 0.90, 1.0],
+            postColor: [0.24, 0.28, 0.35, 1.0],
+            midColor: [0.58, 0.63, 0.70, 1.0],
+            postSpacing: 2.6
+          });
         };
         addRailRun(prevL, prevTopY, { x: ptL0.inX, z: ptL0.inZ }, baseElev);
         addRailRun(prevR, prevTopY, { x: ptR0.inX, z: ptR0.inZ }, baseElev);
@@ -1147,20 +1231,14 @@ class StandMixinHolder {
         solid.addBox((ptL1.x + ptR1.x) / 2, portalTopY + 0.14, (ptL1.z + ptR1.z) / 2, widthM * 0.65, 0.22, 0.24, [0.10, 0.88, 0.48, 1.0], exitRot);
       }
 
-      // Single-bar corridor side railings + upper portal edge guardrail (front exit remains 100% open!)
+      // Lowered & textured corridor side railings + upper portal edge guardrail (front exit remains 100% open!)
       const addCorridorRail = (pA, yA, pB, yB) => {
-        const span = Math.hypot(pB.x - pA.x, pB.z - pA.z);
-        const posts = Math.max(2, Math.ceil(span / 2.5) + 1);
-        for (let i = 0; i < posts; i++) {
-          const f = i / (posts - 1);
-          solid.addBox(
-            pA.x + (pB.x - pA.x) * f,
-            yA + (yB - yA) * f + 0.50,
-            pA.z + (pB.z - pA.z) * f,
-            0.09, 1.0, 0.09, handrailCol, 0
-          );
-        }
-        solid.addBeam3D({ x: pA.x, y: yA + 1.00, z: pA.z }, { x: pB.x, y: yB + 1.00, z: pB.z }, 0.10, 0.10, handrailCol);
+        solid.addTexturedRailingRun(pA, yA, pB, yB, 0.68, {
+          capColor: [0.80, 0.84, 0.90, 1.0],
+          postColor: [0.24, 0.28, 0.35, 1.0],
+          midColor: [0.58, 0.63, 0.70, 1.0],
+          postSpacing: 2.4
+        });
       };
       addCorridorRail({ x: ptL0.inX, z: ptL0.inZ }, baseElev, ptL1, yBack);
       addCorridorRail({ x: ptR0.inX, z: ptR0.inZ }, baseElev, ptR1, yBack);
@@ -1242,20 +1320,14 @@ class StandMixinHolder {
     const exitRot = Math.atan2(-(ptR_out.z - ptL_out.z), ptR_out.x - ptL_out.x);
     solid.addBox((ptL_out.x + ptR_out.x) / 2, portalTopY + 0.14, (ptL_out.z + ptR_out.z) / 2, widthM * 0.65, 0.22, 0.24, [0.10, 0.88, 0.48, 1.0], exitRot);
 
-    // 3-sided single-bar guardrail around recessed vomitory: Left, Right, and UPPER portal rim (exit mouth ptL_in->ptR_in stays 100% OPEN!)
+    // Lowered & textured 3-sided guardrail around recessed vomitory: Left, Right, and UPPER portal rim (exit mouth ptL_in->ptR_in stays 100% OPEN!)
     const addPitRail = (pA, yA, pB, yB) => {
-      const span = Math.hypot(pB.x - pA.x, pB.z - pA.z);
-      const posts = Math.max(2, Math.ceil(span / 2.2) + 1);
-      for (let i = 0; i < posts; i++) {
-        const f = i / (posts - 1);
-        solid.addBox(
-          pA.x + (pB.x - pA.x) * f,
-          yA + (yB - yA) * f + 0.50,
-          pA.z + (pB.z - pA.z) * f,
-          0.09, 1.0, 0.09, handrailCol, 0
-        );
-      }
-      solid.addBeam3D({ x: pA.x, y: yA + 1.00, z: pA.z }, { x: pB.x, y: yB + 1.00, z: pB.z }, 0.10, 0.10, handrailCol);
+      solid.addTexturedRailingRun(pA, yA, pB, yB, 0.68, {
+        capColor: [0.80, 0.84, 0.90, 1.0],
+        postColor: [0.24, 0.28, 0.35, 1.0],
+        midColor: [0.58, 0.63, 0.70, 1.0],
+        postSpacing: 2.2
+      });
     };
     addPitRail(ptL_in, yFront, ptL_out, yBack);
     addPitRail(ptR_in, yFront, ptR_out, yBack);

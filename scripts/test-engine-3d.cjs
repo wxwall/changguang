@@ -248,6 +248,135 @@ console.log('--- 7. Testing New Features: Raycast Picking, Multi-Dimension Color
   console.log('✓ Engine-3D backward-compatibility bridges verified.');
 }
 
+console.log('--- 8. Testing Seat Texture, Lowered Railings, Pitch Lines & Sports Perimeter Boards ---');
+{
+  // 1. Sculpted 3D Seat geometry & AO vertex colors
+  const seatB = new MeshBuilder();
+  seatB.addSeat3D(0, 0, 0, 0.5, 0.5, 0, -1, [0.2, 0.4, 0.8, 1], [0.15, 0.32, 0.65, 1]);
+  const seatVerts = seatB.positions.length / 3;
+  assert.ok(seatVerts >= 30, `Sculpted seat must have multi-part geometry (got ${seatVerts} verts)`);
+  assert.strictEqual(seatVerts, seatB.normals.length / 3);
+  assert.strictEqual(seatVerts, seatB.colors.length / 4);
+
+  // 2. Lowered & textured railings
+  const railSolid = new MeshBuilder();
+  const railAlpha = new MeshBuilder();
+  railSolid.addTexturedRailingRun({ x: 0, z: 0 }, 5.0, { x: 10, z: 0 }, 5.0, 0.68, { showGlass: true }, railAlpha);
+  let maxRailY = -Infinity;
+  for (let i = 1; i < railSolid.positions.length; i += 3) {
+    if (railSolid.positions[i] > maxRailY) maxRailY = railSolid.positions[i];
+  }
+  assert.ok(maxRailY <= 5.0 + 0.75 && maxRailY >= 5.0 + 0.65, `Railing height must stay lowered around 0.68m (maxY=${maxRailY.toFixed(3)})`);
+  assert.ok(railAlpha.positions.length > 0, 'Textured glass railing must populate alpha buffer');
+
+  // 3. Accurate football pitch & basketball court lines (including small/rotated edge cases)
+  const renderer = new Renderer3D(null, null, 800, 600);
+  const soccerVenue = geo.normalizeVenueCoordinates(VENUES[0]);
+  renderer.setVenue(soccerVenue, 'sports');
+  const pitchSolid = new MeshBuilder();
+  renderer.buildInfieldMesh(pitchSolid);
+  assert.ok(pitchSolid.positions.length / 3 > 1200, 'Football pitch must include full FIFA markings (center circle, penalty boxes, arcs, corners)');
+
+  const courtVenue = geo.normalizeVenueCoordinates(VENUES.find(v => v.infield && v.infield.surfaceType === 'hardwood-court'));
+  renderer.setVenue(courtVenue, 'sports');
+  const courtSolid = new MeshBuilder();
+  renderer.buildInfieldMesh(courtSolid);
+  assert.ok(courtSolid.positions.length / 3 > 800, 'Basketball court must include hardwood planks, keys, 3-pt arcs & court lines');
+  // Verify exact FIBA 6.75m 3-point arc apex on 15x28m court (z ≈ ±5.675m at x=0, y=0.14)
+  let minApexDist = Infinity;
+  const expectedApexZ = (courtVenue.infield.pitchLength / 2) - 1.575 - 6.75;
+  for (let i = 0; i < courtSolid.positions.length; i += 3) {
+    const px = courtSolid.positions[i], py = courtSolid.positions[i + 1], pz = courtSolid.positions[i + 2];
+    if (Math.abs(py - 0.14) < 0.005 && Math.abs(px) < 0.4) {
+      minApexDist = Math.min(minApexDist, Math.abs(Math.abs(pz) - expectedApexZ));
+    }
+  }
+  assert.ok(minApexDist < 0.08, `FIBA 3-pt arc apex must be at 6.75m from basket (dist=${minApexDist.toFixed(4)})`);
+
+  // Edge case: small rotated custom court
+  const smallCourt = JSON.parse(JSON.stringify(courtVenue));
+  smallCourt.infield.pitchLength = 18;
+  smallCourt.infield.pitchWidth = 12;
+  smallCourt.infield.pitchOrientationDeg = 90;
+  renderer.setVenue(smallCourt, 'sports');
+  const smallCourtSolid = new MeshBuilder();
+  renderer.buildInfieldMesh(smallCourtSolid);
+  for (let i = 0; i < smallCourtSolid.positions.length; i++) {
+    assert.ok(!Number.isNaN(smallCourtSolid.positions[i]), 'Small rotated court must produce zero NaNs');
+  }
+
+  // 4. Sports mode equipment & perimeter LED advertising boards
+  const eqSolid = new MeshBuilder();
+  const eqAlpha = new MeshBuilder();
+  const eqScreens = new MeshBuilder();
+  renderer.setVenue(soccerVenue, 'sports');
+  renderer.buildSportsEquipmentMesh(eqSolid, eqAlpha, eqScreens);
+  assert.ok(eqScreens.positions.length > 0, 'Sports mode must generate luminous LED perimeter advertising boards');
+  assert.ok(eqAlpha.positions.length > 0, 'Sports mode must generate semi-transparent goal nets');
+
+  // Track-field venue: perimeter boards must stay inside innerApron
+  const trackVenue = geo.normalizeVenueCoordinates(VENUES.find(v => v.infield && v.infield.sportPreset === 'track-field'));
+  if (trackVenue) {
+    renderer.setVenue(trackVenue, 'sports');
+    const trSolid = new MeshBuilder();
+    const trAlpha = new MeshBuilder();
+    const trScreens = new MeshBuilder();
+    renderer.buildSportsEquipmentMesh(trSolid, trAlpha, trScreens);
+    const spec = geo.computeRunningTrackSpec(trackVenue.infield);
+    let maxAbsX = 0, maxAbsZ = 0;
+    for (let i = 0; i < trScreens.positions.length; i += 3) {
+      maxAbsX = Math.max(maxAbsX, Math.abs(trScreens.positions[i]));
+      maxAbsZ = Math.max(maxAbsZ, Math.abs(trScreens.positions[i + 2]));
+    }
+    assert.ok(maxAbsX <= spec.innerApronWidth * 0.5 + 0.5, 'Track-field perimeter boards must stay inside innerApronWidth');
+    assert.ok(maxAbsZ <= spec.innerApronLength * 0.5 + 0.5, 'Track-field perimeter boards must stay inside innerApronLength');
+  }
+
+  // 5. 2D Renderer FIBA/FIFA sports markings
+  const { Renderer2D } = loadCommonJs(path.join(ROOT, 'miniprogram/utils/renderer-2d.js'));
+  const arcs = [];
+  const rects = [];
+  const mockCtx = {
+    save() {}, restore() {}, translate() {}, scale() {}, rotate() {},
+    beginPath() {}, closePath() {}, moveTo() {}, lineTo() {}, quadraticCurveTo() {},
+    arcTo() {}, rect() {}, ellipse() {}, clip() {},
+    fill() {}, stroke() {}, clearRect() {}, setLineDash() {}, fillText() {}, strokeText() {},
+    measureText() { return { width: 10 }; },
+    fillRect(x, y, w, h) { rects.push({ x, y, w, h }); },
+    strokeRect(x, y, w, h) { rects.push({ x, y, w, h }); },
+    arc(x, y, r, a1, a2) { arcs.push({ x, y, r, a1, a2 }); }
+  };
+  const r2d = new Renderer2D(null, mockCtx, 800, 600, 1);
+  r2d.setVenue(courtVenue, 'sports');
+  assert.ok(arcs.some(a => Math.abs(a.r - 6.75) < 0.01), '2D basketball court must draw 6.75m FIBA 3-pt arc');
+  assert.ok(arcs.some(a => Math.abs(a.r - 1.8) < 0.01), '2D basketball court must draw 1.8m FIBA center circle');
+
+  // 6. Concert mode must strip sports flooring, running track, and markings in 3D & 2D across all venues
+  VENUES.map(v => geo.normalizeVenueCoordinates(v)).forEach((v) => {
+    renderer.setVenue(v, 'sports');
+    renderer.setViewMode('concert');
+    const cSolid = new MeshBuilder(4096);
+    renderer.buildInfieldMesh(cSolid);
+    const cPos = cSolid.positions;
+    assert.ok(cPos.length > 0, `Concert mode infield base surface must exist for ${v.id}`);
+    for (let i = 1; i < cPos.length; i += 3) {
+      assert.strictEqual(cPos[i], 0, `Concert mode infield must not render elevated track/floor/line layers (found y=${cPos[i]} for ${v.id})`);
+    }
+    for (let i = 0; i < cSolid.colors.length; i += 4) {
+      assert.ok(Math.abs(cSolid.colors[i] - 0.12) < 0.001, `Concert mode infield must use neutral dark base color (got r=${cSolid.colors[i]} for ${v.id})`);
+    }
+    r2d.setVenue(v, 'sports');
+    r2d.setViewMode('concert');
+    arcs.length = 0;
+    rects.length = 0;
+    r2d.drawInfield(mockCtx, 1);
+    assert.strictEqual(arcs.length, 0, `2D concert mode drawInfield must not draw court/pitch arcs for ${v.id}`);
+    assert.strictEqual(rects.length, 0, `2D concert mode drawInfield must not draw court/pitch floor rects for ${v.id}`);
+  });
+
+  console.log('✓ Seat texture, lowered railings, accurate pitch/court lines & sports perimeter LED boards verified.');
+}
+
 console.log('\n========================================');
 console.log('ALL 3D ENGINE ARCHITECTURE TESTS PASSED!');
 console.log('========================================');
