@@ -785,7 +785,8 @@ class Renderer2D {
       ctx.rotate((blk.rotDeg || 0) * DEG2RAD);
 
       const floorHex = this.tierColorOverrides && this.tierColorOverrides.floor;
-      ctx.fillStyle = isSelected ? '#F43F5E' : (floorHex || blk.color || '#3B82F6');
+      const infieldDefaultHex = this.venue && this.venue.infield && this.venue.infield.defaultSeatColor;
+      ctx.fillStyle = isSelected ? '#F43F5E' : (floorHex || blk.color || infieldDefaultHex || '#3B82F6');
       ctx.globalAlpha = isSelected ? 0.95 : 0.72;
       ctx.fillRect(-blk.width / 2, -blk.depth / 2, blk.width, blk.depth);
 
@@ -951,8 +952,10 @@ class Renderer2D {
         const defaultPalette = TIER_COLORS[(item.tierLevel - 1) % TIER_COLORS.length];
         const tierObj = (this.venue && this.venue.standTiers && this.venue.standTiers[item.tierIndex]) || {};
         const isVip = (item.sector.fillType || tierObj.defaultFillType) === 'vip-box';
+        const schemaHex = item.sector.seatColor || tierObj.seatColor || null;
         const customHex = (this.tierColorOverrides && this.tierColorOverrides[String(item.tierLevel)]) ||
                           (isVip && this.tierColorOverrides && this.tierColorOverrides.vip) ||
+                          schemaHex ||
                           null;
         const customPalette = customHex ? hexToSeat2D(customHex) : null;
 

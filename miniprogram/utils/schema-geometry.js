@@ -757,7 +757,7 @@ function generateConcertInfieldBlocks(venue) {
         localFacingZ,
         facingX,
         facingZ,
-        color: mod.color || '#10B981',
+        color: mod.color || infield.defaultSeatColor || '#10B981',
         fromSchema: true
       });
     });

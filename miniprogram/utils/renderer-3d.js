@@ -358,12 +358,12 @@ class Renderer3D {
     if (this.sceneManager && this.sceneManager.getCurrentSceneId() !== 'default') {
       this.sceneManager.buildMeshes({ solid, screens, alpha, beams }, { overrides: this.tierColorOverrides });
       if (typeof this.buildExteriorFacadeShell === 'function') {
-        this.buildExteriorFacadeShell(solid);
+        this.buildExteriorFacadeShell(solid, alpha);
       } else {
-        this.buildGroundAndShell(solid);
+        this.buildGroundAndShell(solid, alpha);
       }
     } else {
-      this.buildGroundAndShell(solid);
+      this.buildGroundAndShell(solid, alpha);
     }
 
     // 2. Infield Floor, Running Track / Court / Grass Pitch
@@ -379,7 +379,7 @@ class Renderer3D {
     this.buildStandTiersMesh(solid, alpha, screens);
 
     // 5. Architectural Thick Roof Canopy Ring (zero Z-fighting!)
-    this.buildStadiumCanopyRim(solid);
+    this.buildStadiumCanopyRim(solid, alpha, screens);
 
     // 6. Concert Stage + Concert Infield Floor Seating Blocks OR Sports Goals/Hoops & Perimeter LED Boards
     if (this.viewMode === 'concert') {

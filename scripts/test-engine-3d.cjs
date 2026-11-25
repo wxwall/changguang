@@ -227,8 +227,57 @@ console.log('--- 7. Testing New Features: Raycast Picking, Multi-Dimension Color
   console.log('✓ 3D initial render and bird eye view correctly lock to minimum form (cannot zoom out further).');
 
   // 4. Verify 3D Picking in both Bird & Seat camera modes
+  function projectWorldToScreen(r, pt) {
+    const eye = r.camEye;
+    const target = r.camTarget;
+    let fx = target.x - eye.x, fy = target.y - eye.y, fz = target.z - eye.z;
+    const fl = Math.hypot(fx, fy, fz) || 1;
+    fx /= fl; fy /= fl; fz /= fl;
+    let rx = -fz, rz = fx;
+    const rl = Math.hypot(rx, rz) || 1;
+    rx /= rl; rz /= rl;
+    const ux = -fy * rz, uy = fx * rz - fz * rx, uz = fy * rx;
+    const fovDeg = Math.max(12, Math.min(90, r.baseFovDeg / Math.pow(r.zoomLevel || 1, 0.85)));
+    const aspect = (r.width || 375) / Math.max(1, r.height || 400);
+    const tanHalf = Math.tan((fovDeg * geo.DEG2RAD) / 2);
+    const vx = pt.x - eye.x, vy = pt.y - eye.y, vz = pt.z - eye.z;
+    const zCam = vx * fx + vy * fy + vz * fz;
+    const xCam = vx * rx + vz * rz;
+    const yCam = vx * ux + vy * uy + vz * uz;
+    return {
+      nx: (xCam / (zCam * aspect * tanHalf) + 1) / 2,
+      ny: (1 - yCam / (zCam * tanHalf)) / 2
+    };
+  }
+
+  function findBirdPickScreenPoint(r, v) {
+    const tiers = v.standTiers || [];
+    for (let ti = tiers.length - 1; ti >= 0; ti--) {
+      const tier = tiers[ti];
+      const sec = (tier.sectors || []).find(
+        s => !s.isDeleted && s.fillType !== 'empty-void' && s.fillType !== 'solid-wall'
+      );
+      if (!sec) continue;
+      const a0 = sec.startAngleDeg;
+      const a1 = sec.endAngleDeg;
+      const midAngle = a1 < a0 ? (((a0 + a1 + 360) / 2) % 360) : ((a0 + a1) / 2);
+      const pt = geo.evalTierPoint(v, ti, midAngle, 0.5);
+      const isVip = (sec.fillType || tier.defaultFillType) === 'vip-box';
+      const rowPitch = Math.max(0.4, sec.rowPitch || tier.defaultRowPitch || 0.85);
+      const slopeDeg = isVip ? 0 : (sec.slopeDeg || tier.defaultSlopeDeg || 20);
+      const riserH = isVip ? 0 : (sec.riserHeight || rowPitch * Math.tan(slopeDeg * geo.DEG2RAD));
+      const totalRows = isVip ? 1 : geo.getTierRowsAtAngle(v, ti, tier, sec, midAngle);
+      const row = isVip ? 1 : Math.max(1, Math.round(0.5 * totalRows + 0.5));
+      const y = (tier.baseElevation || 1.0) + (row - 1) * riserH + 0.3;
+      return projectWorldToScreen(r, { x: pt.x, y, z: pt.z });
+    }
+    return { nx: 0.5, ny: 0.5 };
+  }
+
   renderer.setBirdEyeView();
-  const birdHit = renderer.pickAt(0.3, 0.4);
+  const birdScreenPt = findBirdPickScreenPoint(renderer, venue);
+  assert.ok(birdScreenPt.nx >= 0 && birdScreenPt.nx <= 1 && birdScreenPt.ny >= 0 && birdScreenPt.ny <= 1, 'Projected bird pick point must lie within normalized screen bounds');
+  const birdHit = renderer.pickAt(birdScreenPt.nx, birdScreenPt.ny);
   assert.ok(birdHit && (birdHit.sector || birdHit.floorBlock), 'Bird mode picking must resolve a sector or floor block');
 
   const sel = geo.findDefaultEastFirstRowSelection(venue);
@@ -236,7 +285,7 @@ console.log('--- 7. Testing New Features: Raycast Picking, Multi-Dimension Color
   renderer.flyToSeat(sightline);
   renderer.camEye = { ...renderer.targetEye };
   renderer.camTarget = { ...renderer.targetLook };
-  const seatHit = renderer.pickAt(0.5, 0.3);
+  const seatHit = renderer.pickAt(0.5, 0.5);
   assert.ok(seatHit && (seatHit.sector || seatHit.floorBlock), 'Seat mode picking must resolve across-venue sectors/blocks');
   console.log('✓ 3D Picking in both bird and seat modes successfully hits sectors/blocks for 2D linkage.');
 

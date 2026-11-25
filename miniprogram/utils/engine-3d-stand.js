@@ -76,7 +76,10 @@ class StandMixinHolder {
     tiers.forEach((tier, tierIndex) => {
       const defaultPair = tierSeatColors[(tier.level - 1) % tierSeatColors.length];
       const tierOverrideHex = this.tierColorOverrides && this.tierColorOverrides[String(tier.level)];
-      const seatColPair = (tierOverrideHex && hexToSeat3D(tierOverrideHex)) || defaultPair;
+      const tierSchemaHex = tier.seatColor;
+      const seatColPair = (tierOverrideHex && hexToSeat3D(tierOverrideHex)) ||
+                          (tierSchemaHex && hexToSeat3D(tierSchemaHex)) ||
+                          defaultPair;
       const sectors = tier.sectors || [];
       const activeSectors = sectors.filter(s => !s.isDeleted && s.fillType !== 'empty-void');
       const selectedIdxInTier = activeSectors.findIndex(s => s.id === this.selectedSectorId);
@@ -89,14 +92,19 @@ class StandMixinHolder {
 
         const isVip = (sec.fillType || tier.defaultFillType) === 'vip-box';
 
-        // Per-floor custom color picker support (VIP checks its floor key first, then global 'vip' key)
+        // Per-floor & schema color support (user override > sector seatColor > tier seatColor > default)
+        const secColPair = (tierOverrideHex && hexToSeat3D(tierOverrideHex)) ||
+                           (sec.seatColor && hexToSeat3D(sec.seatColor)) ||
+                           seatColPair;
         const vipOverrideHex = tierOverrideHex || (this.tierColorOverrides && this.tierColorOverrides.vip);
-        const vipPair = (vipOverrideHex && hexToSeat3D(vipOverrideHex)) || {
+        const vipSchemaHex = sec.seatColor || tierSchemaHex;
+        const vipPair = (vipOverrideHex && hexToSeat3D(vipOverrideHex)) ||
+                        (vipSchemaHex && hexToSeat3D(vipSchemaHex)) || {
           pan: [0.72, 0.50, 0.20, 1.0],
           back: [0.56, 0.38, 0.15, 1.0]
         };
-        const panCol = isVip ? vipPair.pan : seatColPair.pan;
-        const backCol = isVip ? vipPair.back : seatColPair.back;
+        const panCol = isVip ? vipPair.pan : secColPair.pan;
+        const backCol = isVip ? vipPair.back : secColPair.back;
 
         const sDeg = sec.startAngleDeg;
         const eDeg = sec.endAngleDeg;

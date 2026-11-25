@@ -448,7 +448,7 @@ Page({
       const activeSecs = (tier.sectors || []).filter(s => !s.isDeleted && s.fillType !== 'empty-void');
       const vipCount = activeSecs.filter(s => (s.fillType || tier.defaultFillType) === 'vip-box').length;
       const isVipTier = activeSecs.length > 0 && vipCount >= activeSecs.length * 0.5;
-      const hex = overrides[key] || (isVipTier && overrides.vip) || getDefaultHexForTarget(key, isVipTier);
+      const hex = overrides[key] || (isVipTier && overrides.vip) || tier.seatColor || getDefaultHexForTarget(key, isVipTier);
       return {
         key,
         label: isVipTier ? `${tier.level}F VIP` : `${tier.level}F 看台`,
@@ -461,7 +461,7 @@ Page({
       key: 'floor',
       label: '内场座席',
       isVipTier: false,
-      hex: overrides.floor || getDefaultHexForTarget('floor', false)
+      hex: overrides.floor || (venue.infield && venue.infield.defaultSeatColor) || getDefaultHexForTarget('floor', false)
     });
     targets.push({
       key: 'sky',
@@ -473,13 +473,13 @@ Page({
       key: 'roof',
       label: '屋顶',
       isVipTier: false,
-      hex: overrides.roof || getDefaultHexForTarget('roof', false)
+      hex: overrides.roof || (venue.roof && venue.roof.color) || getDefaultHexForTarget('roof', false)
     });
     targets.push({
       key: 'wall',
       label: '外墙',
       isVipTier: false,
-      hex: overrides.wall || getDefaultHexForTarget('wall', false)
+      hex: overrides.wall || (venue.facade && venue.facade.wallColor) || getDefaultHexForTarget('wall', false)
     });
     targets.push({
       key: 'ground',

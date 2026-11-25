@@ -15,7 +15,7 @@ const { hexToSeat3D, parseHexRgb } = require('./seat-colors');
 
 class InfieldMixinHolder {
 
-  buildGroundAndShell(solid) {
+  buildGroundAndShell(solid, alpha) {
     const overrides = this.tierColorOverrides || {};
     // Large architectural plaza apron at y = -0.60 so camera never sees an empty void
     const plazaR = 360;
@@ -31,10 +31,13 @@ class InfieldMixinHolder {
     );
 
     // Solid exterior facade shell connecting outer tier down to ground plaza
-    this.buildExteriorFacadeShell(solid);
+    this.buildExteriorFacadeShell(solid, alpha);
   }
 
-  buildExteriorFacadeShell(solid) {
+  buildExteriorFacadeShell(solid, alpha) {
+    const facade = this.venue && this.venue.facade;
+    if (facade && facade.enabled === false) return;
+
     const overrides = this.tierColorOverrides || {};
     const tiers = this.venue.standTiers || [];
     const lastTierIdx = tiers.length - 1;
@@ -47,42 +50,104 @@ class InfieldMixinHolder {
     const isMorphedLast = isConcentricMorphTier(lastTier);
 
     const ringAngles = this.buildFullRingAngles(180);
-    const wallRgb = parseHexRgb(overrides.wall || '#CBD5E1') || { r: 203, g: 213, b: 225 };
-    const shellCol = [wallRgb.r / 255, wallRgb.g / 255, wallRgb.b / 255, 1.0];
+    const wallHex = overrides.wall || (facade && facade.wallColor) || '#CBD5E1';
+    const wallRgb = parseHexRgb(wallHex) || { r: 203, g: 213, b: 225 };
+    const wr = wallRgb.r / 255;
+    const wg = wallRgb.g / 255;
+    const wb = wallRgb.b / 255;
+
+    const wallOpacity = (facade && facade.opacity !== undefined)
+      ? Math.max(0.15, Math.min(1.0, Number(facade.opacity)))
+      : 1.0;
+    const isTranslucent = wallOpacity < 0.99 && Boolean(alpha);
+    const wallBuilder = isTranslucent ? alpha : solid;
+    const shellCol = [wr, wg, wb, isTranslucent ? wallOpacity : 1.0];
+    const trimCol = [Math.max(0, wr * 0.86), Math.max(0, wg * 0.86), Math.max(0, wb * 0.86), 1.0];
+    const plinthCol = [Math.max(0, wr * 0.72), Math.max(0, wg * 0.72), Math.max(0, wb * 0.72), 1.0];
 
     const lastRiserH = lastTier.defaultRiserHeight || (lastPitch * Math.tan(lastSlope * DEG2RAD));
-    const flatTopWallY = (lastTier.baseElevation || 14) + Math.max(0, lastRows - 1) * lastRiserH + 1.2;
+    const heightExt = (facade && facade.heightExtensionM !== undefined) ? Number(facade.heightExtensionM) : 1.2;
+    const flatTopWallY = (lastTier.baseElevation || 14) + Math.max(0, lastRows - 1) * lastRiserH + heightExt;
+    const pad = 1.5;
 
+    const evalWallPoint = (deg, extraPad = 0) => {
+      const pt = evalTierPoint(this.venue, lastTierIdx, deg, 1);
+      const rLen = Math.hypot(pt.x, pt.z) || 1;
+      const nx = isMorphedLast ? (pt.x / rLen) : pt.nx;
+      const nz = isMorphedLast ? (pt.z / rLen) : pt.nz;
+      const totalPad = pad + extraPad;
+      const x = pt.x + nx * totalPad;
+      const z = pt.z + nz * totalPad;
+      let topWallY = flatTopWallY;
+      if (isMorphedLast) {
+        const r = getTierRowsAtAngleFloat(this.venue, lastTierIdx, lastTier, null, deg);
+        topWallY = (lastTier.baseElevation || 14) + Math.max(0, r - 1) * lastRiserH + heightExt;
+      }
+      return { x, z, nx, nz, topWallY };
+    };
+
+    const hasClassicDetail = Boolean(facade);
     for (let i = 0; i < ringAngles.length - 1; i++) {
       const deg1 = ringAngles[i];
       const deg2 = ringAngles[i + 1];
 
-      const pt1 = evalTierPoint(this.venue, lastTierIdx, deg1, 1);
-      const pt2 = evalTierPoint(this.venue, lastTierIdx, deg2, 1);
+      const w1 = evalWallPoint(deg1, 0);
+      const w2 = evalWallPoint(deg2, 0);
 
-      let topWallY1 = flatTopWallY;
-      let topWallY2 = flatTopWallY;
-      if (isMorphedLast) {
-        const r1 = getTierRowsAtAngleFloat(this.venue, lastTierIdx, lastTier, null, deg1);
-        const r2 = getTierRowsAtAngleFloat(this.venue, lastTierIdx, lastTier, null, deg2);
-        topWallY1 = (lastTier.baseElevation || 14) + Math.max(0, r1 - 1) * lastRiserH + 1.2;
-        topWallY2 = (lastTier.baseElevation || 14) + Math.max(0, r2 - 1) * lastRiserH + 1.2;
+      wallBuilder.addQuad(
+        { x: w1.x, y: -0.60, z: w1.z },
+        { x: w1.x, y: w1.topWallY, z: w1.z },
+        { x: w2.x, y: w2.topWallY, z: w2.z },
+        { x: w2.x, y: -0.60, z: w2.z },
+        shellCol
+      );
+
+      if (hasClassicDetail) {
+        // Base plinth water-table band (-0.60m to 1.00m)
+        const p1 = evalWallPoint(deg1, 0.22);
+        const p2 = evalWallPoint(deg2, 0.22);
+        solid.addQuad(
+          { x: p1.x, y: -0.60, z: p1.z },
+          { x: p1.x, y: 1.0, z: p1.z },
+          { x: p2.x, y: 1.0, z: p2.z },
+          { x: p2.x, y: -0.60, z: p2.z },
+          plinthCol
+        );
+        // Top cornice band
+        const c1 = evalWallPoint(deg1, 0.30);
+        const c2 = evalWallPoint(deg2, 0.30);
+        const corBot1 = Math.max(1.2, w1.topWallY - 0.85);
+        const corBot2 = Math.max(1.2, w2.topWallY - 0.85);
+        solid.addQuad(
+          { x: c1.x, y: corBot1, z: c1.z },
+          { x: c1.x, y: w1.topWallY, z: c1.z },
+          { x: c2.x, y: w2.topWallY, z: c2.z },
+          { x: c2.x, y: corBot2, z: c2.z },
+          trimCol
+        );
+        // Top cap closing cornice to wall
+        solid.addQuad(
+          { x: w1.x, y: w1.topWallY, z: w1.z },
+          { x: c1.x, y: w1.topWallY, z: c1.z },
+          { x: c2.x, y: w2.topWallY, z: c2.z },
+          { x: w2.x, y: w2.topWallY, z: w2.z },
+          trimCol,
+          { x: 0, y: 1, z: 0 }
+        );
       }
+    }
 
-      const pad = 1.5;
-      const rLen1 = Math.hypot(pt1.x, pt1.z) || 1;
-      const rLen2 = Math.hypot(pt2.x, pt2.z) || 1;
-      const x1 = pt1.x + (isMorphedLast ? (pt1.x / rLen1) * pad : pt1.nx * pad);
-      const z1 = pt1.z + (isMorphedLast ? (pt1.z / rLen1) * pad : pt1.nz * pad);
-      const x2 = pt2.x + (isMorphedLast ? (pt2.x / rLen2) * pad : pt2.nx * pad);
-      const z2 = pt2.z + (isMorphedLast ? (pt2.z / rLen2) * pad : pt2.nz * pad);
-
-      const p1_b = { x: x1, y: -0.60, z: z1 };
-      const p2_b = { x: x2, y: -0.60, z: z2 };
-      const p2_t = { x: x2, y: topWallY2, z: z2 };
-      const p1_t = { x: x1, y: topWallY1, z: z1 };
-
-      solid.addQuad(p1_b, p1_t, p2_t, p2_b, shellCol);
+    // Architectural vertical pilasters around exterior facade
+    const showPilasters = facade ? (facade.showPilasters !== false) : false;
+    const pilasterCount = (facade && facade.pilasterCount) ? Math.max(4, Math.round(Number(facade.pilasterCount))) : 0;
+    if (showPilasters && pilasterCount > 0) {
+      for (let k = 0; k < pilasterCount; k++) {
+        const deg = (k / pilasterCount) * 360;
+        const wp = evalWallPoint(deg, 0.32);
+        const h = Math.max(2, wp.topWallY + 0.60);
+        const rotY = Math.atan2(wp.nx, wp.nz);
+        solid.addBox(wp.x, -0.60 + h * 0.5, wp.z, 0.95, h, 0.72, trimCol, rotY);
+      }
     }
   }
 
@@ -372,8 +437,16 @@ class InfieldMixinHolder {
     // Only render permanent non-stage sideline modules in Sports mode (concert stage modules render via buildConcertInfieldSeatsMesh)
     const modules = (this.venue.infieldModules || []).filter(m => !m.autoGeneratedForStage);
     modules.forEach((mod) => {
-      const seatPanCol = [0.10, 0.78, 0.56, 1.0];
-      const seatBackCol = [0.04, 0.52, 0.36, 1.0];
+      const floorOverride = this.tierColorOverrides && this.tierColorOverrides.floor
+        ? hexToSeat3D(this.tierColorOverrides.floor)
+        : null;
+      const modColorPair = (!floorOverride && mod.color) ? hexToSeat3D(mod.color) : null;
+      const infieldDefaultPair = (!floorOverride && !modColorPair && this.venue.infield && this.venue.infield.defaultSeatColor)
+        ? hexToSeat3D(this.venue.infield.defaultSeatColor)
+        : null;
+      const resolvedPair = floorOverride || modColorPair || infieldDefaultPair;
+      const seatPanCol = resolvedPair ? resolvedPair.pan : [0.10, 0.78, 0.56, 1.0];
+      const seatBackCol = resolvedPair ? resolvedPair.back : [0.04, 0.52, 0.36, 1.0];
       const railCol = [0.84, 0.88, 0.94, 1.0];
 
       const rotDeg = Number(mod.rotationDeg) || 0;
@@ -446,8 +519,11 @@ class InfieldMixinHolder {
         ? hexToSeat3D(this.tierColorOverrides.floor)
         : null;
       const schemaPair = (!floorOverride && blk.fromSchema && blk.color) ? hexToSeat3D(blk.color) : null;
-      const panCol = floorOverride ? floorOverride.pan : (schemaPair ? schemaPair.pan : [0.18, 0.42, 0.76, 1.0]);
-      const backCol = floorOverride ? floorOverride.back : (schemaPair ? schemaPair.back : [0.14, 0.34, 0.64, 1.0]);
+      const infieldDefaultPair = (!floorOverride && !schemaPair && this.venue.infield && this.venue.infield.defaultSeatColor)
+        ? hexToSeat3D(this.venue.infield.defaultSeatColor)
+        : null;
+      const panCol = floorOverride ? floorOverride.pan : (schemaPair ? schemaPair.pan : (infieldDefaultPair ? infieldDefaultPair.pan : [0.18, 0.42, 0.76, 1.0]));
+      const backCol = floorOverride ? floorOverride.back : (schemaPair ? schemaPair.back : (infieldDefaultPair ? infieldDefaultPair.back : [0.14, 0.34, 0.64, 1.0]));
       const railCol = [0.58, 0.64, 0.72, 1.0];
       const rotDeg = blk.rotDeg || 0;
       const rotYRad = -rotDeg * DEG2RAD;
