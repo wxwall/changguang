@@ -13,6 +13,7 @@ const {
 } = require('../../utils/seat-colors');
 
 const SEAT_COLORS_STORAGE_KEY = 'STADIACAD_SEAT_COLORS';
+const SCENE_ORDER = ['floating-island', 'default', 'lights-off'];
 
 function toViewVenue(venue) {
   if (!venue) return null;
@@ -159,9 +160,67 @@ Page({
     this.initCanvases();
   },
 
+  onShow() {
+    if (this.renderer3d) {
+      this.renderer3d.requestRender();
+    }
+  },
+
+  onHide() {
+    this.stopRenderLoop();
+  },
+
   onUnload() {
+    this.clearAutoFlyTimer();
+    this.stopRenderLoop();
+  },
+
+  startRenderLoop() {
+    if (this._rafId || !this.canvas3d || !this.renderer3d) return;
+    const canvas = this.canvas3d;
+    const loop = (now) => {
+      this._rafId = null;
+      const r3d = this.renderer3d;
+      if (!r3d) return;
+
+      const ts = typeof now === 'number' ? now : Date.now();
+      const camMoving = r3d.isCameraAnimating ? r3d.isCameraAnimating() : true;
+      const hasDyn = r3d.hasDynamicAnimation ? r3d.hasDynamicAnimation() : false;
+      const needsDraw = r3d.needsRender ? r3d.needsRender() : true;
+
+      if (!needsDraw && !camMoving && !hasDyn) {
+        return;
+      }
+
+      // 静止状态下仅跑外部动态场景动画时，节流至 ~30fps 以大幅降低真机发热
+      if (!needsDraw && !camMoving && hasDyn && this._lastDynRenderTs && (ts - this._lastDynRenderTs) < 32) {
+        this._rafId = canvas.requestAnimationFrame(loop);
+        return;
+      }
+
+      r3d.renderFrame();
+      this._lastDynRenderTs = ts;
+
+      const stillMoving = r3d.isCameraAnimating ? r3d.isCameraAnimating() : false;
+      const stillNeeds = r3d.needsRender ? r3d.needsRender() : false;
+      if (stillNeeds || stillMoving || hasDyn) {
+        this._rafId = canvas.requestAnimationFrame(loop);
+      }
+    };
+    this._rafId = canvas.requestAnimationFrame(loop);
+  },
+
+  stopRenderLoop() {
     if (this._rafId && this.canvas3d) {
       this.canvas3d.cancelAnimationFrame(this._rafId);
+    }
+    this._rafId = null;
+  },
+
+  clearAutoFlyTimer() {
+    if (this._autoFlyTimer) {
+      clearTimeout(this._autoFlyTimer);
+      this._autoFlyTimer = null;
     }
   },
 
@@ -206,15 +265,17 @@ Page({
         const canvas = res[0].node;
         const width = res[0].width || 375;
         const height = res[0].height || 260;
-        canvas.width = width * dpr;
-        canvas.height = height * dpr;
+        const dpr3d = Math.min(dpr, 2);
+        canvas.width = width * dpr3d;
+        canvas.height = height * dpr3d;
 
         const gl = canvas.getContext('webgl', { antialias: true, depth: true });
         if (!gl) return;
 
         this.canvas3d = canvas;
         this._canvas3dCss = { w: width, h: height };
-        this.renderer3d = new Renderer3D(canvas, gl, width * dpr, height * dpr);
+        this.renderer3d = new Renderer3D(canvas, gl, width * dpr3d, height * dpr3d);
+        this.renderer3d.onNeedRender = () => this.startRenderLoop();
         const activeVenue3d = this.getCurrentVenue();
         if (activeVenue3d) {
           this.renderer3d.tierColorOverrides = Object.assign({}, this.getSavedVenueColors(activeVenue3d.id));
@@ -227,13 +288,7 @@ Page({
           }
         }
 
-        const loop = () => {
-          if (this.renderer3d) {
-            this.renderer3d.renderFrame();
-          }
-          this._rafId = canvas.requestAnimationFrame(loop);
-        };
-        this._rafId = canvas.requestAnimationFrame(loop);
+        this.startRenderLoop();
       });
   },
 
@@ -282,10 +337,11 @@ Page({
           .fields({ size: true })
           .exec((res) => {
             if (res && res[0] && res[0].width > 0 && res[0].height > 0) {
+              const dpr3d = Math.min(dpr, 2);
               this._canvas3dCss = { w: res[0].width, h: res[0].height };
-              this.renderer3d.canvas.width = res[0].width * dpr;
-              this.renderer3d.canvas.height = res[0].height * dpr;
-              this.renderer3d.resize(res[0].width * dpr, res[0].height * dpr);
+              this.renderer3d.canvas.width = res[0].width * dpr3d;
+              this.renderer3d.canvas.height = res[0].height * dpr3d;
+              this.renderer3d.resize(res[0].width * dpr3d, res[0].height * dpr3d);
             }
           });
       }
@@ -321,6 +377,7 @@ Page({
   },
 
   async loadAndSwitchVenue(venueId, docId, displayName) {
+    this.clearAutoFlyTimer();
     const cur = this.getCurrentVenue();
     if (cur && (cur.id === venueId || cur._id === venueId)) {
       if (this.data.isVenueSwitching) {
@@ -387,6 +444,15 @@ Page({
       });
 
       this.applyVenueToRenderers(venue, sightline, 'bird');
+
+      this.clearAutoFlyTimer();
+      this._autoFlyTimer = setTimeout(() => {
+        this._autoFlyTimer = null;
+        if (switchSeq !== this._switchSeq) return;
+        if (this.data.cameraMode !== 'seat') {
+          this.onFlyToSelectedSeat();
+        }
+      }, 2000);
     } catch (err) {
       console.error('加载场馆 Schema 异常:', err);
       if (switchSeq === this._switchSeq) {
@@ -558,11 +624,12 @@ Page({
     this.applySeatColorsLive({}, 'default');
   },
 
-  // 切换场外场景（悬浮仙境石头地台 / 经典地台广场）
+  // 切换场外场景（白天悬浮仙境 / 黑夜经典地台 / 关灯场景）
   onToggleScene() {
     if (!this.renderer3d) return;
     const cur = this.renderer3d.getSceneId();
-    const next = cur === 'floating-island' ? 'default' : 'floating-island';
+    const idx = SCENE_ORDER.indexOf(cur);
+    const next = SCENE_ORDER[(idx >= 0 ? idx + 1 : 0) % SCENE_ORDER.length];
     const ok = this.renderer3d.setScene(next);
     if (ok) {
       this.setData({ activeSceneId: next });
@@ -692,6 +759,7 @@ Page({
 
   // 2D / 3D 点选后统一的选中与进入座席视角逻辑，实现 3D 与 2D 双向全景联动
   selectFromHit(hit) {
+    this.clearAutoFlyTimer();
     if (hit.type === 'floor') {
       this.activeSelection = {
         isFloorBlock: true,
@@ -821,6 +889,7 @@ Page({
 
   // 返回 3D 鸟瞰视角
   onReturnBirdEye() {
+    this.clearAutoFlyTimer();
     this.setData({
       cameraMode: 'bird',
       zoomLevel: 1.0
@@ -832,6 +901,7 @@ Page({
 
   // 一键飞入当前默认/所选席位
   onFlyToSelectedSeat() {
+    this.clearAutoFlyTimer();
     const sightline = calculateSeatSightline(
       this.getCurrentVenue(),
       this.activeSelection,
@@ -866,6 +936,7 @@ Page({
 
   updateRowSightline(rowNumber) {
     if (!this.activeSelection) return;
+    this.clearAutoFlyTimer();
     this.activeSelection.row = rowNumber;
     const sightline = calculateSeatSightline(
       this.getCurrentVenue(),

@@ -260,4 +260,80 @@ function angleOfXZ(x, z) {
   console.log('✓ 5. Radial end-cap normals, null/empty safety, and narrow openAngleRanges verified.');
 }
 
+// 6. Bird's Nest venue must NOT have a hardcoded missing wedge around 0°/360°
+{
+  const r = new Renderer3D(null, null, 800, 600);
+  const bnVenue = JSON.parse(JSON.stringify(baseVenue));
+  bnVenue.id = 'bird-nest-test';
+  bnVenue.code = 'BJ-NST-2008-01';
+  bnVenue.name = '国家体育场（鸟巢）';
+  bnVenue.roof.deletedSegments = [];
+  bnVenue.roof.openAngleRanges = [];
+  bnVenue.roof.supportColumns = false;
+  bnVenue.roof.showFloodlights = false;
+  bnVenue.roof.showSuspendedRingScreen = false;
+
+  r.setVenue(bnVenue, 'concert');
+  const bnSolid = new MeshBuilder(65536);
+  r.buildStadiumCanopyRim(bnSolid, new MeshBuilder(1024), new MeshBuilder(1024));
+  assertNoNaNs(bnSolid, 'BirdNest full roof');
+
+  const normalVenue = JSON.parse(JSON.stringify(bnVenue));
+  normalVenue.id = 'generic-stadium';
+  normalVenue.code = 'GEN-01';
+  normalVenue.name = '普通体育场';
+  r.setVenue(normalVenue, 'concert');
+  const normalSolid = new MeshBuilder(65536);
+  r.buildStadiumCanopyRim(normalSolid, new MeshBuilder(1024), new MeshBuilder(1024));
+
+  assert.strictEqual(
+    bnSolid.positions.length,
+    normalSolid.positions.length,
+    'BirdNest full roof (deletedSegments=[], openAngleRanges=[]) must emit same vertex count as non-BirdNest full roof'
+  );
+
+  let hasNorthWedge = false;
+  for (let i = 0; i < bnSolid.positions.length; i += 3) {
+    const deg = angleOfXZ(bnSolid.positions[i], bnSolid.positions[i + 2]);
+    if (deg < 10 || deg > 350) {
+      hasNorthWedge = true;
+      break;
+    }
+  }
+  assert.ok(hasNorthWedge, 'BirdNest full roof must cover [348, 360) and [0, 12) around 0°/360°');
+
+  // Verify explicit deletedSegments still work for BirdNest
+  bnVenue.roof.deletedSegments = [0, 1];
+  r.setVenue(bnVenue, 'concert');
+  const bnDelSolid = new MeshBuilder(65536);
+  r.buildStadiumCanopyRim(bnDelSolid, new MeshBuilder(1024), new MeshBuilder(1024));
+  assert.ok(bnDelSolid.positions.length < bnSolid.positions.length, 'BirdNest must still respect explicit deletedSegments');
+
+  // Verify morphed BirdNest (concentric-circle) + showSuspendedRingScreen=true + openAngleRanges
+  const bnMorphed = JSON.parse(JSON.stringify(bnVenue));
+  bnMorphed.roof.deletedSegments = [];
+  bnMorphed.roof.openAngleRanges = [];
+  bnMorphed.roof.showSuspendedRingScreen = true;
+  const lastTier = bnMorphed.standTiers[bnMorphed.standTiers.length - 1];
+  lastTier.morphMode = 'concentric-circle';
+  lastTier.concentricMorph = 1.0;
+  r.setVenue(bnMorphed, 'concert');
+  const bnMorphedSolid = new MeshBuilder(65536);
+  const bnMorphedScreens = new MeshBuilder(4096);
+  r.buildStadiumCanopyRim(bnMorphedSolid, new MeshBuilder(1024), bnMorphedScreens);
+  assertNoNaNs(bnMorphedSolid, 'BirdNest morphed full roof');
+  assert.ok(bnMorphedScreens.positions.length > 0, 'BirdNest must honor roof.showSuspendedRingScreen=true');
+  let hasMorphedNorthWedge = false;
+  for (let i = 0; i < bnMorphedSolid.positions.length; i += 3) {
+    const deg = angleOfXZ(bnMorphedSolid.positions[i], bnMorphedSolid.positions[i + 2]);
+    if (deg < 10 || deg > 350) {
+      hasMorphedNorthWedge = true;
+      break;
+    }
+  }
+  assert.ok(hasMorphedNorthWedge, 'Morphed BirdNest full roof must cover [348, 360) and [0, 12)');
+
+  console.log('✓ 6. BirdNest full 360° roof, morphed tier, ring screen, and explicit deletedSegments verified.');
+}
+
 console.log('ALL ROOF DELETED SEGMENTS TESTS PASSED.');

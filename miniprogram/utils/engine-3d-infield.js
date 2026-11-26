@@ -465,7 +465,7 @@ class InfieldMixinHolder {
       const seatSpacing = Math.max(0.4, Number(mod.seatSpacing) || 0.6);
       const aisleW = Number(mod.aisleWidth) || 1.4;
       const usableW = Math.max(2, w - aisleW);
-      const stride = (usableW / seatSpacing) * rows > 450 ? 2 : 1;
+      const stride = 1;
       const seatsPerRow = Math.max(2, Math.floor(usableW / (seatSpacing * stride)));
 
       const uZ = rotateXZ(0, 1, rotDeg);
@@ -567,9 +567,8 @@ class InfieldMixinHolder {
 
       // Populate individual 3D seats row by row facing the stage (Row 1 nearest stage)
       const seatSpacing = Math.max(0.4, blk.seatSpacing || 0.52);
-      const estTotalSeats = (blk.width / seatSpacing) * rows;
-      const stride = estTotalSeats > 1800 ? 3 : (estTotalSeats > 450 ? 2 : 1);
-      const rowStep = rows > 40 ? 2 : 1;
+      const stride = 1;
+      const rowStep = 1;
       const seatCount = Math.max(4, Math.floor((blk.width - 0.6) / (seatSpacing * stride)));
 
       for (let r = 0; r < rows; r += rowStep) {
@@ -758,7 +757,9 @@ class InfieldMixinHolder {
         const pA = rotateXZ(lx1 + dirX * (s0 + 0.06) + inNx * faceOff, lz1 + dirZ * (s0 + 0.06) + inNz * faceOff, pitchOri);
         const pB = rotateXZ(lx1 + dirX * (s1 - 0.06) + inNx * faceOff, lz1 + dirZ * (s1 - 0.06) + inNz * faceOff, pitchOri);
         const pal = ledPalette[(i + colorOffset) % ledPalette.length];
-        const target = screens || solid;
+        const isOff = this.isLightsOffScene && this.isLightsOffScene();
+        const target = (!isOff && screens) ? screens : solid;
+        const offCol = [0.04, 0.05, 0.07, 1.0];
 
         const botY = 0.14;
         const midY = botY + (boardH - 0.16) * 0.72;
@@ -769,7 +770,7 @@ class InfieldMixinHolder {
           { x: pA.x, y: midY, z: pA.z },
           { x: pB.x, y: midY, z: pB.z },
           { x: pB.x, y: botY, z: pB.z },
-          pal.bg
+          isOff ? offCol : pal.bg
         );
         // Bright top sponsor accent ticker strip
         target.addQuad(
@@ -777,7 +778,7 @@ class InfieldMixinHolder {
           { x: pA.x, y: topY, z: pA.z },
           { x: pB.x, y: topY, z: pB.z },
           { x: pB.x, y: midY, z: pB.z },
-          pal.accent
+          isOff ? offCol : pal.accent
         );
       }
     };

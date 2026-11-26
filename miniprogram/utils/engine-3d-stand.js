@@ -23,19 +23,8 @@ class StandMixinHolder {
     const showVomitories = !(this.venue.gridSystem && this.venue.gridSystem.showVomitories === false);
     const cornerAngles = getInfieldCornerTransitionAngles(this.venue);
 
-    // 大型体育场（>4.5万座）采用 stride=2 保持单座轮廓同时将顶点数与显存减半
-    let totalRowUnits = 0;
-    for (let ti = 0; ti < tiers.length; ti++) {
-      const t = tiers[ti];
-      const secs = t.sectors || [];
-      for (let si = 0; si < secs.length; si++) {
-        const s = secs[si];
-        if (!s.isDeleted && s.fillType !== 'empty-void' && (s.fillType || t.defaultFillType) !== 'vip-box') {
-          totalRowUnits += (s.rows || t.defaultRows || 22);
-        }
-      }
-    }
-    const globalSeatStride = totalRowUnits > 450 ? 2 : 1;
+    // 全密度单座渲染（stride = 1），避免大场馆座椅稀疏出现空隙
+    const globalSeatStride = 1;
 
     const tierSeatColors = [
       { pan: [0.17, 0.37, 0.72, 1.0], back: [0.14, 0.31, 0.62, 1.0] }, // 1F Matte Navy-Blue
@@ -267,7 +256,7 @@ class StandMixinHolder {
               vipGoldTrimCol
             );
             // Subtle warm architectural under-lip accent strip (glows warmly in concert & sports modes)
-            if (screens) {
+            if (screens && !(this.isLightsOffScene && this.isLightsOffScene())) {
               const glowOff = 0.03;
               const n1x = -pt1.nx * glowOff, n1z = -pt1.nz * glowOff;
               const n2x = -pt2.nx * glowOff, n2z = -pt2.nz * glowOff;
@@ -614,7 +603,7 @@ class StandMixinHolder {
               [0.36, 0.28, 0.19, 1.0]
             );
             // Upper backlit warm-gold interior hospitality frieze
-            if (screens) {
+            if (screens && !(this.isLightsOffScene && this.isLightsOffScene())) {
               screens.addQuad(
                 { x: pt1.outX, y: coveBotY, z: pt1.outZ },
                 { x: pt1.outX, y: baseElev + rearH - 0.14, z: pt1.outZ },
@@ -1093,7 +1082,7 @@ class StandMixinHolder {
       );
 
       // Continuous recessed warm LED cove lighting strip tucked inside ceiling soffit
-      if (screens) {
+      if (screens && !(this.isLightsOffScene && this.isLightsOffScene())) {
         const coveIn1 = Math.min(0.55, d1 * 0.20) / d1;
         const coveOut1 = Math.min(0.82, d1 * 0.30) / d1;
         const coveIn2 = Math.min(0.55, d2 * 0.20) / d2;

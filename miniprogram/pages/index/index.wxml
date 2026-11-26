@@ -48,8 +48,8 @@
       <!-- 3D 顶部控制栏：场景切换 + 全屏切换 -->
       <view class="hud-top-3d">
         <view class="hud-right-3d">
-          <view class="hud-action-btn scene-btn" bindtap="onToggleScene">
-            {{activeSceneId === 'floating-island' ? '白天' : '黑夜'}}
+          <view class="hud-action-btn scene-btn {{activeSceneId === 'lights-off' ? 'lights-off' : ''}}" bindtap="onToggleScene">
+            {{activeSceneId === 'floating-island' ? '白天' : (activeSceneId === 'lights-off' ? '关灯' : '黑夜')}}
           </view>
           <view class="fullscreen-btn-3d" bindtap="onToggle3DFullscreen">
             {{is3DFullscreen ? '退出全屏' : '全屏'}}

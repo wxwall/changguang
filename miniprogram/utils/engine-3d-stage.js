@@ -13,10 +13,11 @@ class StageMixinHolder {
     const rotDeg = st.rotFromSouthDeg || 0;
     const rotRad = -rotDeg * DEG2RAD;
 
-    const addStageBox = (lx, cy, lz, w, h, d, color, localRotYRad) => {
+    const addStageBox = (lx, cy, lz, w, h, d, color, localRotYRad, targetBuilder) => {
       const wp = rotateXZ(lx, lz, rotDeg);
-      solid.addBox(wp.x, cy, wp.z, w, h, d, color, (localRotYRad || 0) + rotRad);
+      (targetBuilder || solid).addBox(wp.x, cy, wp.z, w, h, d, color, (localRotYRad || 0) + rotRad);
     };
+    const glowTarget = screens || solid;
     const rotPt = (lx, y, lz) => {
       const wp = rotateXZ(lx, lz, rotDeg);
       return { x: wp.x, y, z: wp.z };
@@ -131,18 +132,18 @@ class StageMixinHolder {
       // Matte-black central stage + recessed edge trim
       addStageBox(stageX, sh / 2, stageZ, sw, sh, sd, stageBlack, 0);
       addStageBox(stageX, sh + 0.04, stageZ, sw - 0.8, 0.08, sd - 0.8, stageDeckTop, 0);
-      addStageBox(stageX, sh + 0.09, stageZ - sd / 2 + 0.22, sw, 0.08, 0.18, edgeStripBlue, 0);
-      addStageBox(stageX, sh + 0.09, stageZ + sd / 2 - 0.22, sw, 0.08, 0.18, edgeStripBlue, 0);
+      addStageBox(stageX, sh + 0.09, stageZ - sd / 2 + 0.22, sw, 0.08, 0.18, edgeStripBlue, 0, glowTarget);
+      addStageBox(stageX, sh + 0.09, stageZ + sd / 2 - 0.22, sw, 0.08, 0.18, edgeStripBlue, 0, glowTarget);
 
       const clZ = st.catwalkLength || 0;
       const clX = st.catwalkLengthX || 0;
       if (clZ > 0.5) {
         addStageBox(stageX, sh / 2, stageZ - sd / 2 - clZ / 2, cw, sh, clZ, stageBlack, 0);
         addStageBox(stageX, sh / 2, stageZ + sd / 2 + clZ / 2, cw, sh, clZ, stageBlack, 0);
-        addStageBox(stageX - cw / 2 + 0.1, sh + 0.05, stageZ - sd / 2 - clZ / 2, 0.12, 0.08, clZ, edgeStripAmber, 0);
-        addStageBox(stageX + cw / 2 - 0.1, sh + 0.05, stageZ - sd / 2 - clZ / 2, 0.12, 0.08, clZ, edgeStripAmber, 0);
-        addStageBox(stageX - cw / 2 + 0.1, sh + 0.05, stageZ + sd / 2 + clZ / 2, 0.12, 0.08, clZ, edgeStripAmber, 0);
-        addStageBox(stageX + cw / 2 - 0.1, sh + 0.05, stageZ + sd / 2 + clZ / 2, 0.12, 0.08, clZ, edgeStripAmber, 0);
+        addStageBox(stageX - cw / 2 + 0.1, sh + 0.05, stageZ - sd / 2 - clZ / 2, 0.12, 0.08, clZ, edgeStripAmber, 0, glowTarget);
+        addStageBox(stageX + cw / 2 - 0.1, sh + 0.05, stageZ - sd / 2 - clZ / 2, 0.12, 0.08, clZ, edgeStripAmber, 0, glowTarget);
+        addStageBox(stageX - cw / 2 + 0.1, sh + 0.05, stageZ + sd / 2 + clZ / 2, 0.12, 0.08, clZ, edgeStripAmber, 0, glowTarget);
+        addStageBox(stageX + cw / 2 - 0.1, sh + 0.05, stageZ + sd / 2 + clZ / 2, 0.12, 0.08, clZ, edgeStripAmber, 0, glowTarget);
       }
       if (clX > 1.5) {
         addStageBox(stageX - sw / 2 - clX / 2, sh / 2, stageZ, clX, sh, cw, stageBlack, 0);
@@ -188,7 +189,7 @@ class StageMixinHolder {
     addStageBox(stageX, sh + 0.06, stageZ + sd / 2 - 0.18, sw, 0.10, 0.24, stageTrim, 0);
 
     // Subtle front stage footlight strip & stage access stairs on left/right wings
-    addStageBox(stageX, sh + 0.11, stageZ + sd / 2 - 0.16, sw * 0.88, 0.06, 0.10, edgeStripBlue, 0);
+    addStageBox(stageX, sh + 0.11, stageZ + sd / 2 - 0.16, sw * 0.88, 0.06, 0.10, edgeStripBlue, 0, glowTarget);
     addStageBox(stageX - sw / 2 - 1.2, sh * 0.38, stageZ + sd * 0.2, 2.4, sh * 0.76, 3.6, stageBlack, 0);
     addStageBox(stageX + sw / 2 + 1.2, sh * 0.38, stageZ + sd * 0.2, 2.4, sh * 0.76, 3.6, stageBlack, 0);
 
@@ -199,12 +200,12 @@ class StageMixinHolder {
       const catZ = stageZ + sd / 2 + cl / 2;
       addStageBox(stageX, sh / 2, catZ, cw, sh, cl, stageBlack, 0);
       addStageBox(stageX, sh + 0.04, catZ, cw - 0.4, 0.08, cl, stageDeckTop, 0);
-      addStageBox(stageX - cw / 2 + 0.10, sh + 0.09, catZ, 0.12, 0.06, cl, edgeStripAmber, 0);
-      addStageBox(stageX + cw / 2 - 0.10, sh + 0.09, catZ, 0.12, 0.06, cl, edgeStripAmber, 0);
+      addStageBox(stageX - cw / 2 + 0.10, sh + 0.09, catZ, 0.12, 0.06, cl, edgeStripAmber, 0, glowTarget);
+      addStageBox(stageX + cw / 2 - 0.10, sh + 0.09, catZ, 0.12, 0.06, cl, edgeStripAmber, 0, glowTarget);
 
       addStageBox(stageX, sh / 2, bStageZ, cw * 2.2, sh, bStageD, stageBlack, 0);
       addStageBox(stageX, sh + 0.04, bStageZ, cw * 2.0, 0.08, Math.max(1.2, bStageD - 0.4), stageDeckTop, 0);
-      addStageBox(stageX, sh + 0.09, bStageZ + bStageD / 2 - 0.08, cw * 2.1, 0.06, 0.12, edgeStripBlue, 0);
+      addStageBox(stageX, sh + 0.09, bStageZ + bStageD / 2 - 0.08, cw * 2.1, 0.06, 0.12, edgeStripBlue, 0, glowTarget);
     }
 
     // 3. Full-Lit Flowing Aurora Main LED Backdrop & Angled Side IMAG Wing Screens
@@ -271,7 +272,7 @@ class StageMixinHolder {
       const fx = stageX + frac * sw * 0.84;
       const podY = trussH - 0.65;
       addStageBox(fx, podY, frontTrussZ, 0.55, 0.55, 0.55, trussBrace, 0);
-      addStageBox(fx, podY - 0.32, frontTrussZ + 0.1, 0.32, 0.18, 0.32, lensPalette[i % lensPalette.length], 0);
+      addStageBox(fx, podY - 0.32, frontTrussZ + 0.1, 0.32, 0.18, 0.32, lensPalette[i % lensPalette.length], 0, glowTarget);
 
       const targetZ = (i % 3 === 1) ? bStageZ : (stageZ + sd * 0.55 + (i % 2) * 8);
       const targetX = stageX + frac * sw * 0.95;
@@ -284,7 +285,7 @@ class StageMixinHolder {
       const bx = stageX + frac * sw * 0.72;
       const podY = trussH - 0.55;
       addStageBox(bx, podY, midTrussZ, 0.50, 0.48, 0.50, trussBrace, 0);
-      addStageBox(bx, podY - 0.28, midTrussZ, 0.28, 0.16, 0.28, lensPalette[(i + 1) % lensPalette.length], 0);
+      addStageBox(bx, podY - 0.28, midTrussZ, 0.28, 0.16, 0.28, lensPalette[(i + 1) % lensPalette.length], 0, glowTarget);
       addRefinedBeam(bx, podY - 0.3, midTrussZ, stageX - (bx - stageX) * 0.6, sh + 0.15, stageZ + sd * 0.25, 2.4, beamPalette[(i + 1) % beamPalette.length]);
     }
   }

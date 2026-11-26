@@ -23,8 +23,6 @@ class CanopyMixinHolder {
 
     const lastTier = tiers[lastTierIdx];
     const isMorphedLast = isConcentricMorphTier(lastTier);
-    const isBirdNest = this.venue.code === 'BJ-NST-2008-01' ||
-      String(this.venue.id || '').indexOf('bird-nest') >= 0;
 
     const parseFiniteNum = (v) => {
       if (v === null || v === undefined || v === '' || typeof v === 'boolean') return NaN;
@@ -80,7 +78,6 @@ class CanopyMixinHolder {
 
     const isAngleDeleted = (deg) => {
       const d = ((deg % 360) + 360) % 360;
-      if (isBirdNest && (d < 12 || d > 348)) return true;
       if (deletedSegmentSet.size > 0) {
         const segIdx = Math.floor((d / 360) * segmentCount) % segmentCount;
         if (deletedSegmentSet.has(segIdx)) return true;
@@ -294,14 +291,17 @@ class CanopyMixinHolder {
         const mz = (c1.zIn + c2.zIn) / 2;
         const my = (c1.yBot + c1.rise + c2.yBot + c2.rise) / 2 - 0.35;
         const rotL = Math.atan2(-(c2.zIn - c1.zIn), c2.xIn - c1.xIn);
-        const target = screens || solid;
-        target.addBox(mx, my, mz, 2.4, 0.65, 0.75, lightStripCol, rotL);
+        const isOff = this.isLightsOffScene && this.isLightsOffScene();
+        const target = (!isOff && screens) ? screens : solid;
+        const col = isOff ? [0.06, 0.07, 0.09, 1.0] : lightStripCol;
+        target.addBox(mx, my, mz, 2.4, 0.65, 0.75, col, rotL);
       }
     }
 
     // Center-hung suspended ring giant screen (sized to infield & hung below inner soffit)
     if (showSuspendedRingScreen && innerSoffitCount > 0) {
-      const screenTarget = screens || solid;
+      const isOff = this.isLightsOffScene && this.isLightsOffScene();
+      const screenTarget = (!isOff && screens) ? screens : solid;
       const avgInnerSoffitY = innerSoffitSum / innerSoffitCount;
       const rawRingR = Math.max(4.5, Math.min(14.0, Math.min(infLen, infWid) * 0.16));
       const maxSafeR = Number.isFinite(minInnerR) ? Math.max(2.5, minInnerR * 0.65) : rawRingR;
@@ -311,7 +311,7 @@ class CanopyMixinHolder {
       const ringTopY = Math.max(ringH + 6.0, avgInnerSoffitY - 1.5);
       const ringBotY = ringTopY - ringH;
       const frameCol = [0.08, 0.10, 0.15, 1.0];
-      const screenCol = [0.12, 0.55, 0.95, 1.0];
+      const screenCol = isOff ? [0.03, 0.04, 0.06, 1.0] : [0.12, 0.55, 0.95, 1.0];
       const segs = 32;
 
       for (let s = 0; s < segs; s++) {

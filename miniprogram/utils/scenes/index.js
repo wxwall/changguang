@@ -12,6 +12,7 @@ const { BaseScene } = require('./base-scene');
 const { computeVenueBounds } = require('./bounds-calculator');
 const { FloatingIslandScene } = require('./floating-island-scene');
 const { DefaultScene } = require('./default-scene');
+const { LightsOffScene } = require('./lights-off-scene');
 const { SceneManager } = require('./scene-manager');
 
 let defaultManagerInstance = null;
@@ -28,6 +29,7 @@ module.exports = {
   computeVenueBounds,
   FloatingIslandScene,
   DefaultScene,
+  LightsOffScene,
   SceneManager,
   getSceneManager
 };

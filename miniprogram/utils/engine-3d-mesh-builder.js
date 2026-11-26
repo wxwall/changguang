@@ -8,6 +8,39 @@ class MeshBuilder {
     this._posBuf = new Float32Array(initialVertCap * 3);
     this._normBuf = new Float32Array(initialVertCap * 3);
     this._colBuf = new Float32Array(initialVertCap * 4);
+
+    this._useSeatInstancing = false;
+    this._seatInstCap = 0;
+    this._seatInstCount = 0;
+    this._seatInstBuf = null;
+  }
+
+  enableSeatInstancing(initialSeatCap = 4096) {
+    this._useSeatInstancing = true;
+    this._seatInstCap = initialSeatCap;
+    this._seatInstCount = 0;
+    this._seatInstBuf = new Float32Array(initialSeatCap * 13);
+  }
+
+  get seatInstanceCount() {
+    return this._seatInstCount;
+  }
+
+  get seatInstances() {
+    return this._seatInstBuf ? this._seatInstBuf.subarray(0, this._seatInstCount * 13) : null;
+  }
+
+  _ensureSeatInstances(extra = 1) {
+    const needed = this._seatInstCount + extra;
+    if (needed <= this._seatInstCap) return;
+    let newCap = Math.max(4096, this._seatInstCap);
+    while (newCap < needed) newCap *= 2;
+    const next = new Float32Array(newCap * 13);
+    if (this._seatInstBuf && this._seatInstCount > 0) {
+      next.set(this._seatInstBuf.subarray(0, this._seatInstCount * 13));
+    }
+    this._seatInstBuf = next;
+    this._seatInstCap = newCap;
   }
 
   get positions() {
@@ -279,19 +312,44 @@ class MeshBuilder {
    * AO vertex-color shading, tapered backrest with top crest rim & dark polymer rear shell.
    */
   addSeat3D(cx, cy, cz, seatWidth, seatDepth, fx, fz, panColor, backColor) {
+    if (this._useSeatInstancing) {
+      this._ensureSeatInstances(1);
+      const idx = this._seatInstCount * 13;
+      const buf = this._seatInstBuf;
+      buf[idx] = cx;
+      buf[idx + 1] = cy;
+      buf[idx + 2] = cz;
+      buf[idx + 3] = seatWidth;
+      buf[idx + 4] = fx;
+      buf[idx + 5] = fz;
+      buf[idx + 6] = seatDepth;
+      buf[idx + 7] = panColor[0];
+      buf[idx + 8] = panColor[1];
+      buf[idx + 9] = panColor[2];
+      buf[idx + 10] = backColor[0];
+      buf[idx + 11] = backColor[1];
+      buf[idx + 12] = backColor[2];
+      this._seatInstCount++;
+      return;
+    }
+    this._writeSeat3D(cx, cy, cz, seatWidth, seatDepth, fx, fz, panColor, backColor, false);
+  }
+
+  _writeSeat3D(cx, cy, cz, seatWidth, seatDepth, fx, fz, panColor, backColor, encodePart) {
     const rx = -fz; // right-hand tangent vector
     const rz = fx;
     const hw = seatWidth * 0.495;
     const topHw = hw * 0.94;
     const hd = seatDepth * 0.49;
 
-    const panFrontY = cy + 0.30;
-    const panBackY = cy + 0.27;
-    const panBotY = cy + 0.22;
+    const panFrontY = cy + 0.31;
+    const panBackY = cy + 0.28;
+    const panBotY = cy + 0.19;
     const backTopY = cy + 0.72;
 
-    const pR0 = panColor[0], pG0 = panColor[1], pB0 = panColor[2], pA = panColor[3] !== undefined ? panColor[3] : 1.0;
-    const bR0 = backColor[0], bG0 = backColor[1], bB0 = backColor[2], bA = backColor[3] !== undefined ? backColor[3] : 1.0;
+    const pR0 = panColor[0], pG0 = panColor[1], pB0 = panColor[2], pA = encodePart ? 1.0 : (panColor[3] !== undefined ? panColor[3] : 1.0);
+    const bR0 = backColor[0], bG0 = backColor[1], bB0 = backColor[2], bA = encodePart ? 2.0 : (backColor[3] !== undefined ? backColor[3] : 1.0);
+    const legA = encodePart ? 0.0 : 1.0;
 
     const panLightR = Math.min(1.0, Math.max(0.02, pR0 * 1.02));
     const panLightG = Math.min(1.0, Math.max(0.02, pG0 * 1.02));
@@ -317,26 +375,62 @@ class MeshBuilder {
     const crestG = Math.min(1.0, Math.max(0.02, bG0 * 1.04));
     const crestB = Math.min(1.0, Math.max(0.02, bB0 * 1.04));
 
-    const rearR = Math.max(0.10, bR0 * 0.84);
-    const rearG = Math.max(0.11, bG0 * 0.84);
-    const rearB = Math.max(0.13, bB0 * 0.85);
+    const panUnderR = encodePart ? 0.72 : Math.max(0.06, pR0 * 0.72);
+    const panUnderG = encodePart ? 0.72 : Math.max(0.06, pG0 * 0.72);
+    const panUnderB = encodePart ? 0.74 : Math.max(0.08, pB0 * 0.74);
 
-    this._ensure(36);
+    const rearR = encodePart ? 0.84 : Math.max(0.10, bR0 * 0.84);
+    const rearG = encodePart ? 0.84 : Math.max(0.11, bG0 * 0.84);
+    const rearB = encodePart ? 0.85 : Math.max(0.13, bB0 * 0.85);
 
-    // 1. Center riser-mounted stanchion / pedestal leg
-    const legHw = Math.min(0.045, hw * 0.26);
+    this._ensure(84);
+
+    // 1. Center riser-mounted 3D stanchion / pedestal leg (4 vertical faces)
+    const legHw = encodePart ? 0.086 : Math.min(0.045, hw * 0.26);
+    const legHd = encodePart ? 0.072 : Math.min(0.042, hd * 0.24);
     const legZ = -hd * 0.10;
     const rxLeg = rx * legHw, rzLeg = rz * legHw;
-    const fxLeg = fx * legZ, fzLeg = fz * legZ;
-    const lFLx = cx - rxLeg + fxLeg, lFLz = cz - rzLeg + fzLeg;
-    const lFRx = cx + rxLeg + fxLeg, lFRz = cz + rzLeg + fzLeg;
+    const fxLegCenter = cx + fx * legZ, fzLegCenter = cz + fz * legZ;
+    const fxLeg = fx * legHd, fzLeg = fz * legHd;
+    const lFLx = fxLegCenter - rxLeg + fxLeg, lFLz = fzLegCenter - rzLeg + fzLeg;
+    const lFRx = fxLegCenter + rxLeg + fxLeg, lFRz = fzLegCenter + rzLeg + fzLeg;
+    const lBRx = fxLegCenter + rxLeg - fxLeg, lBRz = fzLegCenter + rzLeg - fzLeg;
+    const lBLx = fxLegCenter - rxLeg - fxLeg, lBLz = fzLegCenter - rzLeg - fzLeg;
+    // Front leg face
     this._writeQuadRaw(
       lFLx, cy, lFLz,
       lFRx, cy, lFRz,
       lFRx, panBotY, lFRz,
       lFLx, panBotY, lFLz,
       fx, 0.1, fz,
-      0.14, 0.17, 0.22, 1.0
+      0.14, 0.17, 0.22, legA
+    );
+    // Back leg face
+    this._writeQuadRaw(
+      lBRx, cy, lBRz,
+      lBLx, cy, lBLz,
+      lBLx, panBotY, lBLz,
+      lBRx, panBotY, lBRz,
+      -fx, 0.0, -fz,
+      0.12, 0.15, 0.20, legA
+    );
+    // Left leg face
+    this._writeQuadRaw(
+      lBLx, cy, lBLz,
+      lFLx, cy, lFLz,
+      lFLx, panBotY, lFLz,
+      lBLx, panBotY, lBLz,
+      -rx, 0.0, -rz,
+      0.13, 0.16, 0.21, legA
+    );
+    // Right leg face
+    this._writeQuadRaw(
+      lFRx, cy, lFRz,
+      lBRx, cy, lBRz,
+      lBRx, panBotY, lBRz,
+      lFRx, panBotY, lFRz,
+      rx, 0.0, rz,
+      0.13, 0.16, 0.21, legA
     );
 
     // 2. Contoured seat pan top with AO crease gradient
@@ -354,6 +448,16 @@ class MeshBuilder {
       0, 1, 0
     );
 
+    // 2b. Seat pan bottom shell layer (座垫下面那层)
+    this._writeQuadRaw(
+      pFLx, panBotY, pFLz,
+      pBLx, panBotY, pBLz,
+      pBRx, panBotY, pBRz,
+      pFRx, panBotY, pFRz,
+      0, -1, 0,
+      panUnderR, panUnderG, panUnderB, pA
+    );
+
     // 3. Front bullnose cushion thickness face
     this._writeQuadRaw(
       pFLx, panBotY, pFLz,
@@ -361,6 +465,24 @@ class MeshBuilder {
       pFRx, panFrontY, pFRz,
       pFLx, panFrontY, pFLz,
       fx, -0.15, fz,
+      panLipR, panLipG, panLipB, pA
+    );
+
+    // 3b. Left & Right seat pan side thickness faces
+    this._writeQuadRaw(
+      pBLx, panBotY, pBLz,
+      pFLx, panBotY, pFLz,
+      pFLx, panFrontY, pFLz,
+      pBLx, panBackY, pBLz,
+      -rx, 0, -rz,
+      panLipR, panLipG, panLipB, pA
+    );
+    this._writeQuadRaw(
+      pFRx, panBotY, pFRz,
+      pBRx, panBotY, pBRz,
+      pBRx, panBackY, pBRz,
+      pFRx, panFrontY, pFRz,
+      rx, 0, rz,
       panLipR, panLipG, panLipB, pA
     );
 
@@ -376,7 +498,7 @@ class MeshBuilder {
       fx * 0.55, 0.82, fz * 0.55
     );
 
-    // 5. Top backrest crest rim & dark molded rear polymer shell
+    // 5. Top backrest crest rim & dark molded rear polymer shell + side caps
     const shellThick = 0.048;
     const fxSh = fx * shellThick, fzSh = fz * shellThick;
     const rTLx = bTLx - fxSh, rTLy = backTopY - 0.01, rTLz = bTLz - fzSh;
@@ -398,8 +520,32 @@ class MeshBuilder {
       rTLx, rTLy, rTLz,
       rTRx, rTRy, rTRz,
       -fx * 0.94, 0.25, -fz * 0.94,
-      rearR, rearG, rearB, 1.0
+      rearR, rearG, rearB, bA
     );
+    // Backrest left side thickness face
+    this._writeQuadRaw(
+      rBLx, panBotY, rBLz,
+      pBLx, panBackY, pBLz,
+      bTLx, backTopY, bTLz,
+      rTLx, rTLy, rTLz,
+      -rx, 0, -rz,
+      rearR, rearG, rearB, bA
+    );
+    // Backrest right side thickness face
+    this._writeQuadRaw(
+      pBRx, panBackY, pBRz,
+      rBRx, panBotY, rBRz,
+      rTRx, rTRy, rTRz,
+      bTRx, backTopY, bTRz,
+      rx, 0, rz,
+      rearR, rearG, rearB, bA
+    );
+  }
+
+  static createSeatPrototype() {
+    const proto = new MeshBuilder(96);
+    proto._writeSeat3D(0, 0, 0, 1.0, 1.0, 0, 1, [1, 1, 1, 1.0], [1, 1, 1, 2.0], true);
+    return proto;
   }
 
   /**

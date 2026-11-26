@@ -8,6 +8,7 @@
 const { computeVenueBounds } = require('./bounds-calculator');
 const { FloatingIslandScene } = require('./floating-island-scene');
 const { DefaultScene } = require('./default-scene');
+const { LightsOffScene } = require('./lights-off-scene');
 
 class SceneManager {
   constructor(initialSceneId) {
@@ -19,6 +20,7 @@ class SceneManager {
     // Register built-in scenes
     this.registerScene(new FloatingIslandScene());
     this.registerScene(new DefaultScene());
+    this.registerScene(new LightsOffScene());
 
     // Set default active scene
     this.setCurrentScene(initialSceneId || 'floating-island');
@@ -101,6 +103,11 @@ class SceneManager {
     if (!scene) return;
     const bounds = this.getVenueBounds();
     scene.buildMeshes(builders, bounds, options);
+  }
+
+  hasDynamicAnimation() {
+    const scene = this.getCurrentScene();
+    return Boolean(scene && typeof scene.hasDynamicAnimation === 'function' && scene.hasDynamicAnimation());
   }
 
   /**

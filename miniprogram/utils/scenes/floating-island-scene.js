@@ -141,8 +141,11 @@ class FloatingIslandScene extends BaseScene {
   }
 
   buildMeshes(builders, venueBounds, options) {
-    const { solid, screens, alpha } = builders;
+    const { solid, screens, alpha, dynSolid, dynScreens } = builders;
     if (!solid) return;
+
+    const cloudBuilder = dynSolid || solid;
+    const particleBuilder = dynScreens || screens;
 
     const dims = this.computeDimensions(venueBounds);
     const { halfWidth, halfDepth, topY, bottomY, rockHeight } = dims;
@@ -169,13 +172,17 @@ class FloatingIslandScene extends BaseScene {
     // 6. Lush miniature diorama props around the stadium (trees, bushes, flowers, path, lanterns, bench, bunny)
     this.buildMeadowDioramaProps(solid, screens, venueBounds, halfWidth, halfDepth, topY);
 
-    // 7. Fluffy white clouds floating outside the platform (contiguous dynamic range in solid)
-    this.buildFluffyClouds(solid, halfWidth, halfDepth, topY);
+    // 7. Fluffy white clouds floating outside the platform (isolated in dynSolid when available)
+    this.buildFluffyClouds(cloudBuilder, halfWidth, halfDepth, topY);
 
-    // 8. Golden fairy particles floating around the scene (contiguous dynamic range in screens)
-    if (screens) {
-      this.buildGoldenParticles(screens, halfWidth, halfDepth, topY);
+    // 8. Golden fairy particles floating around the scene (isolated in dynScreens when available)
+    if (particleBuilder) {
+      this.buildGoldenParticles(particleBuilder, halfWidth, halfDepth, topY);
     }
+  }
+
+  hasDynamicAnimation() {
+    return true;
   }
 
   /**
@@ -1115,8 +1122,9 @@ class FloatingIslandScene extends BaseScene {
         }
       }
 
-      if (gl && buffers && buffers.solidBuffers && buffers.solidBuffers.posBuf && typeof gl.bufferSubData === 'function' && this.dynamicCloudPositions) {
-        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.solidBuffers.posBuf);
+      const targetSolidBuf = (buffers && (buffers.dynSolidBuffers || buffers.solidBuffers));
+      if (gl && targetSolidBuf && targetSolidBuf.posBuf && typeof gl.bufferSubData === 'function' && this.dynamicCloudPositions) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, targetSolidBuf.posBuf);
         gl.bufferSubData(gl.ARRAY_BUFFER, this.cloudVertexStart * 3 * 4, this.dynamicCloudPositions);
       }
     }
@@ -1141,8 +1149,9 @@ class FloatingIslandScene extends BaseScene {
         }
       }
 
-      if (gl && buffers && buffers.screenBuffers && buffers.screenBuffers.posBuf && typeof gl.bufferSubData === 'function' && this.dynamicParticlePositions) {
-        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.screenBuffers.posBuf);
+      const targetScreenBuf = (buffers && (buffers.dynScreenBuffers || buffers.screenBuffers));
+      if (gl && targetScreenBuf && targetScreenBuf.posBuf && typeof gl.bufferSubData === 'function' && this.dynamicParticlePositions) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, targetScreenBuf.posBuf);
         gl.bufferSubData(gl.ARRAY_BUFFER, this.particleVertexStart * 3 * 4, this.dynamicParticlePositions);
       }
     }
