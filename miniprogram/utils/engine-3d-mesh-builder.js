@@ -440,6 +440,11 @@ class MeshBuilder {
     const pFRx = cx + rxhw + fxhd, pFRz = cz + rzhw + fzhd;
     const pBRx = cx + rxhw - fxhd * 0.72, pBRz = cz + rzhw - fzhd * 0.72;
     const pBLx = cx - rxhw - fxhd * 0.72, pBLz = cz - rzhw - fzhd * 0.72;
+    const shellThick = 0.048;
+    const fxSh = fx * shellThick, fzSh = fz * shellThick;
+    const rBLx = pBLx - fxSh, rBLz = pBLz - fzSh;
+    const rBRx = pBRx - fxSh, rBRz = pBRz - fzSh;
+
     this._writeVCQuadRaw(
       pBLx, panBackY, pBLz, panCreaseR, panCreaseG, panCreaseB, pA,
       pFLx, panFrontY, pFLz, panLightR, panLightG, panLightB, pA,
@@ -448,11 +453,11 @@ class MeshBuilder {
       0, 1, 0
     );
 
-    // 2b. Seat pan bottom shell layer (座垫下面那层)
+    // 2b. Seat pan bottom shell layer (座垫底面直接连到靠背背面底边 rBL/rBR 闭合)
     this._writeQuadRaw(
       pFLx, panBotY, pFLz,
-      pBLx, panBotY, pBLz,
-      pBRx, panBotY, pBRz,
+      rBLx, panBotY, rBLz,
+      rBRx, panBotY, rBRz,
       pFRx, panBotY, pFRz,
       0, -1, 0,
       panUnderR, panUnderG, panUnderB, pA
@@ -499,12 +504,8 @@ class MeshBuilder {
     );
 
     // 5. Top backrest crest rim & dark molded rear polymer shell + side caps
-    const shellThick = 0.048;
-    const fxSh = fx * shellThick, fzSh = fz * shellThick;
     const rTLx = bTLx - fxSh, rTLy = backTopY - 0.01, rTLz = bTLz - fzSh;
     const rTRx = bTRx - fxSh, rTRy = backTopY - 0.01, rTRz = bTRz - fzSh;
-    const rBLx = pBLx - fxSh, rBLz = pBLz - fzSh;
-    const rBRx = pBRx - fxSh, rBRz = pBRz - fzSh;
 
     this._writeQuadRaw(
       bTLx, backTopY, bTLz,

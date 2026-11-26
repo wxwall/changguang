@@ -5,54 +5,76 @@
       <text class="search-icon">🔍</text>
       <input
         class="search-input"
-        placeholder="搜索场馆名称或编号..."
+        placeholder="搜索城市、场馆名称或编号..."
         placeholder-class="search-placeholder"
         value="{{keyword}}"
         bindinput="onSearchInput"
       />
       <text wx:if="{{keyword}}" class="search-clear" bindtap="onClearSearch">✕</text>
     </view>
-    <text class="venue-count">共 {{filteredVenues.length}} 座场馆</text>
+    <text class="venue-count">共 {{cityGroups.length}} 个城市 · {{totalFilteredCount}} 座场馆</text>
   </view>
 
   <!-- 加载状态 -->
   <view wx:if="{{loading}}" class="state-box">
     <view class="state-ring"></view>
-    <text class="state-text">正在从服务器加载全部场馆...</text>
+    <text class="state-text">正在加载城市与场馆列表...</text>
   </view>
 
   <!-- 空状态 -->
-  <view wx:elif="{{filteredVenues.length === 0}}" class="state-box">
+  <view wx:elif="{{cityGroups.length === 0}}" class="state-box">
     <text class="state-text">暂无匹配的场馆</text>
   </view>
 
-  <!-- 场馆列表 -->
-  <scroll-view wx:else class="venue-list-scroll" scroll-y="true">
-    <view class="venue-list">
+  <!-- 左侧城市分组 + 右侧场馆列表 -->
+  <view wx:else class="split-body">
+    <scroll-view class="city-sidebar" scroll-y="true">
       <view
-        wx:for="{{filteredVenues}}"
-        wx:key="id"
-        class="venue-card {{(currentId && (currentId === item.id || currentId === item._id)) ? 'active' : ''}}"
-        data-id="{{item.id}}"
-        data-doc-id="{{item._id}}"
-        data-name="{{item.shortLabel || item.name}}"
-        bindtap="onPickVenue"
+        wx:for="{{cityGroups}}"
+        wx:key="city"
+        class="city-item {{activeCity === item.city ? 'active' : ''}}"
+        data-city="{{item.city}}"
+        bindtap="onSelectCity"
       >
-        <view class="venue-card-main">
-          <view class="venue-card-title-row">
-            <text class="venue-card-name">{{item.name || item.shortLabel}}</text>
-            <text
-              wx:if="{{currentId && (currentId === item.id || currentId === item._id)}}"
-              class="current-tag"
-            >当前</text>
-          </view>
-          <text class="venue-card-sub">{{item.capLabel}}</text>
-        </view>
-        <view class="venue-card-right">
-          <text class="tier-badge">{{item.tierCount}} 层看台</text>
-          <text class="enter-arrow">›</text>
-        </view>
+        <text class="city-name">{{item.city}}</text>
+        <text class="city-count">{{item.count}}</text>
       </view>
+    </scroll-view>
+
+    <view class="venue-pane">
+      <view class="venue-pane-header">
+        <text class="venue-pane-city">{{activeCity}}</text>
+        <text class="venue-pane-sub">{{currentCityVenues.length}} 座场馆</text>
+      </view>
+
+      <scroll-view class="venue-list-scroll" scroll-y="true" scroll-top="{{rightScrollTop}}">
+        <view class="venue-list">
+          <view
+            wx:for="{{currentCityVenues}}"
+            wx:key="id"
+            class="venue-card {{(currentId && (currentId === item.id || currentId === item._id)) ? 'active' : ''}}"
+            data-id="{{item.id}}"
+            data-doc-id="{{item._id}}"
+            data-name="{{item.shortLabel || item.name}}"
+            bindtap="onPickVenue"
+          >
+            <view class="venue-card-main">
+              <view class="venue-card-title-row">
+                <text class="venue-card-name">{{item.name || item.shortLabel}}</text>
+                <text
+                  wx:if="{{currentId && (currentId === item.id || currentId === item._id)}}"
+                  class="current-tag"
+                >当前</text>
+              </view>
+              <text wx:if="{{item.capLabel}}" class="venue-card-sub">{{item.capLabel}}</text>
+            </view>
+            <view class="venue-card-right">
+              <text wx:if="{{item.tierCount > 0}}" class="tier-badge">{{item.tierCount}} 层看台</text>
+              <text class="enter-arrow">›</text>
+            </view>
+          </view>
+        </view>
+      </scroll-view>
     </view>
-  </scroll-view>
+  </view>
 </view>

@@ -765,7 +765,7 @@ class StandMixinHolder {
 
           const seatsInRow = Math.max(1, Math.floor(usableArc / stepUnitW));
           const seatWFactor = 0.98;
-          const seatDepthM = Math.min(0.76, rowPitch * 0.88);
+          const seatDepthM = Math.min(0.48, rowPitch * 0.56);
           const seatRowElev = isVip ? baseElev : (baseElev + (r - 1) * riserH);
 
           let segIdx = 0;

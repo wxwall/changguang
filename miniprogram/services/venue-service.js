@@ -9,6 +9,156 @@ const MAX_PAGE_LIMIT = 20;
 const VENUE_CACHE_TTL_MS = 60 * 1000;
 let _cachedVenues = null;
 let _cachedAt = 0;
+let _allVenuesCached = false;
+let _cachedVenueList = null;
+let _cachedListAt = 0;
+
+const SUMMARY_FIELDS = {
+  _id: true,
+  id: true,
+  name: true,
+  shortLabel: true,
+  capLabel: true,
+  code: true,
+  city: true,
+  cityName: true,
+  province: true,
+  region: true,
+  location: true,
+  address: true,
+  description: true,
+  tierCount: true,
+  engineeringSummary: true,
+  updatedAt: true,
+  'schema.id': true,
+  'schema.name': true,
+  'schema.shortLabel': true,
+  'schema.capLabel': true,
+  'schema.code': true,
+  'schema.city': true,
+  'schema.cityName': true,
+  'schema.province': true,
+  'schema.region': true,
+  'schema.location': true,
+  'schema.address': true,
+  'schema.tierCount': true,
+  'schema.engineeringSummary': true,
+  'data.id': true,
+  'data.name': true,
+  'data.shortLabel': true,
+  'data.code': true,
+  'data.city': true,
+  'data.engineeringSummary': true,
+  'project.id': true,
+  'project.name': true,
+  'project.shortLabel': true,
+  'project.code': true,
+  'project.city': true,
+  'project.engineeringSummary': true
+};
+
+const KNOWN_CITIES = [
+  '呼和浩特', '乌鲁木齐', '齐齐哈尔', '克拉玛依', '鄂尔多斯',
+  '石家庄', '秦皇岛', '张家口', '连云港', '景德镇', '马鞍山', '攀枝花', '六盘水', '日喀则', '佳木斯', '牡丹江', '哈尔滨',
+  '北京', '上海', '广州', '深圳', '杭州', '成都', '重庆', '武汉', '西安', '南京', '苏州', '天津', '长沙', '郑州',
+  '济南', '青岛', '大连', '沈阳', '长春', '福州', '厦门', '合肥', '南昌', '昆明', '贵阳', '南宁', '海口', '三亚',
+  '兰州', '银川', '西宁', '太原', '拉萨', '香港', '澳门', '台北',
+  '佛山', '东莞', '珠海', '中山', '惠州', '江门', '湛江', '茂名', '肇庆', '梅州', '清远',
+  '无锡', '常州', '徐州', '南通', '扬州', '镇江', '盐城', '泰州',
+  '宁波', '温州', '绍兴', '嘉兴', '湖州', '金华', '台州', '丽水', '衢州', '舟山',
+  '泉州', '漳州', '莆田', '龙岩', '烟台', '潍坊', '临沂', '淄博', '济宁', '威海', '泰安',
+  '洛阳', '开封', '南阳', '宜昌', '襄阳', '荆州', '岳阳', '常德', '衡阳', '株洲', '湘潭',
+  '绵阳', '宜宾', '泸州', '南充', '遵义', '柳州', '桂林', '北海', '芜湖', '安庆', '赣州', '九江', '上饶',
+  '保定', '唐山', '廊坊', '邯郸', '沧州', '大同', '包头', '鞍山', '抚顺', '吉林', '延吉', '大庆',
+  '咸阳', '宝鸡', '榆林', '天水'
+];
+
+const CODE_CITY_PREFIX_MAP = {
+  BJ: '北京',
+  SH: '上海',
+  GZ: '广州',
+  SZ: '深圳',
+  HZ: '杭州',
+  CD: '成都',
+  CQ: '重庆',
+  WH: '武汉',
+  XA: '西安',
+  NJ: '南京',
+  TJ: '天津',
+  CS: '长沙',
+  ZZ: '郑州'
+};
+
+const LANDMARK_CITY_MAP = {
+  '鸟巢': '北京',
+  '水立方': '北京',
+  '工体': '北京',
+  '五棵松': '北京',
+  '大莲花': '杭州',
+  '凤凰山': '成都',
+  '大运中心': '深圳',
+  '八万人': '上海',
+  '虹口': '上海',
+  '梅奔': '上海'
+};
+
+function normalizeCityName(rawCity) {
+  if (!rawCity || typeof rawCity !== 'string') return '';
+  let trimmed = rawCity.trim();
+  if (!trimmed) return '';
+  if (trimmed.length > 2 && trimmed.endsWith('市')) {
+    trimmed = trimmed.slice(0, -1);
+  }
+  return trimmed;
+}
+
+function extractCityFromVenue(raw) {
+  if (!raw || typeof raw !== 'object') return '其他';
+
+  const directCandidates = [
+    raw.city,
+    raw.cityName,
+    raw.location && typeof raw.location === 'object' ? raw.location.city : '',
+    raw.address && typeof raw.address === 'object' ? raw.address.city : ''
+  ];
+  for (const cand of directCandidates) {
+    const normalized = normalizeCityName(cand);
+    if (normalized) return normalized;
+  }
+
+  const provinceCity = normalizeCityName(raw.province || raw.region);
+  if (['北京', '上海', '天津', '重庆', '香港', '澳门'].includes(provinceCity)) {
+    return provinceCity;
+  }
+
+  const textPool = [
+    raw.name,
+    raw.shortLabel,
+    typeof raw.address === 'string' ? raw.address : '',
+    typeof raw.location === 'string' ? raw.location : '',
+    raw.description
+  ].filter(Boolean).join(' ');
+
+  for (const city of KNOWN_CITIES) {
+    if (textPool.includes(city)) {
+      return city;
+    }
+  }
+
+  for (const landmark of Object.keys(LANDMARK_CITY_MAP)) {
+    if (textPool.includes(landmark)) {
+      return LANDMARK_CITY_MAP[landmark];
+    }
+  }
+
+  const code = String(raw.code || '').trim().toUpperCase();
+  const prefix = code.split(/[-_]/)[0];
+  if (prefix && CODE_CITY_PREFIX_MAP[prefix]) {
+    return CODE_CITY_PREFIX_MAP[prefix];
+  }
+
+  return '其他';
+}
 
 /**
  * 尝试将字符串解析为 JSON 对象，若非 JSON 字符串则返回原值
@@ -170,7 +320,57 @@ function extractVenueDoc(doc) {
     id: venueId,
     _id: doc._id || venueId,
     shortLabel,
-    capLabel
+    capLabel,
+    city: extractCityFromVenue(normalized)
+  };
+}
+
+/**
+ * 提取轻量场馆摘要（不包含 standTiers/infield 等全量 Schema）
+ */
+function extractVenueSummary(doc) {
+  if (!doc || typeof doc !== 'object') return null;
+
+  const nested = [doc.schema, doc.project, doc.data, doc.venue].find(
+    item => item && typeof item === 'object' && !Array.isArray(item)
+  );
+  const raw = nested ? { ...nested, ...doc } : doc;
+
+  const venueId = raw.id || doc.id || doc._id;
+  if (!venueId && !raw.name) {
+    return null;
+  }
+
+  let totalCap = raw.engineeringSummary && raw.engineeringSummary.totalCapacity;
+  if (!totalCap && Array.isArray(raw.standTiers)) {
+    totalCap = raw.standTiers.reduce((acc, tier) => {
+      const secRows = (tier.sectors || []).reduce((sAcc, sec) => sAcc + (sec.rows || tier.defaultRows || 20) * (sec.seatSpacing ? Math.round(18 / sec.seatSpacing) : 25), 0);
+      return acc + secRows;
+    }, 0);
+  }
+
+  const capText = typeof totalCap === 'number' && totalCap > 0
+    ? `${(totalCap / 1000).toFixed(1)}k座`
+    : '场馆';
+  const codeText = raw.code || (venueId ? String(venueId).toUpperCase() : '');
+  const name = raw.name || raw.shortLabel || '未命名场馆';
+  const shortLabel = raw.shortLabel || name.split(' ')[0];
+  const capLabel = raw.capLabel || (codeText ? `${codeText} · ${capText}` : capText);
+  const tierCount = typeof raw.tierCount === 'number'
+    ? raw.tierCount
+    : (Array.isArray(raw.standTiers) ? raw.standTiers.length : 0);
+  const city = extractCityFromVenue(raw);
+
+  return {
+    id: venueId,
+    _id: doc._id || venueId,
+    name,
+    shortLabel,
+    capLabel,
+    code: raw.code || '',
+    city,
+    tierCount,
+    isSummaryOnly: true
   };
 }
 
@@ -203,6 +403,110 @@ function getLocalFallbackVenues() {
     // 若本地 venues 被 packOptions 忽略或不存在，则静默忽略
   }
   return [];
+}
+
+function getLocalFallbackVenueList() {
+  try {
+    const localMod = require('../data/venues');
+    const list = (localMod && typeof localMod.getAllVenues === 'function' ? localMod.getAllVenues() : (localMod && localMod.VENUES)) || [];
+    if (Array.isArray(list) && list.length > 0) {
+      return list.map(v => extractVenueSummary(v)).filter(Boolean);
+    }
+  } catch (e) {
+    // 若本地 venues 被 packOptions 忽略或不存在，则静默忽略
+  }
+  return [];
+}
+
+/**
+ * 仅拉取场馆轻量摘要列表（不包含 schema / standTiers / infield 等大字段，显著降低首屏与列表加载流量）
+ */
+async function loadStadiumProjectList(options = {}) {
+  if (
+    !(options && options.forceRefresh) &&
+    _cachedVenueList &&
+    _cachedVenueList.length > 0 &&
+    (Date.now() - _cachedListAt < VENUE_CACHE_TTL_MS)
+  ) {
+    return _cachedVenueList;
+  }
+
+  try {
+    ensureCloudInit();
+
+    const db = wx.cloud.database();
+    const collection = db.collection('stadiumProjects');
+
+    let total = null;
+    try {
+      const countRes = await collection.count();
+      if (countRes && typeof countRes.total === 'number') {
+        total = countRes.total;
+      }
+    } catch (countErr) {
+      console.warn('[DEBUG-stadium-cloud] 摘要列表获取总数失败，将采用分页探测:', countErr);
+    }
+
+    const rawDocs = [];
+    if (total !== null) {
+      for (let offset = 0; offset < total; offset += MAX_PAGE_LIMIT) {
+        const pageSize = Math.min(MAX_PAGE_LIMIT, total - offset);
+        try {
+          const res = await collection.skip(offset).limit(pageSize).field(SUMMARY_FIELDS).get();
+          if (res && Array.isArray(res.data)) {
+            rawDocs.push(...res.data);
+          }
+        } catch (pageErr) {
+          console.warn(`[DEBUG-stadium-cloud] 摘要分页 [${offset}, ${offset + pageSize}) 失败，回退单条摘要拉取:`, pageErr);
+          for (let i = offset; i < offset + pageSize; i++) {
+            try {
+              const singleRes = await collection.skip(i).limit(1).field(SUMMARY_FIELDS).get();
+              if (singleRes && Array.isArray(singleRes.data) && singleRes.data.length > 0) {
+                rawDocs.push(singleRes.data[0]);
+              }
+            } catch (singleErr) {
+              console.warn(`[DEBUG-stadium-cloud] 摘要索引 ${i} 拉取失败，跳过:`, singleErr);
+            }
+          }
+        }
+      }
+    } else {
+      const maxPages = 10;
+      for (let page = 0; page < maxPages; page++) {
+        const offset = page * MAX_PAGE_LIMIT;
+        try {
+          const res = await collection.skip(offset).limit(MAX_PAGE_LIMIT).field(SUMMARY_FIELDS).get();
+          const batch = (res && Array.isArray(res.data)) ? res.data : [];
+          rawDocs.push(...batch);
+          if (batch.length < MAX_PAGE_LIMIT) break;
+        } catch (probeErr) {
+          console.warn('[DEBUG-stadium-cloud] 摘要探测分页异常:', probeErr);
+          break;
+        }
+      }
+    }
+
+    const summaries = rawDocs.map(doc => extractVenueSummary(doc)).filter(Boolean);
+    if (summaries.length === 0) {
+      const fallback = getLocalFallbackVenueList();
+      if (fallback.length > 0) {
+        return fallback;
+      }
+    }
+
+    if (summaries.length > 0) {
+      _cachedVenueList = summaries;
+      _cachedListAt = Date.now();
+    }
+    return summaries;
+  } catch (topErr) {
+    console.error('[DEBUG-stadium-cloud] 加载场馆摘要列表异常，执行降级保护:', topErr);
+    const fallback = getLocalFallbackVenueList();
+    if (fallback.length > 0) {
+      return fallback;
+    }
+    throw topErr;
+  }
 }
 
 /**
@@ -268,6 +572,7 @@ async function fetchAllDocsWithConcurrency(collection, totalCount, concurrency =
 async function loadAllStadiumProjects(options = {}) {
   if (
     !(options && options.forceRefresh) &&
+    _allVenuesCached &&
     _cachedVenues &&
     _cachedVenues.length > 0 &&
     (Date.now() - _cachedAt < VENUE_CACHE_TTL_MS)
@@ -346,6 +651,7 @@ async function loadAllStadiumProjects(options = {}) {
     if (venues.length > 0) {
       _cachedVenues = venues;
       _cachedAt = Date.now();
+      _allVenuesCached = true;
     }
     return venues;
   } catch (topErr) {
@@ -435,11 +741,13 @@ async function loadStadiumProjectById(venueId, docId) {
     if (doc) {
       const formatted = extractVenueDoc(doc);
       if (formatted) {
-        if (Array.isArray(_cachedVenues)) {
-          const idx = _cachedVenues.findIndex(v => v.id === formatted.id || v._id === formatted._id);
-          if (idx >= 0) _cachedVenues[idx] = formatted;
-          else _cachedVenues.push(formatted);
+        if (!Array.isArray(_cachedVenues)) {
+          _cachedVenues = [];
         }
+        const idx = _cachedVenues.findIndex(v => v.id === formatted.id || v._id === formatted._id);
+        if (idx >= 0) _cachedVenues[idx] = formatted;
+        else _cachedVenues.push(formatted);
+        _cachedAt = Date.now();
         return formatted;
       }
     }
@@ -457,6 +765,10 @@ module.exports = {
   normalizeTiers,
   resolveRawVenue,
   extractVenueDoc,
+  extractVenueSummary,
+  extractCityFromVenue,
+  normalizeCityName,
+  loadStadiumProjectList,
   loadAllStadiumProjects,
   loadStadiumProjectById
 };

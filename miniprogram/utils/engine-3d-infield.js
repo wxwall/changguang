@@ -481,7 +481,7 @@ class InfieldMixinHolder {
         for (let s = 0; s < seatsPerRow; s++) {
           const localX = -usableW / 2 + (s + 0.5) * (usableW / seatsPerRow);
           const wp = rotateXZ(localX, localZ, rotDeg);
-          solid.addSeat3D(cx + wp.x, rowY, cz + wp.z, seatSpacing * 0.96, 0.58, fx, fz, seatPanCol, seatBackCol);
+          solid.addSeat3D(cx + wp.x, rowY, cz + wp.z, seatSpacing * 0.96, 0.45, fx, fz, seatPanCol, seatBackCol);
         }
       }
 
@@ -582,7 +582,7 @@ class InfieldMixinHolder {
             seatY,
             blk.z + wp.z,
             seatSpacing * 0.98,
-            0.68,
+            0.48,
             blk.facingX || 0,
             blk.facingZ !== undefined ? blk.facingZ : -1,
             panCol,

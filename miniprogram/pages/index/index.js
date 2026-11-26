@@ -1,4 +1,4 @@
-const { loadAllStadiumProjects, loadStadiumProjectById } = require('../../services/venue-service');
+const { loadStadiumProjectList, loadStadiumProjectById } = require('../../services/venue-service');
 const {
   calculateSeatSightline,
   findDefaultEastFirstRowSelection
@@ -76,37 +76,50 @@ Page({
   },
 
   async loadVenuesData() {
-    wx.showLoading({ title: '加载场馆数据...', mask: true });
+    wx.showLoading({ title: '加载场馆列表...', mask: true });
     this.setData({ loadingVenues: true });
 
     try {
-      const venues = await loadAllStadiumProjects();
-      if (!venues || venues.length === 0) {
+      const venueList = await loadStadiumProjectList();
+      if (!venueList || venueList.length === 0) {
         wx.showToast({ title: '数据库暂无场馆数据', icon: 'none', duration: 2500 });
         this.setData({ loadingVenues: false });
         return;
       }
 
       const savedVenueId = wx.getStorageSync('STADIACAD_LAST_VENUE');
-      let initialVenue = null;
+      let initialSummary = null;
       if (savedVenueId) {
-        initialVenue = venues.find(v => v.id === savedVenueId || v._id === savedVenueId);
+        initialSummary = venueList.find(v => v.id === savedVenueId || v._id === savedVenueId);
+      }
+      if (!initialSummary) {
+        initialSummary = venueList[0];
+      }
+
+      wx.showLoading({ title: `加载 ${initialSummary.shortLabel || '场馆'}...`, mask: true });
+      let initialVenue = await loadStadiumProjectById(initialSummary.id, initialSummary._id);
+      if (!initialVenue && initialSummary !== venueList[0]) {
+        initialVenue = await loadStadiumProjectById(venueList[0].id, venueList[0]._id);
       }
       if (!initialVenue) {
-        initialVenue = venues[0];
+        wx.showToast({ title: '加载场馆 Schema 失败', icon: 'none', duration: 2500 });
+        this.setData({ loadingVenues: false });
+        return;
       }
 
       this.activeSelection = findDefaultEastFirstRowSelection(initialVenue);
       const sightline = calculateSeatSightline(initialVenue, this.activeSelection, this.data.viewMode);
       const colorState = this.buildColorPickerState(initialVenue);
 
-      this._venues = venues;
+      this._venueList = venueList;
+      this._venues = [initialVenue];
       this._currentVenue = initialVenue;
-      const homeVenues = venues.slice(0, 5).map(v => ({
+      const homeVenues = venueList.slice(0, 5).map(v => ({
         id: v.id,
         _id: v._id,
         shortLabel: v.shortLabel,
-        capLabel: v.capLabel
+        capLabel: v.capLabel,
+        city: v.city
       }));
 
       this.setData({
@@ -369,9 +382,11 @@ Page({
     const venueId = e.currentTarget.dataset.id;
     const docId = e.currentTarget.dataset.docId;
     const cur = this.getCurrentVenue();
-    if (cur && (cur.id === venueId || cur._id === venueId)) return;
-    const list = this._venues || this.data.venues || [];
-    const cached = list.find(v => v.id === venueId || v._id === venueId);
+    if (cur && (cur.id === venueId || cur._id === venueId || (docId && cur._id === docId))) return;
+    const fullList = this._venues || this.data.venues || [];
+    const summaryList = this._venueList || this.data.homeVenues || [];
+    const cached = fullList.find(v => v.id === venueId || v._id === venueId)
+      || summaryList.find(v => v.id === venueId || v._id === venueId);
     const displayName = (cached && (cached.shortLabel || cached.name)) || '场馆';
     this.loadAndSwitchVenue(venueId, docId || (cached && cached._id), displayName);
   },

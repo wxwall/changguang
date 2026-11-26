@@ -82,23 +82,113 @@
   color: #64748B;
 }
 
+.split-body {
+  flex: 1;
+  height: 0;
+  display: flex;
+  flex-direction: row;
+}
+
+.city-sidebar {
+  width: 204rpx;
+  height: 100%;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.45);
+  border-right: 1rpx solid rgba(120, 95, 70, 0.14);
+}
+
+.city-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 26rpx 18rpx 26rpx 22rpx;
+  border-bottom: 1rpx solid rgba(120, 95, 70, 0.08);
+  color: #475569;
+  font-size: 26rpx;
+}
+
+.city-item.active {
+  background: #FFFFFF;
+  color: #F43F5E;
+  font-weight: 700;
+}
+
+.city-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 18rpx;
+  bottom: 18rpx;
+  width: 6rpx;
+  border-radius: 0 4rpx 4rpx 0;
+  background: #F43F5E;
+}
+
+.city-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.city-count {
+  flex-shrink: 0;
+  margin-left: 8rpx;
+  font-size: 20rpx;
+  color: #94A3B8;
+  font-weight: 500;
+}
+
+.city-item.active .city-count {
+  color: #F43F5E;
+}
+
+.venue-pane {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.venue-pane-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 18rpx 20rpx 12rpx;
+}
+
+.venue-pane-city {
+  font-size: 26rpx;
+  font-weight: 700;
+  color: #1E293B;
+}
+
+.venue-pane-sub {
+  font-size: 20rpx;
+  color: #64748B;
+}
+
 .venue-list-scroll {
   flex: 1;
   height: 0;
 }
 
 .venue-list {
-  padding: 18rpx 24rpx 40rpx;
+  padding: 4rpx 20rpx 40rpx;
   display: flex;
   flex-direction: column;
-  gap: 16rpx;
+  gap: 14rpx;
 }
 
 .venue-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 24rpx 26rpx;
+  padding: 22rpx 22rpx;
   background: rgba(255, 255, 255, 0.86);
   border: 1rpx solid rgba(120, 95, 70, 0.16);
   border-radius: 16rpx;
@@ -114,7 +204,7 @@
 .venue-card-main {
   flex: 1;
   min-width: 0;
-  margin-right: 16rpx;
+  margin-right: 12rpx;
 }
 
 .venue-card-title-row {
@@ -124,7 +214,7 @@
 }
 
 .venue-card-name {
-  font-size: 28rpx;
+  font-size: 27rpx;
   font-weight: 700;
   color: #1E293B;
   overflow: hidden;
@@ -145,14 +235,17 @@
 .venue-card-sub {
   display: block;
   margin-top: 8rpx;
-  font-size: 22rpx;
+  font-size: 21rpx;
   color: #64748B;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .venue-card-right {
   display: flex;
   align-items: center;
-  gap: 12rpx;
+  gap: 10rpx;
   flex-shrink: 0;
 }
 
@@ -166,7 +259,7 @@
 }
 
 .enter-arrow {
-  font-size: 34rpx;
+  font-size: 32rpx;
   color: #94A3B8;
   line-height: 1;
 }
