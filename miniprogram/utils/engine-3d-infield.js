@@ -43,12 +43,6 @@ class InfieldMixinHolder {
     const lastTierIdx = tiers.length - 1;
     if (lastTierIdx < 0) return;
 
-    const lastTier = tiers[lastTierIdx];
-    const lastSlope = lastTier.defaultSlopeDeg || 24;
-    const lastRows = lastTier.defaultRows || 22;
-    const lastPitch = lastTier.defaultRowPitch || 0.85;
-    const isMorphedLast = isConcentricMorphTier(lastTier);
-
     const ringAngles = this.buildFullRingAngles(180);
     const wallHex = overrides.wall || (facade && facade.wallColor) || '#CBD5E1';
     const wallRgb = parseHexRgb(wallHex) || { r: 203, g: 213, b: 225 };
@@ -65,88 +59,204 @@ class InfieldMixinHolder {
     const trimCol = [Math.max(0, wr * 0.86), Math.max(0, wg * 0.86), Math.max(0, wb * 0.86), 1.0];
     const plinthCol = [Math.max(0, wr * 0.72), Math.max(0, wg * 0.72), Math.max(0, wb * 0.72), 1.0];
 
-    const lastRiserH = lastTier.defaultRiserHeight || (lastPitch * Math.tan(lastSlope * DEG2RAD));
     const heightExt = (facade && facade.heightExtensionM !== undefined) ? Number(facade.heightExtensionM) : 1.2;
-    const flatTopWallY = (lastTier.baseElevation || 14) + Math.max(0, lastRows - 1) * lastRiserH + heightExt;
     const pad = 1.5;
+
+    const tierMeta = tiers.map((tier, ti) => {
+      const slope = tier.defaultSlopeDeg || 24;
+      const rows = tier.defaultRows || 22;
+      const pitch = tier.defaultRowPitch || 0.85;
+      const riserH = tier.defaultRiserHeight || (pitch * Math.tan(slope * DEG2RAD));
+      const baseElev = tier.baseElevation !== undefined ? Number(tier.baseElevation) : (ti === 0 ? 0 : 14);
+      return {
+        tier,
+        ti,
+        isMorphed: isConcentricMorphTier(tier),
+        defaultRows: rows,
+        riserH,
+        baseElev,
+        flatTopY: baseElev + Math.max(0, rows - 1) * riserH + heightExt
+      };
+    });
+
+    const isAngleInRange = (deg, startDeg, endDeg) => {
+      if (endDeg - startDeg >= 359.9) return true;
+      const d = ((deg % 360) + 360) % 360;
+      const s = ((startDeg % 360) + 360) % 360;
+      const e = ((endDeg % 360) + 360) % 360;
+      if (s <= e) return d >= s - 1e-4 && d <= e + 1e-4;
+      return d >= s - 1e-4 || d <= e + 1e-4;
+    };
+
+    const getActiveSectorAtAngle = (meta, deg) => {
+      const sectors = meta.tier.sectors;
+      if (!Array.isArray(sectors) || sectors.length === 0) return null;
+      for (let si = 0; si < sectors.length; si++) {
+        const sec = sectors[si];
+        if (!sec || sec.isDeleted || sec.fillType === 'empty-void') continue;
+        const sDeg = Number(sec.startAngleDeg);
+        const eDeg = Number(sec.endAngleDeg);
+        if (!Number.isFinite(sDeg) || !Number.isFinite(eDeg)) continue;
+        if (isAngleInRange(deg, sDeg, eDeg)) {
+          if (meta.isMorphed) {
+            const r = getTierRowsAtAngleFloat(this.venue, meta.ti, meta.tier, sec, deg);
+            if (r <= 0.5) continue;
+            return { sec, rows: r };
+          }
+          const r = sec.rows || meta.defaultRows;
+          if (r <= 0) continue;
+          return { sec, rows: r };
+        }
+      }
+      return null;
+    };
+
+    const evalTierTopY = (meta, deg, activeInfo) => {
+      if (activeInfo) {
+        return meta.baseElev + Math.max(0, activeInfo.rows - 1) * meta.riserH + heightExt;
+      }
+      if (meta.isMorphed) {
+        const r = getTierRowsAtAngleFloat(this.venue, meta.ti, meta.tier, null, deg);
+        return meta.baseElev + Math.max(0, r - 1) * meta.riserH + heightExt;
+      }
+      return meta.flatTopY;
+    };
 
     const evalWallPoint = (deg, extraPad = 0) => {
       const pt = evalTierPoint(this.venue, lastTierIdx, deg, 1);
       const rLen = Math.hypot(pt.x, pt.z) || 1;
-      const nx = isMorphedLast ? (pt.x / rLen) : pt.nx;
-      const nz = isMorphedLast ? (pt.z / rLen) : pt.nz;
+      const lastMeta = tierMeta[lastTierIdx];
+      const nx = lastMeta.isMorphed ? (pt.x / rLen) : pt.nx;
+      const nz = lastMeta.isMorphed ? (pt.z / rLen) : pt.nz;
       const totalPad = pad + extraPad;
       const x = pt.x + nx * totalPad;
       const z = pt.z + nz * totalPad;
-      let topWallY = flatTopWallY;
-      if (isMorphedLast) {
-        const r = getTierRowsAtAngleFloat(this.venue, lastTierIdx, lastTier, null, deg);
-        topWallY = (lastTier.baseElevation || 14) + Math.max(0, r - 1) * lastRiserH + heightExt;
+      return { x, z, nx, nz };
+    };
+
+    const getVerticalSegmentsAtAngle = (degCheck, deg1, deg2) => {
+      const segments = [];
+      let curSeg = null;
+      let prevEndY1 = -0.60;
+      let prevEndY2 = -0.60;
+
+      for (let ti = 0; ti < tierMeta.length; ti++) {
+        const meta = tierMeta[ti];
+        const activeInfo = getActiveSectorAtAngle(meta, degCheck);
+        if (activeInfo) {
+          const active1 = getActiveSectorAtAngle(meta, deg1) || activeInfo;
+          const active2 = getActiveSectorAtAngle(meta, deg2) || activeInfo;
+          const top1 = evalTierTopY(meta, deg1, active1);
+          const top2 = evalTierTopY(meta, deg2, active2);
+          if (!curSeg) {
+            const botY1 = ti === 0 ? -0.60 : Math.max(-0.60, meta.baseElev - 0.5);
+            const botY2 = botY1;
+            curSeg = {
+              hasPlinth: ti === 0,
+              bot1: Math.min(botY1, top1 - 0.5),
+              bot2: Math.min(botY2, top2 - 0.5),
+              top1,
+              top2
+            };
+          } else {
+            curSeg.top1 = Math.max(curSeg.top1, top1);
+            curSeg.top2 = Math.max(curSeg.top2, top2);
+          }
+          prevEndY1 = curSeg.top1;
+          prevEndY2 = curSeg.top2;
+        } else {
+          if (curSeg) {
+            segments.push(curSeg);
+            curSeg = null;
+          }
+          prevEndY1 = Math.max(prevEndY1, meta.flatTopY);
+          prevEndY2 = Math.max(prevEndY2, meta.flatTopY);
+        }
       }
-      return { x, z, nx, nz, topWallY };
+      if (curSeg) {
+        segments.push(curSeg);
+      }
+      return segments;
     };
 
     const hasClassicDetail = Boolean(facade);
     for (let i = 0; i < ringAngles.length - 1; i++) {
       const deg1 = ringAngles[i];
       const deg2 = ringAngles[i + 1];
+      let midDeg = (deg1 + deg2) * 0.5;
+      if (Math.abs(deg2 - deg1) > 180) {
+        midDeg = ((deg1 + deg2 + 360) * 0.5) % 360;
+      }
+
+      const segs = getVerticalSegmentsAtAngle(midDeg, deg1, deg2);
+      if (segs.length === 0) continue;
 
       const w1 = evalWallPoint(deg1, 0);
       const w2 = evalWallPoint(deg2, 0);
+      const p1 = hasClassicDetail ? evalWallPoint(deg1, 0.22) : null;
+      const p2 = hasClassicDetail ? evalWallPoint(deg2, 0.22) : null;
+      const c1 = hasClassicDetail ? evalWallPoint(deg1, 0.30) : null;
+      const c2 = hasClassicDetail ? evalWallPoint(deg2, 0.30) : null;
 
-      wallBuilder.addQuad(
-        { x: w1.x, y: -0.60, z: w1.z },
-        { x: w1.x, y: w1.topWallY, z: w1.z },
-        { x: w2.x, y: w2.topWallY, z: w2.z },
-        { x: w2.x, y: -0.60, z: w2.z },
-        shellCol
-      );
+      for (let si = 0; si < segs.length; si++) {
+        const seg = segs[si];
+        wallBuilder.addQuad(
+          { x: w1.x, y: seg.bot1, z: w1.z },
+          { x: w1.x, y: seg.top1, z: w1.z },
+          { x: w2.x, y: seg.top2, z: w2.z },
+          { x: w2.x, y: seg.bot2, z: w2.z },
+          shellCol
+        );
 
-      if (hasClassicDetail) {
-        // Base plinth water-table band (-0.60m to 1.00m)
-        const p1 = evalWallPoint(deg1, 0.22);
-        const p2 = evalWallPoint(deg2, 0.22);
-        solid.addQuad(
-          { x: p1.x, y: -0.60, z: p1.z },
-          { x: p1.x, y: 1.0, z: p1.z },
-          { x: p2.x, y: 1.0, z: p2.z },
-          { x: p2.x, y: -0.60, z: p2.z },
-          plinthCol
-        );
-        // Top cornice band
-        const c1 = evalWallPoint(deg1, 0.30);
-        const c2 = evalWallPoint(deg2, 0.30);
-        const corBot1 = Math.max(1.2, w1.topWallY - 0.85);
-        const corBot2 = Math.max(1.2, w2.topWallY - 0.85);
-        solid.addQuad(
-          { x: c1.x, y: corBot1, z: c1.z },
-          { x: c1.x, y: w1.topWallY, z: c1.z },
-          { x: c2.x, y: w2.topWallY, z: c2.z },
-          { x: c2.x, y: corBot2, z: c2.z },
-          trimCol
-        );
-        // Top cap closing cornice to wall
-        solid.addQuad(
-          { x: w1.x, y: w1.topWallY, z: w1.z },
-          { x: c1.x, y: w1.topWallY, z: c1.z },
-          { x: c2.x, y: w2.topWallY, z: c2.z },
-          { x: w2.x, y: w2.topWallY, z: w2.z },
-          trimCol,
-          { x: 0, y: 1, z: 0 }
-        );
+        if (hasClassicDetail) {
+          if (seg.hasPlinth) {
+            const plinthTop = Math.min(1.0, seg.top1, seg.top2);
+            solid.addQuad(
+              { x: p1.x, y: -0.60, z: p1.z },
+              { x: p1.x, y: plinthTop, z: p1.z },
+              { x: p2.x, y: plinthTop, z: p2.z },
+              { x: p2.x, y: -0.60, z: p2.z },
+              plinthCol
+            );
+          }
+          // Top cornice band
+          const corBot1 = Math.max(seg.bot1 + 0.2, seg.top1 - 0.85);
+          const corBot2 = Math.max(seg.bot2 + 0.2, seg.top2 - 0.85);
+          solid.addQuad(
+            { x: c1.x, y: corBot1, z: c1.z },
+            { x: c1.x, y: seg.top1, z: c1.z },
+            { x: c2.x, y: seg.top2, z: c2.z },
+            { x: c2.x, y: corBot2, z: c2.z },
+            trimCol
+          );
+          // Top cap closing cornice to wall
+          solid.addQuad(
+            { x: w1.x, y: seg.top1, z: w1.z },
+            { x: c1.x, y: seg.top1, z: c1.z },
+            { x: c2.x, y: seg.top2, z: c2.z },
+            { x: w2.x, y: seg.top2, z: w2.z },
+            trimCol,
+            { x: 0, y: 1, z: 0 }
+          );
+        }
       }
     }
 
-    // Architectural vertical pilasters around exterior facade
+    // Architectural vertical pilasters around exterior facade (clipped to active tier wall segments)
     const showPilasters = facade ? (facade.showPilasters !== false) : false;
     const pilasterCount = (facade && facade.pilasterCount) ? Math.max(4, Math.round(Number(facade.pilasterCount))) : 0;
     if (showPilasters && pilasterCount > 0) {
       for (let k = 0; k < pilasterCount; k++) {
         const deg = (k / pilasterCount) * 360;
+        const segs = getVerticalSegmentsAtAngle(deg, deg, deg);
+        if (segs.length === 0) continue;
         const wp = evalWallPoint(deg, 0.32);
-        const h = Math.max(2, wp.topWallY + 0.60);
         const rotY = Math.atan2(wp.nx, wp.nz);
-        solid.addBox(wp.x, -0.60 + h * 0.5, wp.z, 0.95, h, 0.72, trimCol, rotY);
+        for (let si = 0; si < segs.length; si++) {
+          const seg = segs[si];
+          const h = Math.max(0.8, seg.top1 - seg.bot1);
+          solid.addBox(wp.x, seg.bot1 + h * 0.5, wp.z, 0.95, h, 0.72, trimCol, rotY);
+        }
       }
     }
   }
@@ -712,19 +822,17 @@ class InfieldMixinHolder {
 
     const bx = hw + padX;
     const bz = hl + padZ;
-    const boardH = isCourt ? 0.85 : 1.05;
-    const boardDepth = 0.24;
-    const panelMaxW = isCourt ? 3.2 : 4.8;
-    const panelGap = 0.16;
-    const frameCol = [0.10, 0.12, 0.16, 1.0];
-    const trimCol = [0.22, 0.26, 0.34, 1.0];
+    const boardH = isCourt ? 0.72 : 0.85;
+    const boardDepth = 0.12;
+    const panelMaxW = isCourt ? 3.2 : 4.6;
+    const frameCol = [0.11, 0.13, 0.17, 1.0];
+    const bezelCol = [0.28, 0.33, 0.40, 1.0];
 
-    // Sponsor-style vibrant LED ribbon color palette (alternating crisp blocks)
+    // Cohesive pro-league LED palette: deep midnight-navy base with crisp cyan/silver/amber-gold accents
     const ledPalette = [
-      { bg: [0.06, 0.38, 0.88, 1.0], accent: [0.20, 0.84, 1.00, 1.0] },
-      { bg: [0.05, 0.56, 0.42, 1.0], accent: [0.58, 0.96, 0.35, 1.0] },
-      { bg: [0.78, 0.12, 0.22, 1.0], accent: [1.00, 0.82, 0.22, 1.0] },
-      { bg: [0.10, 0.18, 0.36, 1.0], accent: [0.96, 0.48, 0.14, 1.0] }
+      { bg: [0.06, 0.14, 0.30, 1.0], bgAlt: [0.08, 0.18, 0.38, 1.0], accent: [0.22, 0.72, 0.96, 1.0], bar: [0.85, 0.91, 0.98, 1.0] },
+      { bg: [0.07, 0.16, 0.34, 1.0], bgAlt: [0.10, 0.22, 0.44, 1.0], accent: [0.30, 0.80, 0.98, 1.0], bar: [0.92, 0.76, 0.36, 1.0] },
+      { bg: [0.06, 0.13, 0.28, 1.0], bgAlt: [0.09, 0.20, 0.40, 1.0], accent: [0.82, 0.90, 0.98, 1.0], bar: [0.22, 0.72, 0.96, 1.0] }
     ];
 
     const addBoardRun = (lx1, lz1, lx2, lz2, inNx, inNz, colorOffset) => {
@@ -736,48 +844,74 @@ class InfieldMixinHolder {
       const dirZ = (lz2 - lz1) / totalLen;
       const segAngleRad = -pitchOri * DEG2RAD - Math.atan2(dirZ, dirX);
 
+      // Continuous sleek aluminum LED cabinet housing & top/bottom metallic trim rails
+      const runMid = rotateXZ((lx1 + lx2) * 0.5, (lz1 + lz2) * 0.5, pitchOri);
+      solid.addBox(runMid.x, boardH * 0.5 + 0.05, runMid.z, totalLen, boardH, boardDepth, frameCol, segAngleRad);
+      solid.addBox(runMid.x, boardH + 0.06, runMid.z, totalLen + 0.04, 0.035, boardDepth + 0.03, bezelCol, segAngleRad);
+      solid.addBox(runMid.x, 0.04, runMid.z, totalLen + 0.04, 0.06, boardDepth + 0.06, bezelCol, segAngleRad);
+
+      const isOff = this.isLightsOffScene && this.isLightsOffScene();
+      const target = (!isOff && screens) ? screens : solid;
+      const offCol = [0.03, 0.04, 0.06, 1.0];
+      const faceOff = boardDepth * 0.5 + 0.012;
+      const botY = 0.08;
+      const topY = boardH + 0.03;
+      const stripeTopY = topY - 0.055;
+      const midBandY = botY + (stripeTopY - botY) * 0.22;
+
       for (let i = 0; i < count; i++) {
-        const s0 = i * stepLen + panelGap * 0.5;
-        const s1 = (i + 1) * stepLen - panelGap * 0.5;
+        const s0 = i * stepLen + 0.03;
+        const s1 = (i + 1) * stepLen - 0.03;
         const pW = s1 - s0;
         if (pW < 0.4) continue;
+
+        // Slim rear support strut per cabinet
         const midS = (s0 + s1) * 0.5;
         const lcx = lx1 + dirX * midS;
         const lcz = lz1 + dirZ * midS;
-        const wCenter = rotateXZ(lcx, lcz, pitchOri);
+        const footPos = rotateXZ(lcx - inNx * 0.14, lcz - inNz * 0.14, pitchOri);
+        solid.addBox(footPos.x, 0.18, footPos.z, 0.08, 0.34, 0.18, bezelCol, segAngleRad);
 
-        // Dark structural LED cabinet housing
-        solid.addBox(wCenter.x, boardH * 0.5 + 0.06, wCenter.z, pW, boardH, boardDepth, frameCol, segAngleRad);
-        // Subtle rear support foot
-        const footPos = rotateXZ(lcx - inNx * 0.22, lcz - inNz * 0.22, pitchOri);
-        solid.addBox(footPos.x, 0.18, footPos.z, 0.18, 0.28, 0.32, trimCol, segAngleRad);
-
-        // Luminous inward-facing LED display face
-        const faceOff = boardDepth * 0.5 + 0.015;
-        const pA = rotateXZ(lx1 + dirX * (s0 + 0.06) + inNx * faceOff, lz1 + dirZ * (s0 + 0.06) + inNz * faceOff, pitchOri);
-        const pB = rotateXZ(lx1 + dirX * (s1 - 0.06) + inNx * faceOff, lz1 + dirZ * (s1 - 0.06) + inNz * faceOff, pitchOri);
+        const pA = rotateXZ(lx1 + dirX * s0 + inNx * faceOff, lz1 + dirZ * s0 + inNz * faceOff, pitchOri);
+        const pB = rotateXZ(lx1 + dirX * s1 + inNx * faceOff, lz1 + dirZ * s1 + inNz * faceOff, pitchOri);
+        const sSlashA = s0 + pW * 0.16;
+        const sSlashB = s0 + pW * 0.26;
+        const pSA = rotateXZ(lx1 + dirX * sSlashA + inNx * (faceOff + 0.004), lz1 + dirZ * sSlashA + inNz * (faceOff + 0.004), pitchOri);
+        const pSB = rotateXZ(lx1 + dirX * sSlashB + inNx * (faceOff + 0.004), lz1 + dirZ * sSlashB + inNz * (faceOff + 0.004), pitchOri);
         const pal = ledPalette[(i + colorOffset) % ledPalette.length];
-        const isOff = this.isLightsOffScene && this.isLightsOffScene();
-        const target = (!isOff && screens) ? screens : solid;
-        const offCol = [0.04, 0.05, 0.07, 1.0];
 
-        const botY = 0.14;
-        const midY = botY + (boardH - 0.16) * 0.72;
-        const topY = boardH - 0.02;
-        // Main LED body
+        // Main smooth midnight-blue LED backdrop
         target.addQuad(
           { x: pA.x, y: botY, z: pA.z },
-          { x: pA.x, y: midY, z: pA.z },
-          { x: pB.x, y: midY, z: pB.z },
+          { x: pA.x, y: stripeTopY, z: pA.z },
+          { x: pB.x, y: stripeTopY, z: pB.z },
           { x: pB.x, y: botY, z: pB.z },
           isOff ? offCol : pal.bg
         );
-        // Bright top sponsor accent ticker strip
+        // Subtle lower-third secondary gradient band
         target.addQuad(
-          { x: pA.x, y: midY, z: pA.z },
+          { x: pA.x, y: botY, z: pA.z },
+          { x: pA.x, y: midBandY, z: pA.z },
+          { x: pB.x, y: midBandY, z: pB.z },
+          { x: pB.x, y: botY, z: pB.z },
+          isOff ? offCol : pal.bgAlt
+        );
+        // Sleek 45-degree diagonal broadcast graphic accent
+        if (!isOff) {
+          target.addQuad(
+            { x: pSA.x, y: botY + 0.04, z: pSA.z },
+            { x: pSB.x, y: stripeTopY - 0.04, z: pSB.z },
+            { x: rotateXZ(lx1 + dirX * (sSlashB + pW * 0.06) + inNx * (faceOff + 0.004), lz1 + dirZ * (sSlashB + pW * 0.06) + inNz * (faceOff + 0.004), pitchOri).x, y: stripeTopY - 0.04, z: rotateXZ(lx1 + dirX * (sSlashB + pW * 0.06) + inNx * (faceOff + 0.004), lz1 + dirZ * (sSlashB + pW * 0.06) + inNz * (faceOff + 0.004), pitchOri).z },
+            { x: rotateXZ(lx1 + dirX * (sSlashA + pW * 0.06) + inNx * (faceOff + 0.004), lz1 + dirZ * (sSlashA + pW * 0.06) + inNz * (faceOff + 0.004), pitchOri).x, y: botY + 0.04, z: rotateXZ(lx1 + dirX * (sSlashA + pW * 0.06) + inNx * (faceOff + 0.004), lz1 + dirZ * (sSlashA + pW * 0.06) + inNz * (faceOff + 0.004), pitchOri).z },
+            pal.bar
+          );
+        }
+        // Crisp top luminous hairline ticker
+        target.addQuad(
+          { x: pA.x, y: stripeTopY, z: pA.z },
           { x: pA.x, y: topY, z: pA.z },
           { x: pB.x, y: topY, z: pB.z },
-          { x: pB.x, y: midY, z: pB.z },
+          { x: pB.x, y: stripeTopY, z: pB.z },
           isOff ? offCol : pal.accent
         );
       }
