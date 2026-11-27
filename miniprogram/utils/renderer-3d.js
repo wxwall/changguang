@@ -206,7 +206,7 @@ class Renderer3D {
   }
 
   isCameraAnimating() {
-    const eps = 0.01;
+    const eps = 0.03;
     return (
       Math.abs(this.targetEye.x - this.camEye.x) > eps ||
       Math.abs(this.targetEye.y - this.camEye.y) > eps ||

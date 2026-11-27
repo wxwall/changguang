@@ -126,12 +126,12 @@ Page({
         homeVenues,
         currentVenue: toViewVenue(initialVenue),
         sightline,
-        cameraMode: 'bird',
+        cameraMode: 'seat',
         loadingVenues: false,
         ...colorState
       });
 
-      this.applyVenueToRenderers(initialVenue, sightline, 'bird');
+      this.applyVenueToRenderers(initialVenue, sightline, 'seat');
     } catch (err) {
       console.error('从云数据库加载场馆失败:', err);
       wx.showToast({
@@ -191,32 +191,23 @@ Page({
   startRenderLoop() {
     if (this._rafId || !this.canvas3d || !this.renderer3d) return;
     const canvas = this.canvas3d;
-    const loop = (now) => {
+    const loop = () => {
       this._rafId = null;
       const r3d = this.renderer3d;
       if (!r3d) return;
 
-      const ts = typeof now === 'number' ? now : Date.now();
-      const camMoving = r3d.isCameraAnimating ? r3d.isCameraAnimating() : true;
-      const hasDyn = r3d.hasDynamicAnimation ? r3d.hasDynamicAnimation() : false;
-      const needsDraw = r3d.needsRender ? r3d.needsRender() : true;
+      const camMoving = r3d.isCameraAnimating ? r3d.isCameraAnimating() : false;
+      const needsDraw = r3d.needsRender ? r3d.needsRender() : false;
 
-      if (!needsDraw && !camMoving && !hasDyn) {
-        return;
-      }
-
-      // 静止状态下仅跑外部动态场景动画时，节流至 ~30fps 以大幅降低真机发热
-      if (!needsDraw && !camMoving && hasDyn && this._lastDynRenderTs && (ts - this._lastDynRenderTs) < 32) {
-        this._rafId = canvas.requestAnimationFrame(loop);
+      if (!needsDraw && !camMoving) {
         return;
       }
 
       r3d.renderFrame();
-      this._lastDynRenderTs = ts;
 
       const stillMoving = r3d.isCameraAnimating ? r3d.isCameraAnimating() : false;
       const stillNeeds = r3d.needsRender ? r3d.needsRender() : false;
-      if (stillNeeds || stillMoving || hasDyn) {
+      if (stillNeeds || stillMoving) {
         this._rafId = canvas.requestAnimationFrame(loop);
       }
     };
