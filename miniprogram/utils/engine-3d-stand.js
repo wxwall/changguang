@@ -39,7 +39,7 @@ class StandMixinHolder {
     const vipGoldTrimCol = [0.86, 0.70, 0.38, 1.0];
     const vipFasciaDarkCol = [0.14, 0.16, 0.21, 1.0];
     const stairStepCol = [0.24, 0.28, 0.35, 1.0];
-    const handrailCol = [0.68, 0.73, 0.80, 1.0];
+    const handrailCol = [0.46, 0.49, 0.53, 1.0];
 
     // Precompute front-connected vomitory angular windows per tier using strict vom.width solver
     const frontVomWindowsByTier = tiers.map((tier, tierIndex) => {
@@ -141,7 +141,7 @@ class StandMixinHolder {
         const rawAngles = this.buildSectorAngleList(sDeg, eDeg, cornerAngles, extraStops, tierHasMorph, tierIndex);
 
         const guard = sec.guardrail || tier.defaultGuardrail || {};
-        const secRailCol = isVip ? [0.92, 0.78, 0.44, 1.0] : handrailCol;
+        const secRailCol = handrailCol;
 
         if ((sec.fillType || tier.defaultFillType) === 'solid-wall') {
           // 实体山墙 / 机房：用实体块填满整个看台区域，不生成台阶与座椅
@@ -413,8 +413,8 @@ class StandMixinHolder {
                 rearH,
                 {
                   capColor: secRailCol,
-                  postColor: isVip ? [0.24, 0.20, 0.16, 1.0] : [0.24, 0.28, 0.35, 1.0],
-                  midColor: isVip ? [0.76, 0.64, 0.36, 1.0] : [0.56, 0.62, 0.70, 1.0],
+                  postColor: [0.32, 0.35, 0.39, 1.0],
+                  midColor: [0.42, 0.45, 0.49, 1.0],
                   includeStartPost: a % 2 === 0,
                   includeEndPost: false,
                   postSpacing: 10
@@ -490,8 +490,8 @@ class StandMixinHolder {
                 rearH,
                 {
                   capColor: secRailCol,
-                  postColor: isVip ? [0.24, 0.20, 0.16, 1.0] : [0.24, 0.28, 0.35, 1.0],
-                  midColor: isVip ? [0.76, 0.64, 0.36, 1.0] : [0.56, 0.62, 0.70, 1.0],
+                  postColor: [0.32, 0.35, 0.39, 1.0],
+                  midColor: [0.42, 0.45, 0.49, 1.0],
                   includeStartPost: a % 2 === 0,
                   includeEndPost: false,
                   postSpacing: 10
@@ -509,7 +509,7 @@ class StandMixinHolder {
             const f2_bot = { x: pt2.inX, y: baseElev, z: pt2.inZ };
             const g1_top = { x: pt1.inX, y: baseElev + frontH, z: pt1.inZ };
             const g2_top = { x: pt2.inX, y: baseElev + frontH, z: pt2.inZ };
-            const postCol = isVip ? [0.24, 0.20, 0.16, 1.0] : [0.24, 0.28, 0.35, 1.0];
+            const postCol = [0.32, 0.35, 0.39, 1.0];
 
             // Ergonomic brushed-metal top handrail cap
             solid.addBeam3D(g1_top, g2_top, isVip ? 0.085 : 0.095, isVip ? 0.048 : 0.052, secRailCol);
@@ -555,7 +555,7 @@ class StandMixinHolder {
               solid.addBeam3D(
                 { x: pt1.inX, y: baseElev + frontH * 0.52, z: pt1.inZ },
                 { x: pt2.inX, y: baseElev + frontH * 0.52, z: pt2.inZ },
-                0.042, 0.042, [0.56, 0.62, 0.70, 1.0]
+                0.042, 0.042, [0.42, 0.45, 0.49, 1.0]
               );
               if (alpha && tier.level > 1) {
                 alpha.addQuad(
@@ -665,9 +665,9 @@ class StandMixinHolder {
             { x: ptEdgeTop.x, z: ptEdgeTop.z }, topElevE,
             0.68,
             {
-              capColor: [0.80, 0.84, 0.90, 1.0],
-              postColor: [0.24, 0.28, 0.35, 1.0],
-              midColor: [0.58, 0.63, 0.70, 1.0],
+              capColor: [0.46, 0.49, 0.53, 1.0],
+              postColor: [0.32, 0.35, 0.39, 1.0],
+              midColor: [0.42, 0.45, 0.49, 1.0],
               postSpacing: 3.6
             },
             alpha
@@ -1153,9 +1153,9 @@ class StandMixinHolder {
         // Lowered & textured side safety rails on bridge (front & back open)
         const addRailRun = (pA, yA, pB, yB) => {
           solid.addTexturedRailingRun(pA, yA, pB, yB, 0.68, {
-            capColor: [0.80, 0.84, 0.90, 1.0],
-            postColor: [0.24, 0.28, 0.35, 1.0],
-            midColor: [0.58, 0.63, 0.70, 1.0],
+            capColor: [0.46, 0.49, 0.53, 1.0],
+            postColor: [0.32, 0.35, 0.39, 1.0],
+            midColor: [0.42, 0.45, 0.49, 1.0],
             postSpacing: 2.6
           });
         };
@@ -1231,9 +1231,9 @@ class StandMixinHolder {
       // Lowered & textured corridor side railings + upper portal edge guardrail (front exit remains 100% open!)
       const addCorridorRail = (pA, yA, pB, yB) => {
         solid.addTexturedRailingRun(pA, yA, pB, yB, 0.68, {
-          capColor: [0.80, 0.84, 0.90, 1.0],
-          postColor: [0.24, 0.28, 0.35, 1.0],
-          midColor: [0.58, 0.63, 0.70, 1.0],
+          capColor: [0.46, 0.49, 0.53, 1.0],
+          postColor: [0.32, 0.35, 0.39, 1.0],
+          midColor: [0.42, 0.45, 0.49, 1.0],
           postSpacing: 2.4
         });
       };
@@ -1320,9 +1320,9 @@ class StandMixinHolder {
     // Lowered & textured 3-sided guardrail around recessed vomitory: Left, Right, and UPPER portal rim (exit mouth ptL_in->ptR_in stays 100% OPEN!)
     const addPitRail = (pA, yA, pB, yB) => {
       solid.addTexturedRailingRun(pA, yA, pB, yB, 0.68, {
-        capColor: [0.80, 0.84, 0.90, 1.0],
-        postColor: [0.24, 0.28, 0.35, 1.0],
-        midColor: [0.58, 0.63, 0.70, 1.0],
+        capColor: [0.46, 0.49, 0.53, 1.0],
+        postColor: [0.32, 0.35, 0.39, 1.0],
+        midColor: [0.42, 0.45, 0.49, 1.0],
         postSpacing: 2.2
       });
     };

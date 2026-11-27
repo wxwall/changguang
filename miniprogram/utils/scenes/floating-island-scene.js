@@ -175,10 +175,12 @@ class FloatingIslandScene extends BaseScene {
     // 7. Fluffy white clouds floating outside the platform (isolated in dynSolid when available)
     this.buildFluffyClouds(cloudBuilder, halfWidth, halfDepth, topY);
 
-    // 8. Golden fairy particles floating around the scene (isolated in dynScreens when available)
-    if (particleBuilder) {
-      this.buildGoldenParticles(particleBuilder, halfWidth, halfDepth, topY);
-    }
+    // Clear floating particles (removed per user request)
+    this.particleInstances = [];
+    this.particleVertexStart = 0;
+    this.particleVertexCount = 0;
+    this.particleBasePositions = null;
+    this.dynamicParticlePositions = null;
   }
 
   hasDynamicAnimation() {

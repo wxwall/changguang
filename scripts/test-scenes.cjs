@@ -163,9 +163,9 @@ console.log('--- 4. Testing Geometry Synthesis & Color Specifications ---');
   assert.ok(Math.abs(clearCol[1] - 238 / 255) < 0.01, 'Clear color green should match #f6eee3');
   assert.ok(Math.abs(clearCol[2] - 227 / 255) < 0.01, 'Clear color blue should match #f6eee3');
 
-  // 5. Verify clouds and fairy particles were created
+  // 5. Verify clouds were created and floating particles are omitted
   assert.ok(island.cloudInstances.length >= 5, 'Should have multiple fluffy cloud instances');
-  assert.ok(island.particleInstances.length >= 20, 'Should have golden fairy particle instances');
+  assert.strictEqual(island.particleInstances.length, 0, 'Floating particles should be omitted');
 
   console.log(`✓ Geometry generated with 100% normal/color integrity (${solid.positions.length / 3} solid, ${screens.positions.length / 3} screens, ${alpha.positions.length / 3} alpha vertices).`);
 }
@@ -291,29 +291,24 @@ console.log('--- 7. Testing Real Dynamic Vertex Animation & WebGL bufferSubData 
 
   assert.ok(island.cloudBasePositions && island.cloudBasePositions.length > 0, 'Cloud base positions must be captured');
   assert.ok(island.dynamicCloudPositions && island.dynamicCloudPositions.length > 0, 'Dynamic cloud positions must be allocated');
-  assert.ok(island.particleBasePositions && island.particleBasePositions.length > 0, 'Particle base positions must be captured');
-  assert.ok(island.dynamicParticlePositions && island.dynamicParticlePositions.length > 0, 'Dynamic particle positions must be allocated');
+  assert.strictEqual(island.particleInstances.length, 0, 'Particles must remain disabled');
 
   // Store initial snapshot at t = 0
   island.update(0.0, 0.016, null);
   const cloudX0 = island.dynamicCloudPositions[0];
   const cloudY0 = island.dynamicCloudPositions[1];
-  const partY0 = island.dynamicParticlePositions[1];
 
   // Advance time to t = 2.5s
   island.update(2.5, 0.016, null);
   const cloudX1 = island.dynamicCloudPositions[0];
   const cloudY1 = island.dynamicCloudPositions[1];
-  const partY1 = island.dynamicParticlePositions[1];
 
   // Verify positions genuinely displaced due to orbital drift and vertical bobbing
   const cloudDeltaX = Math.abs(cloudX1 - cloudX0);
   const cloudDeltaY = Math.abs(cloudY1 - cloudY0);
-  const partDeltaY = Math.abs(partY1 - partY0);
 
   assert.ok(cloudDeltaX > 0.01, `Cloud X position must drift over time (delta = ${cloudDeltaX})`);
   assert.ok(cloudDeltaY > 0.01, `Cloud Y position must bob over time (delta = ${cloudDeltaY})`);
-  assert.ok(partDeltaY > 0.01, `Particle Y position must float upwards over time (delta = ${partDeltaY})`);
 
   // Verify WebGL bufferSubData invocation with spy
   const subDataCalls = [];
@@ -330,15 +325,12 @@ console.log('--- 7. Testing Real Dynamic Vertex Animation & WebGL bufferSubData 
   };
 
   island.update(3.0, 0.016, mockGl, mockBuffers);
-  assert.strictEqual(subDataCalls.length, 2, 'gl.bufferSubData must be called for solid (clouds) and screens (particles)');
+  assert.strictEqual(subDataCalls.length, 1, 'gl.bufferSubData must be called for solid (clouds)');
   assert.strictEqual(subDataCalls[0].target, mockGl.ARRAY_BUFFER);
   assert.strictEqual(subDataCalls[0].offset, island.cloudVertexStart * 3 * 4);
   assert.strictEqual(subDataCalls[0].length, island.cloudVertexCount * 3);
-  assert.strictEqual(subDataCalls[1].target, mockGl.ARRAY_BUFFER);
-  assert.strictEqual(subDataCalls[1].offset, island.particleVertexStart * 3 * 4);
-  assert.strictEqual(subDataCalls[1].length, island.particleVertexCount * 3);
 
-  console.log('✓ Dynamic cloud drift/bobbing, sparkle upward float & WebGL bufferSubData verified.');
+  console.log('✓ Dynamic cloud drift/bobbing & WebGL bufferSubData verified (no particles).');
 }
 
 console.log('\n========================================');

@@ -8,6 +8,7 @@ class MeshBuilder {
     this._posBuf = new Float32Array(initialVertCap * 3);
     this._normBuf = new Float32Array(initialVertCap * 3);
     this._colBuf = new Float32Array(initialVertCap * 4);
+    this._uvBuf = null;
 
     this._useSeatInstancing = false;
     this._seatInstCap = 0;
@@ -55,6 +56,10 @@ class MeshBuilder {
     return this._colBuf.subarray(0, this._vertCount * 4);
   }
 
+  get uvs() {
+    return this._uvBuf ? this._uvBuf.subarray(0, this._vertCount * 2) : null;
+  }
+
   _ensure(extraVerts) {
     const needed = this._vertCount + extraVerts;
     if (needed <= this._cap) return;
@@ -66,10 +71,33 @@ class MeshBuilder {
     nextPos.set(this._posBuf.subarray(0, this._vertCount * 3));
     nextNorm.set(this._normBuf.subarray(0, this._vertCount * 3));
     nextCol.set(this._colBuf.subarray(0, this._vertCount * 4));
+    if (this._uvBuf) {
+      const nextUv = new Float32Array(newCap * 2);
+      nextUv.set(this._uvBuf.subarray(0, this._vertCount * 2));
+      this._uvBuf = nextUv;
+    }
     this._posBuf = nextPos;
     this._normBuf = nextNorm;
     this._colBuf = nextCol;
     this._cap = newCap;
+  }
+
+  addTexturedQuad(p1, p2, p3, p4, u1, v1, u2, v2, color = [1, 1, 1, 1], normal = null) {
+    if (!this._uvBuf) {
+      this._uvBuf = new Float32Array(this._cap * 2);
+    }
+    const startV = this._vertCount;
+    this.addQuad(p1, p2, p3, p4, color, normal);
+    const uIdx = startV * 2;
+    const uv = this._uvBuf;
+    // Tri 1: p1(u1,v1), p2(u1,v2), p3(u2,v2)
+    uv[uIdx] = u1; uv[uIdx + 1] = v1;
+    uv[uIdx + 2] = u1; uv[uIdx + 3] = v2;
+    uv[uIdx + 4] = u2; uv[uIdx + 5] = v2;
+    // Tri 2: p1(u1,v1), p3(u2,v2), p4(u2,v1)
+    uv[uIdx + 6] = u1; uv[uIdx + 7] = v1;
+    uv[uIdx + 8] = u2; uv[uIdx + 9] = v2;
+    uv[uIdx + 10] = u2; uv[uIdx + 11] = v1;
   }
 
   _writeTriRaw(
@@ -625,9 +653,9 @@ class MeshBuilder {
    */
   addTexturedRailingRun(pA, yA, pB, yB, height, opts, alpha) {
     const o = opts || {};
-    const capCol = o.capColor || [0.78, 0.82, 0.88, 1.0];
-    const postCol = o.postColor || [0.24, 0.28, 0.35, 1.0];
-    const midCol = o.midColor || [0.58, 0.63, 0.70, 1.0];
+    const capCol = o.capColor || [0.46, 0.49, 0.53, 1.0];
+    const postCol = o.postColor || [0.32, 0.35, 0.39, 1.0];
+    const midCol = o.midColor || [0.42, 0.45, 0.49, 1.0];
     const glassCol = o.glassColor || [0.56, 0.78, 0.92, 0.22];
     const postSpacing = o.postSpacing || 2.4;
     const includeStartPost = o.includeStartPost !== false;

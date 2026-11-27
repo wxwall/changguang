@@ -299,7 +299,7 @@ class InfieldMixinHolder {
       const spec = computeRunningTrackSpec(infield);
       const trackBrickCol = [0.58, 0.19, 0.10, 1.0];
       const innerApronCol = [0.04, 0.34, 0.23, 1.0];
-      const laneCol = [0.92, 0.94, 0.98, 1.0];
+      const laneCol = [0.50, 0.53, 0.57, 1.0];
 
       for (let i = 0; i < ringAngles.length - 1; i++) {
         const deg1 = ringAngles[i];
@@ -450,7 +450,7 @@ class InfieldMixinHolder {
 
       // Crisp white FIBA court markings at y = 0.14
       const lw = 0.10;
-      const lineCol = [0.96, 0.97, 0.99, 1.0];
+      const lineCol = [0.50, 0.53, 0.57, 1.0];
       addPitchRectOutline(0, 0, pw, pl, lw, 0.14, lineCol);
       addPitchQuad(-hw, -lw / 2, -hw, lw / 2, hw, lw / 2, hw, -lw / 2, 0.14, lineCol);
       addPitchArc(0, 0, ccR, 0, Math.PI * 2, 36, lw, 0.14, lineCol);
@@ -501,7 +501,7 @@ class InfieldMixinHolder {
 
       // Accurate FIFA football pitch markings at y = 0.14
       const lw = 0.20;
-      const lineCol = [0.95, 0.97, 1.0, 1.0];
+      const lineCol = [0.50, 0.53, 0.57, 1.0];
       // Outer touchlines & goal lines + halfway line
       addPitchRectOutline(0, 0, pw, pl, lw, 0.14, lineCol);
       addPitchQuad(-hw, -lw / 2, -hw, lw / 2, hw, lw / 2, hw, -lw / 2, 0.14, lineCol);
@@ -557,7 +557,7 @@ class InfieldMixinHolder {
       const resolvedPair = floorOverride || modColorPair || infieldDefaultPair;
       const seatPanCol = resolvedPair ? resolvedPair.pan : [0.10, 0.78, 0.56, 1.0];
       const seatBackCol = resolvedPair ? resolvedPair.back : [0.04, 0.52, 0.36, 1.0];
-      const railCol = [0.84, 0.88, 0.94, 1.0];
+      const railCol = [0.46, 0.49, 0.53, 1.0];
 
       const rotDeg = Number(mod.rotationDeg) || 0;
       const rotYRad = -rotDeg * DEG2RAD;
@@ -597,9 +597,9 @@ class InfieldMixinHolder {
 
       // Lowered & textured front/rear perimeter safety rails (~0.66m)
       const railOpts = {
-        capColor: [0.80, 0.84, 0.90, 1.0],
-        postColor: [0.24, 0.28, 0.35, 1.0],
-        midColor: [0.58, 0.63, 0.70, 1.0],
+        capColor: [0.46, 0.49, 0.53, 1.0],
+        postColor: [0.32, 0.35, 0.39, 1.0],
+        midColor: [0.42, 0.45, 0.49, 1.0],
         postSpacing: 3.0,
         showGlass: true
       };
@@ -634,7 +634,7 @@ class InfieldMixinHolder {
         : null;
       const panCol = floorOverride ? floorOverride.pan : (schemaPair ? schemaPair.pan : (infieldDefaultPair ? infieldDefaultPair.pan : [0.18, 0.42, 0.76, 1.0]));
       const backCol = floorOverride ? floorOverride.back : (schemaPair ? schemaPair.back : (infieldDefaultPair ? infieldDefaultPair.back : [0.14, 0.34, 0.64, 1.0]));
-      const railCol = [0.58, 0.64, 0.72, 1.0];
+      const railCol = [0.46, 0.49, 0.53, 1.0];
       const rotDeg = blk.rotDeg || 0;
       const rotYRad = -rotDeg * DEG2RAD;
       const hw = blk.width / 2;
@@ -703,9 +703,9 @@ class InfieldMixinHolder {
 
       // Lowered & textured perimeter open safety rails (~0.64m)
       const railOpts = {
-        capColor: [0.76, 0.80, 0.86, 1.0],
-        postColor: [0.24, 0.28, 0.35, 1.0],
-        midColor: [0.54, 0.60, 0.68, 1.0],
+        capColor: [0.46, 0.49, 0.53, 1.0],
+        postColor: [0.32, 0.35, 0.39, 1.0],
+        midColor: [0.42, 0.45, 0.49, 1.0],
         postSpacing: 3.2
       };
       const fL = matPt(-hw, frontLocalZ, yFront);
@@ -717,7 +717,7 @@ class InfieldMixinHolder {
     });
   }
 
-  buildSportsEquipmentMesh(solid, alpha, screens) {
+  buildSportsEquipmentMesh(solid, alpha, screens, ledBoards) {
     const infield = this.venue.infield;
     if (!infield) return;
     const pw = infield.pitchWidth || 68;
@@ -796,10 +796,10 @@ class InfieldMixinHolder {
     }
 
     // Perimeter LED Advertising Boards around the field in Sports mode
-    this.buildSportsPerimeterBoardsMesh(solid, screens);
+    this.buildSportsPerimeterBoardsMesh(solid, screens, ledBoards);
   }
 
-  buildSportsPerimeterBoardsMesh(solid, screens) {
+  buildSportsPerimeterBoardsMesh(solid, screens, ledBoards) {
     const infield = this.venue.infield;
     if (!infield) return;
     const isCourt = infield.surfaceType === 'hardwood-court';
@@ -856,6 +856,27 @@ class InfieldMixinHolder {
       const faceOff = boardDepth * 0.5 + 0.012;
       const botY = 0.08;
       const topY = boardH + 0.03;
+
+      if (ledBoards && typeof ledBoards.addTexturedQuad === 'function') {
+        const pStart = rotateXZ(lx1 + inNx * faceOff, lz1 + inNz * faceOff, pitchOri);
+        const pEnd = rotateXZ(lx2 + inNx * faceOff, lz2 + inNz * faceOff, pitchOri);
+        const unitLen = Math.max(4.0, (topY - botY) * 8.0);
+        const uRepeat = Math.max(1, Math.round(totalLen / unitLen));
+        // Ensure text always reads left-to-right when viewed from inside the field:
+        // right-hand direction when looking along (-inNx, 0, -inNz) with +Y up is (inNz, 0, -inNx)
+        const textRightDot = dirX * inNz + dirZ * (-inNx);
+        const pLeft = textRightDot >= 0 ? pStart : pEnd;
+        const pRight = textRightDot >= 0 ? pEnd : pStart;
+        ledBoards.addTexturedQuad(
+          { x: pLeft.x, y: botY, z: pLeft.z },
+          { x: pLeft.x, y: topY, z: pLeft.z },
+          { x: pRight.x, y: topY, z: pRight.z },
+          { x: pRight.x, y: botY, z: pRight.z },
+          0, 1, uRepeat, 0,
+          [1, 1, 1, 1]
+        );
+      }
+
       const stripeTopY = topY - 0.055;
       const midBandY = botY + (stripeTopY - botY) * 0.22;
 
@@ -871,6 +892,10 @@ class InfieldMixinHolder {
         const lcz = lz1 + dirZ * midS;
         const footPos = rotateXZ(lcx - inNx * 0.14, lcz - inNz * 0.14, pitchOri);
         solid.addBox(footPos.x, 0.18, footPos.z, 0.08, 0.34, 0.18, bezelCol, segAngleRad);
+
+        if (ledBoards && typeof ledBoards.addTexturedQuad === 'function') {
+          continue;
+        }
 
         const pA = rotateXZ(lx1 + dirX * s0 + inNx * faceOff, lz1 + dirZ * s0 + inNz * faceOff, pitchOri);
         const pB = rotateXZ(lx1 + dirX * s1 + inNx * faceOff, lz1 + dirZ * s1 + inNz * faceOff, pitchOri);

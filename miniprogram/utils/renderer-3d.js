@@ -45,6 +45,7 @@ const VERTEX_SHADER = `
   attribute vec3 aPosition;
   attribute vec3 aNormal;
   attribute vec4 aColor;
+  attribute vec2 aUv;
   attribute vec4 aInstPosWidth;
   attribute vec3 aInstDirDepth;
   attribute vec3 aInstPanCol;
@@ -54,8 +55,10 @@ const VERTEX_SHADER = `
   varying vec3 vNormal;
   varying vec4 vColor;
   varying vec3 vWorldPos;
+  varying vec2 vUv;
 
   void main() {
+    vUv = aUv;
     if (uIsInstancedSeat > 0.5) {
       vec3 localPos = vec3(aPosition.x * aInstPosWidth.w, aPosition.y, aPosition.z * aInstDirDepth.z);
       float fx = aInstDirDepth.x;
@@ -90,14 +93,21 @@ const FRAGMENT_SHADER = `
   varying vec3 vNormal;
   varying vec4 vColor;
   varying vec3 vWorldPos;
+  varying vec2 vUv;
   uniform float uTime;
   uniform float uIsUnlit;
+  uniform float uUseTex;
+  uniform sampler2D uLedTex;
   uniform vec3 uCamEye;
   uniform float uLightsOff;
   uniform vec3 uStagePos;
   uniform float uStageGlow;
 
   void main() {
+    if (uUseTex > 0.5) {
+      gl_FragColor = texture2D(uLedTex, vUv);
+      return;
+    }
     if (uIsUnlit > 0.5) {
       gl_FragColor = vColor;
       return;
@@ -162,6 +172,9 @@ class Renderer3D {
     this.beamBuffers = null;
     this.dynSolidBuffers = null;
     this.dynScreenBuffers = null;
+    this.ledBuffers = null;
+    this.ledTexture = null;
+    this.ledTextureVenueName = null;
     this.seatInstBuffers = null;
     this.seatProtoBuffers = null;
     this.instExt = null;
@@ -244,6 +257,7 @@ class Renderer3D {
     this.attribPos = gl.getAttribLocation(prog, 'aPosition');
     this.attribNorm = gl.getAttribLocation(prog, 'aNormal');
     this.attribCol = gl.getAttribLocation(prog, 'aColor');
+    this.attribUv = gl.getAttribLocation(prog, 'aUv');
     this.attribInstPosWidth = gl.getAttribLocation(prog, 'aInstPosWidth');
     this.attribInstDirDepth = gl.getAttribLocation(prog, 'aInstDirDepth');
     this.attribInstPanCol = gl.getAttribLocation(prog, 'aInstPanCol');
@@ -252,6 +266,8 @@ class Renderer3D {
     this.uniIsInstancedSeat = gl.getUniformLocation(prog, 'uIsInstancedSeat');
     this.uniTime = gl.getUniformLocation(prog, 'uTime');
     this.uniIsUnlit = gl.getUniformLocation(prog, 'uIsUnlit');
+    this.uniUseTex = gl.getUniformLocation(prog, 'uUseTex');
+    this.uniLedTex = gl.getUniformLocation(prog, 'uLedTex');
     this.uniCamEye = gl.getUniformLocation(prog, 'uCamEye');
     this.uniLightsOff = gl.getUniformLocation(prog, 'uLightsOff');
     this.uniStagePos = gl.getUniformLocation(prog, 'uStagePos');
@@ -430,7 +446,90 @@ class Renderer3D {
     if (bufGroup.posBuf) gl.deleteBuffer(bufGroup.posBuf);
     if (bufGroup.normBuf) gl.deleteBuffer(bufGroup.normBuf);
     if (bufGroup.colBuf) gl.deleteBuffer(bufGroup.colBuf);
+    if (bufGroup.uvBuf) gl.deleteBuffer(bufGroup.uvBuf);
     if (bufGroup.instBuf) gl.deleteBuffer(bufGroup.instBuf);
+  }
+
+  updateLedBannerTexture(venueName) {
+    const gl = this.gl;
+    if (!gl || typeof wx === 'undefined' || typeof wx.createOffscreenCanvas !== 'function') {
+      return;
+    }
+    const label = (venueName ? String(venueName).trim() : '') || '智慧体育场馆';
+    if (this.ledTexture && this.ledTextureVenueName === label) {
+      return;
+    }
+
+    try {
+      const texW = 1024;
+      const texH = 128;
+      const canvas = wx.createOffscreenCanvas({ type: '2d', width: texW, height: texH });
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      // Illuminated deep-electric-blue LED panel backdrop
+      const grad = ctx.createLinearGradient(0, 0, texW, 0);
+      grad.addColorStop(0.0, '#071a3e');
+      grad.addColorStop(0.25, '#0d367a');
+      grad.addColorStop(0.5, '#13499e');
+      grad.addColorStop(0.75, '#0d367a');
+      grad.addColorStop(1.0, '#071a3e');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, texW, texH);
+
+      // Top and bottom glowing cyan/gold LED ticker borders
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillRect(0, 0, texW, 6);
+      ctx.fillStyle = '#facc15';
+      ctx.fillRect(0, texH - 6, texW, 6);
+
+      // Subtle vertical LED module divider accent
+      ctx.fillStyle = 'rgba(56, 189, 248, 0.35)';
+      ctx.fillRect(0, 14, 6, texH - 28);
+      ctx.fillRect(texW - 6, 14, 6, texH - 28);
+
+      const text = `${label}欢迎你`;
+      let fontSize = 56;
+      ctx.font = `bold ${fontSize}px sans-serif`;
+      const maxTextW = texW - 88;
+      let measured = ctx.measureText(text).width;
+      if (measured > maxTextW && measured > 0) {
+        fontSize = Math.max(26, Math.floor(fontSize * (maxTextW / measured)));
+        ctx.font = `bold ${fontSize}px sans-serif`;
+      }
+
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor = 'rgba(56, 189, 248, 0.9)';
+      ctx.shadowBlur = 14;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(text, texW * 0.5, texH * 0.52);
+
+      // Second pass crisp golden-white highlight
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#fef08a';
+      ctx.fillText(text, texW * 0.5, texH * 0.52);
+
+      const imgData = ctx.getImageData(0, 0, texW, texH);
+      const pixels = new Uint8Array(imgData.data.buffer, imgData.data.byteOffset, imgData.data.byteLength);
+
+      if (this.ledTexture && typeof gl.deleteTexture === 'function') {
+        gl.deleteTexture(this.ledTexture);
+      }
+      const tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, texW, texH, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+
+      this.ledTexture = tex;
+      this.ledTextureVenueName = label;
+    } catch (e) {
+      // Safe fallback when offscreen canvas or getImageData is unavailable
+    }
   }
 
   rebuildSceneMeshes() {
@@ -442,6 +541,7 @@ class Renderer3D {
     this.disposeBufferGroup(this.beamBuffers);
     this.disposeBufferGroup(this.dynSolidBuffers);
     this.disposeBufferGroup(this.dynScreenBuffers);
+    this.disposeBufferGroup(this.ledBuffers);
     this.disposeBufferGroup(this.seatInstBuffers);
     this.solidBuffers = null;
     this.screenBuffers = null;
@@ -449,6 +549,7 @@ class Renderer3D {
     this.beamBuffers = null;
     this.dynSolidBuffers = null;
     this.dynScreenBuffers = null;
+    this.ledBuffers = null;
     this.seatInstBuffers = null;
 
     let estRows = 0;
@@ -505,11 +606,15 @@ class Renderer3D {
     this.buildStadiumCanopyRim(solid, alpha, screens);
 
     // 6. Concert Stage + Concert Infield Floor Seating Blocks OR Sports Goals/Hoops & Perimeter LED Boards
+    let ledBoards = null;
     if (this.viewMode === 'concert') {
       this.buildConcertInfieldSeatsMesh(solid, alpha);
       this.buildConcertStageMesh(solid, screens, beams);
     } else {
-      this.buildSportsEquipmentMesh(solid, alpha, screens);
+      ledBoards = new MeshBuilder(256);
+      const venueName = (this.venue && (this.venue.name || this.venue.shortLabel)) || '体育场馆';
+      this.updateLedBannerTexture(venueName);
+      this.buildSportsEquipmentMesh(solid, alpha, screens, this.ledTexture ? ledBoards : null);
     }
 
     this.solidBuffers = this.uploadMesh(solid);
@@ -518,6 +623,9 @@ class Renderer3D {
     this.beamBuffers = this.uploadMesh(beams);
     this.dynSolidBuffers = this.uploadMesh(dynSolid, this.gl.DYNAMIC_DRAW);
     this.dynScreenBuffers = this.uploadMesh(dynScreens, this.gl.DYNAMIC_DRAW);
+    if (ledBoards) {
+      this.ledBuffers = this.uploadMesh(ledBoards);
+    }
     if (useInstancing && solid.seatInstanceCount > 0) {
       this.seatInstBuffers = this.uploadSeatInstances(solid.seatInstances, solid.seatInstanceCount);
     }
@@ -546,8 +654,16 @@ class Renderer3D {
     gl.bindBuffer(gl.ARRAY_BUFFER, colBuf);
     gl.bufferData(gl.ARRAY_BUFFER, col instanceof Float32Array ? col : new Float32Array(col), drawUsage);
 
+    let uvBuf = null;
+    const uvs = meshBuilder.uvs;
+    if (uvs && uvs.length > 0) {
+      uvBuf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, uvBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, uvs instanceof Float32Array ? uvs : new Float32Array(uvs), drawUsage);
+    }
+
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
-    return { posBuf, normBuf, colBuf, count };
+    return { posBuf, normBuf, colBuf, uvBuf, count };
   }
 
   uploadSeatInstances(instData, instCount) {
@@ -632,6 +748,7 @@ class Renderer3D {
     const gl = this.gl;
 
     if (this.uniIsInstancedSeat) gl.uniform1f(this.uniIsInstancedSeat, 0.0);
+    if (this.uniUseTex) gl.uniform1f(this.uniUseTex, 0.0);
     gl.uniform1f(this.uniIsUnlit, isUnlit ? 1.0 : 0.0);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, bufGroup.posBuf);
@@ -647,6 +764,45 @@ class Renderer3D {
     gl.vertexAttribPointer(this.attribCol, 4, gl.FLOAT, false, 0, 0);
 
     gl.drawArrays(gl.TRIANGLES, 0, bufGroup.count);
+  }
+
+  drawTexturedBufferGroup(bufGroup, texture) {
+    if (!bufGroup || bufGroup.count === 0 || !bufGroup.uvBuf || !texture) return;
+    const gl = this.gl;
+
+    if (this.uniIsInstancedSeat) gl.uniform1f(this.uniIsInstancedSeat, 0.0);
+    gl.uniform1f(this.uniIsUnlit, 1.0);
+    if (this.uniUseTex) gl.uniform1f(this.uniUseTex, 1.0);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    if (this.uniLedTex) gl.uniform1i(this.uniLedTex, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufGroup.posBuf);
+    gl.enableVertexAttribArray(this.attribPos);
+    gl.vertexAttribPointer(this.attribPos, 3, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufGroup.normBuf);
+    gl.enableVertexAttribArray(this.attribNorm);
+    gl.vertexAttribPointer(this.attribNorm, 3, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufGroup.colBuf);
+    gl.enableVertexAttribArray(this.attribCol);
+    gl.vertexAttribPointer(this.attribCol, 4, gl.FLOAT, false, 0, 0);
+
+    if (this.attribUv >= 0) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, bufGroup.uvBuf);
+      gl.enableVertexAttribArray(this.attribUv);
+      gl.vertexAttribPointer(this.attribUv, 2, gl.FLOAT, false, 0, 0);
+    }
+
+    gl.drawArrays(gl.TRIANGLES, 0, bufGroup.count);
+
+    if (this.attribUv >= 0) {
+      gl.disableVertexAttribArray(this.attribUv);
+    }
+    if (this.uniUseTex) gl.uniform1f(this.uniUseTex, 0.0);
+    gl.bindTexture(gl.TEXTURE_2D, null);
   }
 
   renderFrame() {
@@ -749,6 +905,9 @@ class Renderer3D {
     }
     if (this.dynScreenBuffers && this.dynScreenBuffers.count > 0) {
       this.drawBufferGroup(this.dynScreenBuffers, true);
+    }
+    if (this.ledBuffers && this.ledBuffers.count > 0 && this.ledTexture) {
+      this.drawTexturedBufferGroup(this.ledBuffers, this.ledTexture);
     }
 
     // 2. Tempered glass guardrails

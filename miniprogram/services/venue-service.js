@@ -313,8 +313,6 @@ function extractVenueDoc(doc) {
   const shortLabel = (normalized.name || '场馆').split(' ')[0];
   const capLabel = codeText ? `${codeText} · ${capText}` : capText;
 
-  console.log(`[DEBUG-stadium-cloud] 成功解析场馆: [${venueId}] ${shortLabel}, 看台层数: ${normalized.standTiers.length}`);
-
   return {
     ...normalized,
     id: venueId,
@@ -388,6 +386,93 @@ function ensureCloudInit() {
   }
 }
 
+function hasCloudFunctionSupport() {
+  return typeof wx !== 'undefined' && wx.cloud && typeof wx.cloud.callFunction === 'function';
+}
+
+const OBFS_KEY = 'SC_2026_VENUE_RENDER_KEY_V1';
+const B64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+function base64ToBytes(b64) {
+  const clean = String(b64 || '').replace(/[^A-Za-z0-9+/=]/g, '');
+  const len = clean.length;
+  const pad = clean.endsWith('==') ? 2 : (clean.endsWith('=') ? 1 : 0);
+  const byteLen = ((len * 3) >> 2) - pad;
+  const bytes = new Uint8Array(byteLen);
+  let p = 0;
+  for (let i = 0; i < len; i += 4) {
+    const e1 = B64_CHARS.indexOf(clean[i]);
+    const e2 = B64_CHARS.indexOf(clean[i + 1]);
+    const e3 = B64_CHARS.indexOf(clean[i + 2]);
+    const e4 = B64_CHARS.indexOf(clean[i + 3]);
+    const n = (e1 << 18) | (e2 << 12) | ((e3 & 63) << 6) | (e4 & 63);
+    if (p < byteLen) bytes[p++] = (n >> 16) & 0xff;
+    if (p < byteLen) bytes[p++] = (n >> 8) & 0xff;
+    if (p < byteLen) bytes[p++] = n & 0xff;
+  }
+  return bytes;
+}
+
+function utf8Decode(bytes) {
+  const chunks = [];
+  let i = 0;
+  while (i < bytes.length) {
+    const b0 = bytes[i++];
+    if (b0 < 0x80) {
+      chunks.push(String.fromCharCode(b0));
+    } else if (b0 < 0xe0) {
+      const b1 = bytes[i++] & 0x3f;
+      chunks.push(String.fromCharCode(((b0 & 0x1f) << 6) | b1));
+    } else if (b0 < 0xf0) {
+      const b1 = bytes[i++] & 0x3f;
+      const b2 = bytes[i++] & 0x3f;
+      chunks.push(String.fromCharCode(((b0 & 0x0f) << 12) | (b1 << 6) | b2));
+    } else {
+      const b1 = bytes[i++] & 0x3f;
+      const b2 = bytes[i++] & 0x3f;
+      const b3 = bytes[i++] & 0x3f;
+      const cp = (((b0 & 0x07) << 18) | (b1 << 12) | (b2 << 6) | b3) - 0x10000;
+      chunks.push(String.fromCharCode(0xd800 + (cp >> 10), 0xdc00 + (cp & 0x3ff)));
+    }
+  }
+  return chunks.join('');
+}
+
+function decodePayload(b64) {
+  const raw = base64ToBytes(b64);
+  if (raw.length < 4) {
+    throw new Error('无效的编码响应');
+  }
+  const salt0 = raw[0], salt1 = raw[1], salt2 = raw[2], salt3 = raw[3];
+  const salts = [salt0, salt1, salt2, salt3];
+  const out = new Uint8Array(raw.length - 4);
+  const keyLen = OBFS_KEY.length;
+  for (let i = 0; i < out.length; i++) {
+    const k = OBFS_KEY.charCodeAt(i % keyLen) ^ salts[i & 3] ^ ((i * 13 + 7) & 0xff);
+    const shifted = (raw[4 + i] - (salts[(i + 1) & 3] & 0x1f) + 256) & 0xff;
+    out[i] = shifted ^ k;
+  }
+  return JSON.parse(utf8Decode(out));
+}
+
+async function callStadiumProxy(payload) {
+  const res = await wx.cloud.callFunction({
+    name: 'stadiumProxy',
+    data: payload
+  });
+  const result = res && res.result;
+  if (!result || !result.ok) {
+    const msg = (result && result.message) || '云函数 stadiumProxy 调用失败';
+    const err = new Error(msg);
+    err.code = (result && result.code) || 'CLOUD_PROXY_ERROR';
+    throw err;
+  }
+  if (result.encoded && typeof result.payload === 'string') {
+    return decodePayload(result.payload);
+  }
+  return result.data;
+}
+
 /**
  * 尝试从本地内置数据中加载场馆（作为离线或云端异常兜底）
  */
@@ -434,54 +519,57 @@ async function loadStadiumProjectList(options = {}) {
   try {
     ensureCloudInit();
 
-    const db = wx.cloud.database();
-    const collection = db.collection('stadiumProjects');
+    let rawDocs = [];
+    if (hasCloudFunctionSupport()) {
+      const proxyData = await callStadiumProxy({ action: 'list' });
+      rawDocs = Array.isArray(proxyData) ? proxyData : [];
+    } else {
+      const db = wx.cloud.database();
+      const collection = db.collection('stadiumProjects');
 
-    let total = null;
-    try {
-      const countRes = await collection.count();
-      if (countRes && typeof countRes.total === 'number') {
-        total = countRes.total;
+      let total = null;
+      try {
+        const countRes = await collection.count();
+        if (countRes && typeof countRes.total === 'number') {
+          total = countRes.total;
+        }
+      } catch (countErr) {
+        // Fallback to cursor probing
       }
-    } catch (countErr) {
-      console.warn('[DEBUG-stadium-cloud] 摘要列表获取总数失败，将采用分页探测:', countErr);
-    }
 
-    const rawDocs = [];
-    if (total !== null) {
-      for (let offset = 0; offset < total; offset += MAX_PAGE_LIMIT) {
-        const pageSize = Math.min(MAX_PAGE_LIMIT, total - offset);
-        try {
-          const res = await collection.skip(offset).limit(pageSize).field(SUMMARY_FIELDS).get();
-          if (res && Array.isArray(res.data)) {
-            rawDocs.push(...res.data);
-          }
-        } catch (pageErr) {
-          console.warn(`[DEBUG-stadium-cloud] 摘要分页 [${offset}, ${offset + pageSize}) 失败，回退单条摘要拉取:`, pageErr);
-          for (let i = offset; i < offset + pageSize; i++) {
-            try {
-              const singleRes = await collection.skip(i).limit(1).field(SUMMARY_FIELDS).get();
-              if (singleRes && Array.isArray(singleRes.data) && singleRes.data.length > 0) {
-                rawDocs.push(singleRes.data[0]);
+      if (total !== null) {
+        for (let offset = 0; offset < total; offset += MAX_PAGE_LIMIT) {
+          const pageSize = Math.min(MAX_PAGE_LIMIT, total - offset);
+          try {
+            const res = await collection.skip(offset).limit(pageSize).field(SUMMARY_FIELDS).get();
+            if (res && Array.isArray(res.data)) {
+              rawDocs.push(...res.data);
+            }
+          } catch (pageErr) {
+            for (let i = offset; i < offset + pageSize; i++) {
+              try {
+                const singleRes = await collection.skip(i).limit(1).field(SUMMARY_FIELDS).get();
+                if (singleRes && Array.isArray(singleRes.data) && singleRes.data.length > 0) {
+                  rawDocs.push(singleRes.data[0]);
+                }
+              } catch (singleErr) {
+                // Skip failed item
               }
-            } catch (singleErr) {
-              console.warn(`[DEBUG-stadium-cloud] 摘要索引 ${i} 拉取失败，跳过:`, singleErr);
             }
           }
         }
-      }
-    } else {
-      const maxPages = 10;
-      for (let page = 0; page < maxPages; page++) {
-        const offset = page * MAX_PAGE_LIMIT;
-        try {
-          const res = await collection.skip(offset).limit(MAX_PAGE_LIMIT).field(SUMMARY_FIELDS).get();
-          const batch = (res && Array.isArray(res.data)) ? res.data : [];
-          rawDocs.push(...batch);
-          if (batch.length < MAX_PAGE_LIMIT) break;
-        } catch (probeErr) {
-          console.warn('[DEBUG-stadium-cloud] 摘要探测分页异常:', probeErr);
-          break;
+      } else {
+        const maxPages = 10;
+        for (let page = 0; page < maxPages; page++) {
+          const offset = page * MAX_PAGE_LIMIT;
+          try {
+            const res = await collection.skip(offset).limit(MAX_PAGE_LIMIT).field(SUMMARY_FIELDS).get();
+            const batch = (res && Array.isArray(res.data)) ? res.data : [];
+            rawDocs.push(...batch);
+            if (batch.length < MAX_PAGE_LIMIT) break;
+          } catch (probeErr) {
+            break;
+          }
         }
       }
     }
@@ -680,60 +768,63 @@ async function loadStadiumProjectById(venueId, docId) {
 
   try {
     ensureCloudInit();
-    const db = wx.cloud.database();
-    const collection = db.collection('stadiumProjects');
     let doc = null;
-    const excludeLargeFields = {
-      history: false,
-      snapshots: false,
-      versions: false,
-      rawCad: false,
-      cadFile: false,
-      previewImage: false
-    };
 
-    if (docId) {
-      try {
-        const res = await collection.doc(docId).get();
-        if (res && res.data) {
-          doc = res.data;
-        }
-      } catch (err) {
-        console.warn('[DEBUG-stadium-cloud] doc(_id).get() 失败，尝试排除大字段拉取:', err && (err.errMsg || err.message));
+    if (hasCloudFunctionSupport()) {
+      doc = await callStadiumProxy({ action: 'detail', venueId, docId });
+    } else {
+      const db = wx.cloud.database();
+      const collection = db.collection('stadiumProjects');
+      const excludeLargeFields = {
+        history: false,
+        snapshots: false,
+        versions: false,
+        rawCad: false,
+        cadFile: false,
+        previewImage: false
+      };
+
+      if (docId) {
         try {
-          const resFallback = await collection.doc(docId).field(excludeLargeFields).get();
-          if (resFallback && resFallback.data) {
-            doc = resFallback.data;
+          const res = await collection.doc(docId).get();
+          if (res && res.data) {
+            doc = res.data;
           }
-        } catch (fbErr) {
-          console.warn('[DEBUG-stadium-cloud] doc(_id) 排除大字段后仍失败:', fbErr && (fbErr.errMsg || fbErr.message));
+        } catch (err) {
+          try {
+            const resFallback = await collection.doc(docId).field(excludeLargeFields).get();
+            if (resFallback && resFallback.data) {
+              doc = resFallback.data;
+            }
+          } catch (fbErr) {
+            // Ignore fallback error
+          }
         }
       }
-    }
 
-    if (!doc && venueId) {
-      try {
-        const _ = db.command;
-        const res = await collection.where(_.or([
-          { _id: venueId },
-          { id: venueId }
-        ])).limit(1).get();
-        if (res && Array.isArray(res.data) && res.data.length > 0) {
-          doc = res.data[0];
-        }
-      } catch (whereErr) {
-        console.warn('[DEBUG-stadium-cloud] 条件查询单场馆失败，尝试排除大字段:', whereErr && (whereErr.errMsg || whereErr.message));
+      if (!doc && venueId) {
         try {
           const _ = db.command;
-          const resFallback = await collection.where(_.or([
+          const res = await collection.where(_.or([
             { _id: venueId },
             { id: venueId }
-          ])).limit(1).field(excludeLargeFields).get();
-          if (resFallback && Array.isArray(resFallback.data) && resFallback.data.length > 0) {
-            doc = resFallback.data[0];
+          ])).limit(1).get();
+          if (res && Array.isArray(res.data) && res.data.length > 0) {
+            doc = res.data[0];
           }
-        } catch (whereFbErr) {
-          console.warn('[DEBUG-stadium-cloud] 条件查询排除大字段后仍失败:', whereFbErr);
+        } catch (whereErr) {
+          try {
+            const _ = db.command;
+            const resFallback = await collection.where(_.or([
+              { _id: venueId },
+              { id: venueId }
+            ])).limit(1).field(excludeLargeFields).get();
+            if (resFallback && Array.isArray(resFallback.data) && resFallback.data.length > 0) {
+              doc = resFallback.data[0];
+            }
+          } catch (whereFbErr) {
+            // Ignore fallback error
+          }
         }
       }
     }
