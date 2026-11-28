@@ -120,9 +120,10 @@ const SUMMARY_FIELDS = {
 const RENDER_ALLOWED_KEYS = [
   '_id', 'id', 'name', 'shortLabel', 'capLabel', 'code',
   'city', 'cityName', 'province', 'region', 'location', 'address', 'description',
-  'tierCount', 'engineeringSummary',
+  'tierCount', 'engineeringSummary', 'schemaVersion',
   'standTiers', 'stands', 'tiers', 'stand_tiers',
-  'infield', 'facade', 'roof', 'updatedAt'
+  'infield', 'infieldModules', 'gridSystem', 'sightlineConfig',
+  'facade', 'roof', 'updatedAt'
 ];
 
 function sanitizeContainer(obj) {
@@ -136,20 +137,34 @@ function sanitizeContainer(obj) {
   return out;
 }
 
+function parseNestedContainer(val) {
+  if (typeof val === 'string') {
+    try {
+      val = JSON.parse(val);
+    } catch (e) {
+      return undefined;
+    }
+  }
+  if (val && typeof val === 'object' && !Array.isArray(val)) {
+    return sanitizeContainer(val);
+  }
+  return undefined;
+}
+
 function sanitizeVenueDoc(doc) {
   if (!doc || typeof doc !== 'object') return null;
   const clean = sanitizeContainer(doc);
-  for (const nestedKey of ['schema', 'data', 'project', 'venue']) {
+  for (const nestedKey of ['schema', 'data', 'project', 'venue', 'content', 'projectData', 'stadiumData']) {
     if (doc[nestedKey] !== undefined) {
-      if (typeof doc[nestedKey] === 'string') {
-        try {
-          const parsed = JSON.parse(doc[nestedKey]);
-          clean[nestedKey] = sanitizeContainer(parsed);
-        } catch (e) {
-          // Ignore malformed JSON string
+      const sanitizedNested = parseNestedContainer(doc[nestedKey]);
+      if (sanitizedNested !== undefined) {
+        if ((nestedKey === 'data' || nestedKey === 'project') && doc[nestedKey] && typeof doc[nestedKey] === 'object' && doc[nestedKey].schema !== undefined) {
+          const innerSchema = parseNestedContainer(doc[nestedKey].schema);
+          if (innerSchema !== undefined) {
+            sanitizedNested.schema = innerSchema;
+          }
         }
-      } else if (doc[nestedKey] && typeof doc[nestedKey] === 'object') {
-        clean[nestedKey] = sanitizeContainer(doc[nestedKey]);
+        clean[nestedKey] = sanitizedNested;
       }
     }
   }

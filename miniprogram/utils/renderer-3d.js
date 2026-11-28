@@ -56,6 +56,8 @@ const VERTEX_SHADER = `
   varying vec4 vColor;
   varying vec3 vWorldPos;
   varying vec2 vUv;
+  varying vec3 vSeatFlatCol;
+  varying float vIsSeat;
 
   void main() {
     vUv = aUv;
@@ -77,12 +79,16 @@ const VERTEX_SHADER = `
       );
       vec3 tint = aColor.a < 0.5 ? vec3(1.0) : (aColor.a < 1.5 ? aInstPanCol : aInstBackCol);
       vColor = vec4(aColor.rgb * tint, 1.0);
+      vSeatFlatCol = aInstPanCol * 0.94;
+      vIsSeat = 1.0;
       vWorldPos = worldPos;
       gl_Position = uMVP * vec4(worldPos, 1.0);
       return;
     }
     vNormal = aNormal;
     vColor = aColor;
+    vSeatFlatCol = aColor.rgb;
+    vIsSeat = 0.0;
     vWorldPos = aPosition;
     gl_Position = uMVP * vec4(aPosition, 1.0);
   }
@@ -94,11 +100,14 @@ const FRAGMENT_SHADER = `
   varying vec4 vColor;
   varying vec3 vWorldPos;
   varying vec2 vUv;
+  varying vec3 vSeatFlatCol;
+  varying float vIsSeat;
   uniform float uTime;
   uniform float uIsUnlit;
   uniform float uUseTex;
   uniform sampler2D uLedTex;
   uniform vec3 uCamEye;
+  uniform float uZoomLevel;
   uniform float uLightsOff;
   uniform vec3 uStagePos;
   uniform float uStageGlow;
@@ -118,10 +127,12 @@ const FRAGMENT_SHADER = `
     float hemi = 0.5 + 0.5 * norm.y;
     float wrap = max(0.0, (dot(norm, normalize(vec3(0.24, 0.94, 0.24))) + 0.65) / 1.65);
     float baseLighting = 0.68 + 0.18 * hemi + 0.12 * wrap;
-    // Attenuate high-frequency normal contrast at bird's-eye distances to suppress seat moiré
+    // Attenuate high-frequency normal contrast and seat sub-part contrast by zoom-adjusted distance to suppress moiré without losing zoom-in detail
     float camDist = length(vWorldPos - uCamEye);
-    float distFade = smoothstep(120.0, 320.0, camDist);
-    float lighting = mix(baseLighting, 0.88, distFade * 0.55);
+    float effectiveDist = camDist / max(1.0, uZoomLevel);
+    float distFade = smoothstep(55.0, 140.0, effectiveDist);
+    float lighting = mix(baseLighting, 0.86, distFade * (vIsSeat > 0.5 ? 0.92 : 0.55));
+    vec3 surfaceRgb = vIsSeat > 0.5 ? mix(vColor.rgb, vSeatFlatCol, distFade) : vColor.rgb;
 
     if (uLightsOff > 0.5) {
       float darkAmbient = 0.07 + 0.04 * hemi;
@@ -130,7 +141,7 @@ const FRAGMENT_SHADER = `
       lighting = mix(darkAmbient, 0.78 + 0.16 * hemi, stagePool * 0.88);
     }
 
-    gl_FragColor = vec4(vColor.rgb * lighting, vColor.a);
+    gl_FragColor = vec4(surfaceRgb * lighting, vColor.a);
   }
 `;
 
@@ -172,14 +183,21 @@ class Renderer3D {
     this.beamBuffers = null;
     this.dynSolidBuffers = null;
     this.dynScreenBuffers = null;
+    this.roofSolidBuffers = null;
+    this.roofScreenBuffers = null;
+    this.roofAlphaBuffers = null;
+    this.birdRoofAlphaBuffers = null;
+    this.birdRoofWireBuffers = null;
     this.ledBuffers = null;
     this.ledTexture = null;
     this.ledTextureVenueName = null;
     this.seatInstBuffers = null;
     this.seatProtoBuffers = null;
+    this.seatSimpleProtoBuffers = null;
     this.instExt = null;
 
     this._needsRender = true;
+    this._isInteracting = false;
     this.onNeedRender = null;
 
     this.tierColorOverrides = {};
@@ -194,6 +212,15 @@ class Renderer3D {
     this._needsRender = true;
     if (typeof this.onNeedRender === 'function') {
       this.onNeedRender();
+    }
+  }
+
+  setInteracting(interacting) {
+    const next = Boolean(interacting);
+    if (this._isInteracting === next) return;
+    this._isInteracting = next;
+    if (!next) {
+      this.requestRender();
     }
   }
 
@@ -269,6 +296,7 @@ class Renderer3D {
     this.uniUseTex = gl.getUniformLocation(prog, 'uUseTex');
     this.uniLedTex = gl.getUniformLocation(prog, 'uLedTex');
     this.uniCamEye = gl.getUniformLocation(prog, 'uCamEye');
+    this.uniZoomLevel = gl.getUniformLocation(prog, 'uZoomLevel');
     this.uniLightsOff = gl.getUniformLocation(prog, 'uLightsOff');
     this.uniStagePos = gl.getUniformLocation(prog, 'uStagePos');
     this.uniStageGlow = gl.getUniformLocation(prog, 'uStageGlow');
@@ -277,9 +305,12 @@ class Renderer3D {
     if (this.instExt && typeof this.instExt.vertexAttribDivisorANGLE === 'function' && typeof this.instExt.drawArraysInstancedANGLE === 'function') {
       const proto = MeshBuilder.createSeatPrototype();
       this.seatProtoBuffers = this.uploadMesh(proto);
+      const simpleProto = MeshBuilder.createSeatSimplePrototype();
+      this.seatSimpleProtoBuffers = this.uploadMesh(simpleProto);
     } else {
       this.instExt = null;
       this.seatProtoBuffers = null;
+      this.seatSimpleProtoBuffers = null;
     }
 
     gl.enable(gl.DEPTH_TEST);
@@ -541,6 +572,11 @@ class Renderer3D {
     this.disposeBufferGroup(this.beamBuffers);
     this.disposeBufferGroup(this.dynSolidBuffers);
     this.disposeBufferGroup(this.dynScreenBuffers);
+    this.disposeBufferGroup(this.roofSolidBuffers);
+    this.disposeBufferGroup(this.roofScreenBuffers);
+    this.disposeBufferGroup(this.roofAlphaBuffers);
+    this.disposeBufferGroup(this.birdRoofAlphaBuffers);
+    this.disposeBufferGroup(this.birdRoofWireBuffers);
     this.disposeBufferGroup(this.ledBuffers);
     this.disposeBufferGroup(this.seatInstBuffers);
     this.solidBuffers = null;
@@ -549,6 +585,11 @@ class Renderer3D {
     this.beamBuffers = null;
     this.dynSolidBuffers = null;
     this.dynScreenBuffers = null;
+    this.roofSolidBuffers = null;
+    this.roofScreenBuffers = null;
+    this.roofAlphaBuffers = null;
+    this.birdRoofAlphaBuffers = null;
+    this.birdRoofWireBuffers = null;
     this.ledBuffers = null;
     this.seatInstBuffers = null;
 
@@ -602,8 +643,17 @@ class Renderer3D {
     //    carved vomitory tunnels, architectural VIP luxury suites, front guardrails
     this.buildStandTiersMesh(solid, alpha, screens);
 
-    // 5. Architectural Thick Roof Canopy Ring (zero Z-fighting!)
-    this.buildStadiumCanopyRim(solid, alpha, screens);
+    // 5. Architectural Thick Roof Canopy Ring (isolated buffers so bird-eye mode shows transparent outline only)
+    const roofSolid = new MeshBuilder(4096);
+    const roofAlpha = new MeshBuilder(2048);
+    const roofScreens = new MeshBuilder(1024);
+    this.buildStadiumCanopyRim(roofSolid, roofAlpha, roofScreens);
+
+    const birdRoofAlpha = new MeshBuilder(2048);
+    const birdRoofWire = new MeshBuilder(1024);
+    if (typeof this.buildStadiumCanopyBirdOutline === 'function') {
+      this.buildStadiumCanopyBirdOutline(birdRoofAlpha, birdRoofWire);
+    }
 
     // 6. Concert Stage + Concert Infield Floor Seating Blocks OR Sports Goals/Hoops & Perimeter LED Boards
     let ledBoards = null;
@@ -623,6 +673,11 @@ class Renderer3D {
     this.beamBuffers = this.uploadMesh(beams);
     this.dynSolidBuffers = this.uploadMesh(dynSolid, this.gl.DYNAMIC_DRAW);
     this.dynScreenBuffers = this.uploadMesh(dynScreens, this.gl.DYNAMIC_DRAW);
+    this.roofSolidBuffers = this.uploadMesh(roofSolid);
+    this.roofAlphaBuffers = this.uploadMesh(roofAlpha);
+    this.roofScreenBuffers = this.uploadMesh(roofScreens);
+    this.birdRoofAlphaBuffers = this.uploadMesh(birdRoofAlpha);
+    this.birdRoofWireBuffers = this.uploadMesh(birdRoofWire);
     if (ledBoards) {
       this.ledBuffers = this.uploadMesh(ledBoards);
     }
@@ -676,12 +731,12 @@ class Renderer3D {
     return { instBuf, count: instCount };
   }
 
-  drawInstancedSeats() {
-    if (!this.instExt || !this.seatProtoBuffers || !this.seatInstBuffers || this.seatInstBuffers.count === 0) {
+  drawInstancedSeats(useSimpleProto) {
+    const proto = (useSimpleProto && this.seatSimpleProtoBuffers) ? this.seatSimpleProtoBuffers : this.seatProtoBuffers;
+    if (!this.instExt || !proto || !this.seatInstBuffers || this.seatInstBuffers.count === 0) {
       return;
     }
     const gl = this.gl;
-    const proto = this.seatProtoBuffers;
     const inst = this.seatInstBuffers;
 
     if (this.uniIsInstancedSeat) gl.uniform1f(this.uniIsInstancedSeat, 1.0);
@@ -743,7 +798,7 @@ class Renderer3D {
     if (this.uniIsInstancedSeat) gl.uniform1f(this.uniIsInstancedSeat, 0.0);
   }
 
-  drawBufferGroup(bufGroup, isUnlit) {
+  drawBufferGroup(bufGroup, isUnlit, drawMode) {
     if (!bufGroup || bufGroup.count === 0) return;
     const gl = this.gl;
 
@@ -763,7 +818,7 @@ class Renderer3D {
     gl.enableVertexAttribArray(this.attribCol);
     gl.vertexAttribPointer(this.attribCol, 4, gl.FLOAT, false, 0, 0);
 
-    gl.drawArrays(gl.TRIANGLES, 0, bufGroup.count);
+    gl.drawArrays(drawMode !== undefined ? drawMode : gl.TRIANGLES, 0, bufGroup.count);
   }
 
   drawTexturedBufferGroup(bufGroup, texture) {
@@ -865,6 +920,9 @@ class Renderer3D {
     if (this.uniCamEye) {
       gl.uniform3f(this.uniCamEye, this.camEye.x, this.camEye.y, this.camEye.z);
     }
+    if (this.uniZoomLevel) {
+      gl.uniform1f(this.uniZoomLevel, Math.max(1.0, this.zoomLevel || 1.0));
+    }
     const isLightsOff = this.isLightsOffScene();
     if (this.uniLightsOff) {
       gl.uniform1f(this.uniLightsOff, isLightsOff ? 1.0 : 0.0);
@@ -896,12 +954,19 @@ class Renderer3D {
     gl.disable(gl.BLEND);
     gl.depthMask(true);
     this.drawBufferGroup(this.solidBuffers, false);
-    this.drawInstancedSeats();
+    const useSimpleSeats = Boolean((this._isInteracting || this.isCameraAnimating()) && this.seatSimpleProtoBuffers);
+    this.drawInstancedSeats(useSimpleSeats);
     this.drawBufferGroup(this.dynSolidBuffers, false);
+    if (this.cameraMode !== 'bird') {
+      this.drawBufferGroup(this.roofSolidBuffers, false);
+    }
 
     // 1b. Self-luminous elements (VIP suite warm cove lighting + LED screens + dynamic sparkles)
     if (this.screenBuffers && this.screenBuffers.count > 0) {
       this.drawBufferGroup(this.screenBuffers, true);
+    }
+    if (this.cameraMode !== 'bird' && this.roofScreenBuffers && this.roofScreenBuffers.count > 0) {
+      this.drawBufferGroup(this.roofScreenBuffers, true);
     }
     if (this.dynScreenBuffers && this.dynScreenBuffers.count > 0) {
       this.drawBufferGroup(this.dynScreenBuffers, true);
@@ -910,11 +975,17 @@ class Renderer3D {
       this.drawTexturedBufferGroup(this.ledBuffers, this.ledTexture);
     }
 
-    // 2. Tempered glass guardrails
+    // 2. Tempered glass guardrails & transparent roof
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.depthMask(false);
     this.drawBufferGroup(this.alphaBuffers, false);
+    if (this.cameraMode === 'bird') {
+      this.drawBufferGroup(this.birdRoofAlphaBuffers, true);
+      this.drawBufferGroup(this.birdRoofWireBuffers, true, gl.LINES);
+    } else {
+      this.drawBufferGroup(this.roofAlphaBuffers, false);
+    }
 
     // 3. Soft concert stage spotlight beams
     if (this.viewMode === 'concert') {

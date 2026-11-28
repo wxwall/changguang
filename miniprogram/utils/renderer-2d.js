@@ -452,8 +452,34 @@ class Renderer2D {
     const mx = ry;
     const my = -rx;
 
-    // 1. Check Concert Infield Floor Blocks first when in concert mode
+    // 1. Check Concert Stage & Infield Floor Blocks first when in concert mode
     if (this.viewMode === 'concert') {
+      const stageCfg = this.venue && this.venue.infield && this.venue.infield.stageConfig;
+      if (stageCfg) {
+        const st = getStageTransform(this.venue);
+        const sw = Number(stageCfg.width) || 30;
+        const sd = Number(stageCfg.depth) || 20;
+        const cw = Number(stageCfg.catwalkWidth) || 3.6;
+        const cl = st.catwalkLength || 0;
+        const lp = rotateXZ(mx, my, -st.rotFromSouthDeg);
+        const onMainStage = Math.abs(lp.x - (st.stageLocalX || 0)) <= sw / 2 &&
+          Math.abs(lp.z - (st.stageLocalZ || 0)) <= sd / 2;
+        let onCatwalk = false;
+        if (!onMainStage && cl > 0.5) {
+          if (stageCfg.type === 'center-stage') {
+            onCatwalk = Math.abs(lp.x - (st.stageLocalX || 0)) <= cw / 2 &&
+              Math.abs(lp.z - (st.stageLocalZ || 0)) <= sd / 2 + cl;
+          } else {
+            const catZ = (st.stageLocalZ || 0) + sd / 2 + cl / 2;
+            onCatwalk = Math.abs(lp.x - (st.stageLocalX || 0)) <= cw / 2 &&
+              Math.abs(lp.z - catZ) <= cl / 2;
+          }
+        }
+        if (onMainStage || onCatwalk) {
+          return { type: 'stage' };
+        }
+      }
+
       for (let i = this.floorPolygons.length - 1; i >= 0; i--) {
         const blkItem = this.floorPolygons[i];
         const bb = blkItem.bbox;

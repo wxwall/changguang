@@ -11,15 +11,15 @@ const {
 const { parseHexRgb } = require('./seat-colors');
 
 class CanopyMixinHolder {
-  buildStadiumCanopyRim(solid, alpha, screens) {
+  _createCanopyContext() {
     const roof = this.venue && this.venue.roof;
-    if (roof && roof.enabled === false) return;
+    if (roof && roof.enabled === false) return null;
 
     const summary = this.venue.engineeringSummary || {};
     const maxElev = (summary.maxBowlElevationM || 30) + 3.5;
     const tiers = this.venue.standTiers || [];
     const lastTierIdx = tiers.length - 1;
-    if (lastTierIdx < 0) return;
+    if (lastTierIdx < 0) return null;
 
     const lastTier = tiers[lastTierIdx];
     const isMorphedLast = isConcentricMorphTier(lastTier);
@@ -30,7 +30,6 @@ class CanopyMixinHolder {
       return Number.isFinite(n) ? n : NaN;
     };
 
-    // Parse roof deletion schema: segmentCount + deletedSegments + openAngleRanges
     const rawSegCount = parseFiniteNum(roof && roof.segmentCount);
     const segmentCount = (Number.isFinite(rawSegCount) && rawSegCount > 0)
       ? Math.max(1, Math.round(rawSegCount))
@@ -118,25 +117,6 @@ class CanopyMixinHolder {
     const rg = roofRgb.g / 255;
     const rb = roofRgb.b / 255;
 
-    const isTranslucent = Boolean(roof && roof.translucent && alpha);
-    const roofOpacity = (roof && roof.opacity !== undefined)
-      ? Math.max(0.15, Math.min(1.0, Number(roof.opacity)))
-      : 1.0;
-    const memAlpha = isTranslucent ? roofOpacity : 1.0;
-    const memBuilder = isTranslucent ? alpha : solid;
-
-    const topCol = [rr, rg, rb, memAlpha];
-    const soffitCol = [rr * 0.72, rg * 0.72, rb * 0.72, memAlpha];
-    const fasciaCol = [Math.min(1.0, rr * 1.25), Math.min(1.0, rg * 1.25), Math.min(1.0, rb * 1.25), 1.0];
-
-    const floodRgb = parseHexRgb((roof && roof.floodlightColor) || '#ffffff') || { r: 255, g: 255, b: 255 };
-    const lightStripCol = [
-      Math.max(0.5, floodRgb.r / 255),
-      Math.max(0.5, floodRgb.g / 255),
-      Math.max(0.5, floodRgb.b / 255),
-      1.0
-    ];
-
     const clearance = (roof && roof.clearanceHeightM !== undefined) ? Number(roof.clearanceHeightM) : 3.5;
     const thickness = (roof && roof.trussDepthM !== undefined)
       ? Math.max(0.4, Number(roof.trussDepthM))
@@ -146,13 +126,7 @@ class CanopyMixinHolder {
     const innerCoveragePct = hasCoveragePct ? Math.max(5, Math.min(100, Number(roof.innerCoveragePct))) : null;
     const slopeAngleDeg = (roof && roof.slopeAngleDeg !== undefined) ? Number(roof.slopeAngleDeg) : 3;
     const slopeTan = Math.tan(slopeAngleDeg * DEG2RAD);
-
     const trussRibCount = (roof && roof.trussRibCount) ? Math.max(4, Math.round(Number(roof.trussRibCount))) : 32;
-    const trussRgb = parseHexRgb((roof && roof.trussColor) || '#94a3b8') || { r: 148, g: 163, b: 184 };
-    const trussCol = [trussRgb.r / 255, trussRgb.g / 255, trussRgb.b / 255, 1.0];
-    const supportColumns = Boolean(roof && roof.supportColumns);
-    const showFloodlights = roof ? (roof.showFloodlights !== false) : true;
-    const showSuspendedRingScreen = Boolean(roof && roof.showSuspendedRingScreen);
 
     const infield = this.venue.infield || { length: 105, width: 68, cornerRadius: 15, shape: 'rounded-rect' };
     const infLen = infield.length || 105;
@@ -180,7 +154,6 @@ class CanopyMixinHolder {
         xIn = pt.outX + (infPt.x - pt.outX) * pct;
         zIn = pt.outZ + (infPt.z - pt.outZ) * pct;
       } else if (isMorphedLast) {
-        // Irregular/morphed stands (e.g. Bird's Nest) close directly with the infield's shape & size
         const infPt = evalInfieldPerimeterAndNormal(deg, infLen, infWid, infRad, infShape);
         xIn = infPt.x;
         zIn = infPt.z;
@@ -206,6 +179,94 @@ class CanopyMixinHolder {
         pt, nx, nz, xIn, zIn, xOut, zOut, yBot, yTop: yBot + thickness, rise
       };
     };
+
+    return {
+      roof, ringAngles, isAngleDeleted, evalRoofCrossSection,
+      rr, rg, rb, outerOverhang, trussRibCount, infLen, infWid
+    };
+  }
+
+  buildStadiumCanopyBirdOutline(alpha, wire) {
+    const ctx = this._createCanopyContext();
+    if (!ctx) return;
+    const { ringAngles, isAngleDeleted, evalRoofCrossSection, rr, rg, rb, trussRibCount } = ctx;
+
+    // Very faint translucent tint so stands & infield remain 100% clearly visible
+    const ghostCol = [
+      Math.min(1.0, rr * 1.15 + 0.12),
+      Math.min(1.0, rg * 1.15 + 0.14),
+      Math.min(1.0, rb * 1.15 + 0.16),
+      0.08
+    ];
+    const lineCol = [
+      Math.min(1.0, rr * 0.9 + 0.32),
+      Math.min(1.0, rg * 0.9 + 0.36),
+      Math.min(1.0, rb * 0.9 + 0.42),
+      0.85
+    ];
+    const ribStep = Math.max(1, Math.round((ringAngles.length - 1) / Math.min(36, trussRibCount)));
+
+    for (let i = 0; i < ringAngles.length - 1; i++) {
+      const deg1 = ringAngles[i];
+      const deg2 = ringAngles[i + 1];
+      if (deg2 - deg1 < 1e-5) continue;
+      if (isAngleDeleted((deg1 + deg2) * 0.5)) continue;
+
+      const c1 = evalRoofCrossSection(deg1);
+      const c2 = evalRoofCrossSection(deg2);
+      const in1 = { x: c1.xIn, y: c1.yTop + c1.rise, z: c1.zIn };
+      const out1 = { x: c1.xOut, y: c1.yTop, z: c1.zOut };
+      const in2 = { x: c2.xIn, y: c2.yTop + c2.rise, z: c2.zIn };
+      const out2 = { x: c2.xOut, y: c2.yTop, z: c2.zOut };
+
+      if (alpha) {
+        alpha.addQuad(in1, out1, out2, in2, ghostCol, { x: 0, y: 1, z: 0 });
+      }
+      if (wire && typeof wire.addLine === 'function') {
+        wire.addLine(in1, in2, lineCol);
+        wire.addLine(out1, out2, lineCol);
+        if (i % ribStep === 0 || isAngleDeleted(deg1 - 5e-5)) {
+          wire.addLine(in1, out1, lineCol);
+        }
+        if (isAngleDeleted(deg2 + 5e-5)) {
+          wire.addLine(in2, out2, lineCol);
+        }
+      }
+    }
+  }
+
+  buildStadiumCanopyRim(solid, alpha, screens) {
+    const ctx = this._createCanopyContext();
+    if (!ctx) return;
+    const {
+      roof, ringAngles, isAngleDeleted, evalRoofCrossSection,
+      rr, rg, rb, outerOverhang, trussRibCount, infLen, infWid
+    } = ctx;
+
+    const isTranslucent = Boolean(roof && roof.translucent && alpha);
+    const roofOpacity = (roof && roof.opacity !== undefined)
+      ? Math.max(0.15, Math.min(1.0, Number(roof.opacity)))
+      : 1.0;
+    const memAlpha = isTranslucent ? roofOpacity : 1.0;
+    const memBuilder = isTranslucent ? alpha : solid;
+
+    const topCol = [rr, rg, rb, memAlpha];
+    const soffitCol = [rr * 0.72, rg * 0.72, rb * 0.72, memAlpha];
+    const fasciaCol = [Math.min(1.0, rr * 1.25), Math.min(1.0, rg * 1.25), Math.min(1.0, rb * 1.25), 1.0];
+
+    const floodRgb = parseHexRgb((roof && roof.floodlightColor) || '#ffffff') || { r: 255, g: 255, b: 255 };
+    const lightStripCol = [
+      Math.max(0.5, floodRgb.r / 255),
+      Math.max(0.5, floodRgb.g / 255),
+      Math.max(0.5, floodRgb.b / 255),
+      1.0
+    ];
+
+    const trussRgb = parseHexRgb((roof && roof.trussColor) || '#94a3b8') || { r: 148, g: 163, b: 184 };
+    const trussCol = [trussRgb.r / 255, trussRgb.g / 255, trussRgb.b / 255, 1.0];
+    const supportColumns = Boolean(roof && roof.supportColumns);
+    const showFloodlights = roof ? (roof.showFloodlights !== false) : true;
+    const showSuspendedRingScreen = Boolean(roof && roof.showSuspendedRingScreen);
 
     let innerSoffitSum = 0;
     let innerSoffitCount = 0;

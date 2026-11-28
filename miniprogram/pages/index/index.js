@@ -32,9 +32,9 @@ Page({
     homeVenues: [],
     currentVenue: null,
     loadingVenues: true,
-    isVenueSwitching: false,
+    isVenueSwitching: true,
     switchingFade: false,
-    switchingVenueName: '',
+    switchingVenueName: '场馆',
     is3DFullscreen: false,
     viewMode: 'concert', // 'concert' | 'sports'
     activeTierFilter: 'all',
@@ -76,8 +76,12 @@ Page({
   },
 
   async loadVenuesData() {
-    wx.showLoading({ title: '加载场馆列表...', mask: true });
-    this.setData({ loadingVenues: true });
+    this.setData({
+      loadingVenues: true,
+      isVenueSwitching: true,
+      switchingFade: false,
+      switchingVenueName: '场馆列表'
+    });
 
     try {
       const venueList = await loadStadiumProjectList();
@@ -96,7 +100,9 @@ Page({
         initialSummary = venueList[0];
       }
 
-      wx.showLoading({ title: `加载 ${initialSummary.shortLabel || '场馆'}...`, mask: true });
+      this.setData({
+        switchingVenueName: initialSummary.shortLabel || initialSummary.name || '场馆'
+      });
       let initialVenue = await loadStadiumProjectById(initialSummary.id, initialSummary._id);
       if (!initialVenue && initialSummary !== venueList[0]) {
         initialVenue = await loadStadiumProjectById(venueList[0].id, venueList[0]._id);
@@ -128,6 +134,7 @@ Page({
         sightline,
         cameraMode: 'seat',
         loadingVenues: false,
+        switchingVenueName: initialVenue.shortLabel || initialVenue.name || '场馆',
         ...colorState
       });
 
@@ -141,7 +148,10 @@ Page({
       });
       this.setData({ loadingVenues: false });
     } finally {
-      wx.hideLoading();
+      this.setData({ switchingFade: true });
+      setTimeout(() => {
+        this.setData({ isVenueSwitching: false, switchingFade: false });
+      }, 320);
     }
   },
 
@@ -766,7 +776,15 @@ Page({
   // 2D / 3D 点选后统一的选中与进入座席视角逻辑，实现 3D 与 2D 双向全景联动
   selectFromHit(hit) {
     this.clearAutoFlyTimer();
-    if (hit.type === 'floor') {
+    if (hit.type === 'stage') {
+      this.activeSelection = {
+        isStage: true,
+        isFloorBlock: false,
+        isModule: false,
+        row: 1,
+        seatNo: 1
+      };
+    } else if (hit.type === 'floor') {
       this.activeSelection = {
         isFloorBlock: true,
         isModule: false,
@@ -824,6 +842,9 @@ Page({
   // 3D WebGL 触摸旋转/环绕与双指变焦
   onTouchStart3D(e) {
     if (!e.touches || e.touches.length === 0) return;
+    if (this.renderer3d) {
+      this.renderer3d.setInteracting(true);
+    }
     if (e.touches.length === 1) {
       const t = e.touches[0];
       const x = t.x !== undefined ? t.x : t.clientX;
@@ -874,6 +895,9 @@ Page({
   },
 
   onTouchEnd3D() {
+    if (this.renderer3d) {
+      this.renderer3d.setInteracting(false);
+    }
     const start = this._t3dStart;
     const moved = this._t3dMoved;
     this._t3dLast = null;

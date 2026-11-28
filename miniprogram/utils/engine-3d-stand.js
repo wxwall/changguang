@@ -94,6 +94,12 @@ class StandMixinHolder {
         };
         const panCol = isVip ? vipPair.pan : secColPair.pan;
         const backCol = isVip ? vipPair.back : secColPair.back;
+        const secTreadCol = isVip
+          ? concreteStepCol
+          : [Math.max(0.04, panCol[0] * 0.78), Math.max(0.04, panCol[1] * 0.78), Math.max(0.05, panCol[2] * 0.78), 1.0];
+        const secRiserCol = isVip
+          ? concreteRiserCol
+          : [Math.max(0.04, panCol[0] * 0.72), Math.max(0.04, panCol[1] * 0.72), Math.max(0.05, panCol[2] * 0.72), 1.0];
 
         const sDeg = sec.startAngleDeg;
         const eDeg = sec.endAngleDeg;
@@ -295,7 +301,7 @@ class StandMixinHolder {
               const riserBot = rb === 0
                 ? (tier.level === 1 ? 0 : Math.max(0, baseElev - 1.1))
                 : (baseElev + (rb - 1) * riserH);
-              const rCol = rb === 0 && tier.level === 1 ? [0.28, 0.33, 0.42, 1.0] : concreteRiserCol;
+              const rCol = rb === 0 && tier.level === 1 ? [0.28, 0.33, 0.42, 1.0] : secRiserCol;
 
               if (in1 && in2) {
                 const f1_0 = d0 / depth1;
@@ -328,7 +334,7 @@ class StandMixinHolder {
                   { x: x1_out, y: treadY, z: z1_out },
                   { x: x2_out, y: treadY, z: z2_out },
                   { x: x2_in, y: treadY, z: z2_in },
-                  concreteStepCol,
+                  secTreadCol,
                   upNorm
                 );
               } else if (in1 && !in2) {
@@ -355,7 +361,7 @@ class StandMixinHolder {
                   { x: x1_in, y: treadY, z: z1_in },
                   { x: x1_out, y: treadY, z: z1_out },
                   { x: exX, y: treadY, z: exZ },
-                  concreteStepCol,
+                  secTreadCol,
                   upNorm
                 );
               } else {
@@ -382,7 +388,7 @@ class StandMixinHolder {
                   { x: enX, y: treadY, z: enZ },
                   { x: x2_out, y: treadY, z: z2_out },
                   { x: x2_in, y: treadY, z: z2_in },
-                  concreteStepCol,
+                  secTreadCol,
                   upNorm
                 );
               }
@@ -453,7 +459,7 @@ class StandMixinHolder {
                   { x: x1_in, y: treadY, z: z1_in },
                   { x: x2_in, y: treadY, z: z2_in },
                   { x: x2_in, y: riserBot, z: z2_in },
-                  rb === 0 && tier.level === 1 ? [0.28, 0.33, 0.42, 1.0] : concreteRiserCol
+                  rb === 0 && tier.level === 1 ? [0.28, 0.33, 0.42, 1.0] : secRiserCol
                 );
               }
 
@@ -462,7 +468,7 @@ class StandMixinHolder {
                 { x: x1_out, y: treadY, z: z1_out },
                 { x: x2_out, y: treadY, z: z2_out },
                 { x: x2_in, y: treadY, z: z2_in },
-                concreteStepCol,
+                secTreadCol,
                 { x: 0, y: 1, z: 0 }
               );
             }

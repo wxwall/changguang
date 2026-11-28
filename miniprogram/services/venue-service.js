@@ -221,11 +221,15 @@ function resolveRawVenue(doc) {
                     normalizeTiers(c.tiers) ||
                     normalizeTiers(c.stand_tiers);
       if (tiers && tiers.length > 0) {
+        const cModules = normalizeTiers(c.infieldModules);
+        const docModules = normalizeTiers(doc.infieldModules);
+        const modules = (cModules && cModules.length > 0) ? cModules : (docModules && docModules.length > 0 ? docModules : (cModules || docModules));
         return {
           ...doc,
           ...c,
           standTiers: tiers,
           infield: parseIfJson(c.infield) || parseIfJson(doc.infield),
+          infieldModules: modules || [],
           engineeringSummary: c.engineeringSummary || doc.engineeringSummary,
           _id: doc._id
         };
@@ -242,11 +246,15 @@ function resolveRawVenue(doc) {
                       normalizeTiers(c.stands) ||
                       normalizeTiers(c.tiers) ||
                       normalizeTiers(c.stand_tiers) || [];
+        const cModules = normalizeTiers(c.infieldModules);
+        const docModules = normalizeTiers(doc.infieldModules);
+        const modules = (cModules && cModules.length > 0) ? cModules : (docModules && docModules.length > 0 ? docModules : (cModules || docModules));
         return {
           ...doc,
           ...c,
           infield: inf,
           standTiers: tiers,
+          infieldModules: modules || [],
           _id: doc._id
         };
       }
@@ -288,9 +296,12 @@ function extractVenueDoc(doc) {
     raw.infield.stageConfig = {};
   }
 
-  // 确保 standTiers 为数组
+  // 确保 standTiers 与 infieldModules 为数组
   if (!Array.isArray(raw.standTiers)) {
     raw.standTiers = normalizeTiers(raw.standTiers) || [];
+  }
+  if (!Array.isArray(raw.infieldModules)) {
+    raw.infieldModules = normalizeTiers(raw.infieldModules) || [];
   }
 
   // 坐标系归一化换算（使舞台与区块坐标适配引擎）

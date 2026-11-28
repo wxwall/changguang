@@ -435,6 +435,10 @@ function computeRunningTrackSpec(infield) {
  * while the engine uses X=short axis, Z=long axis.
  * Apply exactly once per venue at load time: worldX = y, worldZ = -x, rotationDeg += 90.
  */
+function hasCoord(v) {
+  return v !== undefined && v !== null && v !== '' && Number.isFinite(Number(v));
+}
+
 function normalizeVenueCoordinates(venue) {
   if (!venue) return venue;
 
@@ -442,9 +446,9 @@ function normalizeVenueCoordinates(venue) {
   const srcStage = infield && infield.stageConfig;
   let nextInfield = infield;
 
-  if (srcStage && (srcStage.x !== undefined || srcStage.y !== undefined || srcStage.z !== undefined)) {
-    const dx = Number(srcStage.x) || 0;
-    const dy = Number(srcStage.y !== undefined ? srcStage.y : srcStage.z) || 0;
+  if (srcStage && (hasCoord(srcStage.x) || hasCoord(srcStage.y) || hasCoord(srcStage.z))) {
+    const dx = hasCoord(srcStage.x) ? Number(srcStage.x) : 0;
+    const dy = hasCoord(srcStage.y) ? Number(srcStage.y) : (hasCoord(srcStage.z) ? Number(srcStage.z) : 0);
     const nextStage = Object.assign({}, srcStage, { x: dy, z: -dx });
     delete nextStage.y;
     nextInfield = Object.assign({}, infield, { stageConfig: nextStage });
@@ -452,12 +456,12 @@ function normalizeVenueCoordinates(venue) {
 
   const nextModules = (venue.infieldModules || []).map((mod) => {
     const next = Object.assign({}, mod);
-    if (mod.x !== undefined || mod.y !== undefined) {
-      next.x = Number(mod.y) || 0;
-      next.y = -(Number(mod.x) || 0);
+    if (hasCoord(mod.x) || hasCoord(mod.y)) {
+      next.x = hasCoord(mod.y) ? Number(mod.y) : 0;
+      next.y = -(hasCoord(mod.x) ? Number(mod.x) : 0);
     }
-    if (mod.rotationDeg !== undefined) {
-      next.rotationDeg = ((Number(mod.rotationDeg) || 0) + 90) % 360;
+    if (hasCoord(mod.rotationDeg)) {
+      next.rotationDeg = (Number(mod.rotationDeg) + 90) % 360;
     }
     return next;
   });
@@ -505,9 +509,9 @@ function getStageTransform(venue) {
   if (stage.type === 'center-stage') {
     let cx = 0;
     let cz = 0;
-    if (stage.x !== undefined && (stage.y !== undefined || stage.z !== undefined)) {
-      cx = Number(stage.x) || 0;
-      cz = Number(stage.z !== undefined ? stage.z : stage.y) || 0;
+    if (hasCoord(stage.x) || hasCoord(stage.y) || hasCoord(stage.z)) {
+      cx = hasCoord(stage.x) ? Number(stage.x) : 0;
+      cz = hasCoord(stage.z) ? Number(stage.z) : (hasCoord(stage.y) ? Number(stage.y) : 0);
     }
     const localCenter = rotateXZ(cx, cz, -rotFromSouthDeg);
     const rawCat = (stage.catwalkLength !== undefined && stage.catwalkLength !== null)
@@ -538,9 +542,9 @@ function getStageTransform(venue) {
   let stageLocalZ = 0;
   let stageLocalX = 0;
 
-  if (stage.x !== undefined && (stage.y !== undefined || stage.z !== undefined)) {
-    const wx = Number(stage.x) || 0;
-    const wz = Number(stage.z !== undefined ? stage.z : stage.y) || 0;
+  if (hasCoord(stage.x) || hasCoord(stage.y) || hasCoord(stage.z)) {
+    const wx = hasCoord(stage.x) ? Number(stage.x) : 0;
+    const wz = hasCoord(stage.z) ? Number(stage.z) : (hasCoord(stage.y) ? Number(stage.y) : 0);
     const lp = rotateXZ(wx, wz, -rotFromSouthDeg);
     stageLocalX = lp.x;
     stageLocalZ = lp.z;
@@ -720,8 +724,8 @@ function generateConcertInfieldBlocks(venue) {
   const schemaModules = Array.isArray(venue.infieldModules) ? venue.infieldModules : [];
   if (schemaModules.length > 0) {
     schemaModules.forEach((mod, idx) => {
-      const bx = Number(mod.x) || 0;
-      const bz = Number(mod.z !== undefined ? mod.z : mod.y) || 0;
+      const bx = hasCoord(mod.x) ? Number(mod.x) : 0;
+      const bz = hasCoord(mod.z) ? Number(mod.z) : (hasCoord(mod.y) ? Number(mod.y) : 0);
       const bw = Math.max(1, Number(mod.width) || 20);
       const bd = Math.max(1, Number(mod.depth) || 10);
       const rotDeg = Number(mod.rotationDeg) || 0;
@@ -1036,6 +1040,88 @@ function calculateSeatSightline(venue, selection, viewMode) {
     targetX = 0;
     targetY = 0.8;
     targetZ = 0;
+  }
+
+  // Stage performer / presenter sightline (looks opposite backdrop screen, or random audience sector for center-stage)
+  if (selection && selection.isStage && viewMode === 'concert' && stage) {
+    const st = getStageTransform(venue);
+    const sh = Number(stage.height) || 2.0;
+    const sd = Number(stage.depth) || 20;
+    const isCenterStage = stage.type === 'center-stage';
+    const localEyeZ = isCenterStage ? (st.stageLocalZ || 0) : ((st.stageLocalZ || 0) + sd * 0.18);
+    const eyeWorld = rotateXZ(st.stageLocalX || 0, localEyeZ, st.rotFromSouthDeg || 0);
+    const eyeX = eyeWorld.x;
+    const eyeY = sh + 1.65;
+    const eyeZ = eyeWorld.z;
+
+    let lookX = eyeX + st.facingX * 60;
+    let lookY = 6.5;
+    let lookZ = eyeZ + st.facingZ * 60;
+    let audienceLabel = '对面看台观众';
+
+    if (isCenterStage) {
+      const standTiers = Array.isArray(v.standTiers) ? v.standTiers : [];
+      const candidates = [];
+      for (let ti = 0; ti < standTiers.length; ti++) {
+        const tier = standTiers[ti];
+        const secs = (tier && Array.isArray(tier.sectors)) ? tier.sectors : [];
+        for (let si = 0; si < secs.length; si++) {
+          const sec = secs[si];
+          if (!sec || sec.isDeleted || sec.fillType === 'empty-void' || sec.fillType === 'solid-wall') continue;
+          candidates.push({ tierIndex: ti, tier, sector: sec });
+        }
+      }
+      if (candidates.length > 0) {
+        const picked = candidates[Math.floor(Math.random() * candidates.length)];
+        const sDeg = Number(picked.sector.startAngleDeg) || 0;
+        const eDeg = Number(picked.sector.endAngleDeg) || 30;
+        const midDeg = (eDeg < sDeg ? ((sDeg + eDeg + 360) * 0.5) : ((sDeg + eDeg) * 0.5)) % 360;
+        const pt = evalTierPoint(v, picked.tierIndex, midDeg, 0.45, picked.sector.customRadialDepth);
+        const baseElev = Number(picked.tier.baseElevation) || 2.0;
+        const rows = Number(picked.sector.rows || picked.tier.defaultRows) || 18;
+        const pitch = Number(picked.sector.rowPitch || picked.tier.defaultRowPitch) || 0.85;
+        const slope = Number(picked.sector.slopeDeg || picked.tier.defaultSlopeDeg) || 20;
+        const midRise = rows * 0.45 * pitch * Math.tan(slope * DEG2RAD);
+        lookX = pt.x;
+        lookY = baseElev + midRise + 1.2;
+        lookZ = pt.z;
+        audienceLabel = `${picked.sector.name || ((picked.tier.level || 1) + 'F')}观众区`;
+      } else {
+        const randRad = Math.random() * Math.PI * 2;
+        lookX = eyeX + Math.sin(randRad) * 55;
+        lookZ = eyeZ - Math.cos(randRad) * 55;
+      }
+    } else {
+      const lookDist = Math.max(45, (st.alongHalf || 45) + 22);
+      lookX = eyeX + st.facingX * lookDist;
+      lookZ = eyeZ + st.facingZ * lookDist;
+    }
+
+    const dx = lookX - eyeX;
+    const dy = lookY - eyeY;
+    const dz = lookZ - eyeZ;
+    const dist3D = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+    return {
+      eye: { x: eyeX, y: eyeY, z: eyeZ },
+      target: { x: lookX, y: lookY, z: lookZ },
+      distanceM: Number(dist3D.toFixed(1)),
+      elevationM: Number(eyeY.toFixed(1)),
+      verticalAngleDeg: Number((Math.atan2(dy, Math.hypot(dx, dz)) * RAD2DEG).toFixed(1)),
+      cValueMm: 150,
+      cValueStatus: `舞台视角 · 看向${audienceLabel}`,
+      row: 1,
+      maxRows: 1,
+      seatNo: 1,
+      sectorId: 'stage',
+      sectorName: isCenterStage ? '四面舞台' : '主舞台',
+      tierLevel: 0,
+      tierName: '舞台表演区',
+      fillType: 'stage',
+      slopeDeg: 0,
+      rowPitch: 0,
+      guardrailMaterial: '舞台前沿安全线'
+    };
   }
 
   // Concert Infield Floor Block selection

@@ -82,6 +82,28 @@ class MeshBuilder {
     this._cap = newCap;
   }
 
+  addLine(p1, p2, color) {
+    this._ensure(2);
+    const v = this._vertCount;
+    const pIdx = v * 3;
+    const cIdx = v * 4;
+    const pos = this._posBuf;
+    const norm = this._normBuf;
+    const col = this._colBuf;
+
+    pos[pIdx] = p1.x; pos[pIdx + 1] = p1.y; pos[pIdx + 2] = p1.z;
+    pos[pIdx + 3] = p2.x; pos[pIdx + 4] = p2.y; pos[pIdx + 5] = p2.z;
+
+    norm[pIdx] = 0; norm[pIdx + 1] = 1; norm[pIdx + 2] = 0;
+    norm[pIdx + 3] = 0; norm[pIdx + 4] = 1; norm[pIdx + 5] = 0;
+
+    const r = color[0], g = color[1], b = color[2], a = color[3] !== undefined ? color[3] : 1.0;
+    col[cIdx] = r; col[cIdx + 1] = g; col[cIdx + 2] = b; col[cIdx + 3] = a;
+    col[cIdx + 4] = r; col[cIdx + 5] = g; col[cIdx + 6] = b; col[cIdx + 7] = a;
+
+    this._vertCount = v + 2;
+  }
+
   addTexturedQuad(p1, p2, p3, p4, u1, v1, u2, v2, color = [1, 1, 1, 1], normal = null) {
     if (!this._uvBuf) {
       this._uvBuf = new Float32Array(this._cap * 2);
@@ -373,7 +395,7 @@ class MeshBuilder {
     const panFrontY = cy + 0.31;
     const panBackY = cy + 0.28;
     const panBotY = cy + 0.19;
-    const backTopY = cy + 0.72;
+    const backTopY = cy + 0.78;
 
     const pR0 = panColor[0], pG0 = panColor[1], pB0 = panColor[2], pA = encodePart ? 1.0 : (panColor[3] !== undefined ? panColor[3] : 1.0);
     const bR0 = backColor[0], bG0 = backColor[1], bB0 = backColor[2], bA = encodePart ? 2.0 : (backColor[3] !== undefined ? backColor[3] : 1.0);
@@ -574,6 +596,40 @@ class MeshBuilder {
   static createSeatPrototype() {
     const proto = new MeshBuilder(96);
     proto._writeSeat3D(0, 0, 0, 1.0, 1.0, 0, 1, [1, 1, 1, 1.0], [1, 1, 1, 2.0], true);
+    return proto;
+  }
+
+  static createSeatSimplePrototype() {
+    const proto = new MeshBuilder(16);
+    const hw = 0.495;
+    const topHw = hw * 0.94;
+    const hd = 0.49;
+    const panFrontY = 0.31;
+    const panBackY = 0.28;
+    const backTopY = 0.78;
+    const pFLx = -hw, pFLz = hd;
+    const pFRx = hw, pFRz = hd;
+    const pBRx = hw, pBRz = -hd * 0.72;
+    const pBLx = -hw, pBLz = -hd * 0.72;
+    const bTLx = -topHw, bTLz = -hd * 0.88;
+    const bTRx = topHw, bTRz = -hd * 0.88;
+
+    // 1. Seat pan top (6 verts, part=1.0)
+    proto._writeVCQuadRaw(
+      pBLx, panBackY, pBLz, 0.93, 0.93, 0.93, 1.0,
+      pFLx, panFrontY, pFLz, 1.02, 1.02, 1.02, 1.0,
+      pFRx, panFrontY, pFRz, 1.02, 1.02, 1.02, 1.0,
+      pBRx, panBackY, pBRz, 0.93, 0.93, 0.93, 1.0,
+      0, 1, 0
+    );
+    // 2. Backrest front (6 verts, part=2.0)
+    proto._writeVCQuadRaw(
+      pBLx, panBackY, pBLz, 0.91, 0.91, 0.91, 2.0,
+      pBRx, panBackY, pBRz, 0.91, 0.91, 0.91, 2.0,
+      bTRx, backTopY, bTRz, 1.02, 1.02, 1.02, 2.0,
+      bTLx, backTopY, bTLz, 1.02, 1.02, 1.02, 2.0,
+      0, 0.82, 0.55
+    );
     return proto;
   }
 

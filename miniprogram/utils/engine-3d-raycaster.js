@@ -8,6 +8,7 @@ const {
   evalTierPoint,
   isConcentricMorphTier,
   getTierRowsAtAngle,
+  getStageTransform,
   generateConcertInfieldBlocks
 } = require('./schema-geometry');
 
@@ -98,8 +99,10 @@ class RaycastMixinHolder {
       prevT = t;
     }
 
-    // 未命中看台时回落到地面：内场座位区块 / 内场模块
+    // 未命中看台时回落到舞台顶面 / 内场座位区块 / 内场模块
     if (dy < -1e-4) {
+      const stageHit = this.hitStageRay(eye, dx, dy, dz);
+      if (stageHit) return stageHit;
       const tGround = -eye.y / dy;
       const gx = eye.x + dx * tGround;
       const gz = eye.z + dz * tGround;
@@ -107,6 +110,39 @@ class RaycastMixinHolder {
       if (floorHit) return floorHit;
     }
     return null;
+  }
+
+  hitStageRay(eye, dx, dy, dz) {
+    if (this.viewMode !== 'concert' || !this.venue || !this.venue.infield || !this.venue.infield.stageConfig) {
+      return null;
+    }
+    const stageCfg = this.venue.infield.stageConfig;
+    const sh = Number(stageCfg.height) || 2.0;
+    if (eye.y <= sh || dy >= -1e-4) return null;
+    const tStage = (sh - eye.y) / dy;
+    if (tStage <= 0) return null;
+    const sx = eye.x + dx * tStage;
+    const sz = eye.z + dz * tStage;
+    const st = getStageTransform(this.venue);
+    const sw = Number(stageCfg.width) || 30;
+    const sd = Number(stageCfg.depth) || 20;
+    const cw = Number(stageCfg.catwalkWidth) || 3.6;
+    const cl = st.catwalkLength || 0;
+    const lp = rotateXZ(sx, sz, -st.rotFromSouthDeg);
+    const onMainStage = Math.abs(lp.x - (st.stageLocalX || 0)) <= sw / 2 &&
+      Math.abs(lp.z - (st.stageLocalZ || 0)) <= sd / 2;
+    let onCatwalk = false;
+    if (!onMainStage && cl > 0.5) {
+      if (stageCfg.type === 'center-stage') {
+        onCatwalk = Math.abs(lp.x - (st.stageLocalX || 0)) <= cw / 2 &&
+          Math.abs(lp.z - (st.stageLocalZ || 0)) <= sd / 2 + cl;
+      } else {
+        const catZ = (st.stageLocalZ || 0) + sd / 2 + cl / 2;
+        onCatwalk = Math.abs(lp.x - (st.stageLocalX || 0)) <= cw / 2 &&
+          Math.abs(lp.z - catZ) <= cl / 2;
+      }
+    }
+    return (onMainStage || onCatwalk) ? { type: 'stage' } : null;
   }
 
   /**
